@@ -12,5 +12,6 @@ internal sealed partial class ScratchFolder
     /// dist/dbchange/ or the repository's .gitignore above it; git ignores .dbchange/, so nothing a test writes there is ever listed.
     /// </summary>
     public static ScratchFolder UnderRepository(string purpose) =>
-        new(Directory.CreateDirectory(System.IO.Path.Combine(Repository.Root, ".dbchange", purpose, Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8])).FullName);
+        new(Directory.CreateDirectory(System.IO.Path.Combine(Repository.Root, ".dbchange", purpose,
+            Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8])).FullName);
 }

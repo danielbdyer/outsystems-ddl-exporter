@@ -1,14 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Threading.Tasks;
 using DbChange.Budgets.Tests;
 using DbChange.Kernel;
-using DbChange.Tests;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
@@ -23,14 +20,15 @@ namespace DbChange.Io.Tests;
 /// plants rows with and without an Email).
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
-public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHelper output) : IClassFixture<GoldenProjectModels>
+public sealed partial class ModelElementsTests(GoldenProjectModels heads, ITestOutputHelper output) : IClassFixture<GoldenProjectModels>
 {
     /// <summary>What each sample change names, one line per element created, dropped, renamed or altered.</summary>
     private static readonly Dictionary<string, string[]> Named = new()
     {
         ["make-mandatory"] = ["Column [dbo].[Customer].[Email]: Nullable true → false"],
         ["add a nullable column"] = ["created Column [dbo].[Customer].[Nickname]", "Table [dbo].[Customer]: Columns"],
-        ["drop a column"] = ["dropped Column [dbo].[Product].[LegacyCode]", "dropped DefaultConstraint [dbo].[DF_Product_LegacyCode]", "Table [dbo].[Product]: Columns"],
+        ["drop a column"] = ["dropped Column [dbo].[Product].[LegacyCode]", "dropped DefaultConstraint [dbo].[DF_Product_LegacyCode]",
+            "Table [dbo].[Product]: Columns"],
         ["widen a column"] = ["Column [dbo].[Product].[Code]: Length 50 → 100"],
         ["add a check constraint"] = ["created CheckConstraint [dbo].[CK_Product_Code]"],
         ["add a foreign key"] = ["created ForeignKeyConstraint [dbo].[FK_Order_Customer_CustomerId]"],
@@ -63,23 +61,27 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
         Assert.Equal(first, second);
         Assert.Equal(Fingerprint.Of(first.Elements), Fingerprint.Of(second.Elements));
-        Assert.Contains(first.Elements, e => e.Key.ToString() == "Column [dbo].[Customer].[Email]" && e["Nullable"] == new Value.Boolean(true));
+        Assert.Contains(first.Elements,
+            e => e.Key.ToString() == "Column [dbo].[Customer].[Email]" && e["Nullable"] == new Value.Boolean(true));
         Assert.Contains("MERGE dbo.Customer AS target", Text(first, Element.PostDeploymentScript), StringComparison.Ordinal);
         Assert.Contains("Pre-deploy: no backfill active.", Text(first, Element.PreDeploymentScript), StringComparison.Ordinal);
-        Assert.DoesNotContain(first.Elements.SelectMany(e => e.Properties), p => Content(p.Value) is { } t && t.Contains('\r', StringComparison.Ordinal));
+        Assert.DoesNotContain(first.Elements.SelectMany(e => e.Properties),
+            p => Content(p.Value) is { } t && t.Contains('\r', StringComparison.Ordinal));
         output.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"the golden project's model: {first.Elements.Count} elements, {first.Elements.Sum(e => e.Properties.Count)} properties, "
             + $"{first.Elements.Sum(e => e.Relationships.Sum(r => r.Targets.Count))} relationship targets, read into elements in {heads.ReadingTime.TotalMilliseconds:0} ms"));
     }
 
     /// <summary>
-    /// Finding NFR-12: the golden project's model, as one fingerprint committed here, which the Windows and the Ubuntu CI jobs both compute;
-    /// a model that differs between the two operating systems, or a change to what Ssdt.ReadModel keeps, fails here and prints the new value.
+    /// Finding NFR-12: the golden project's model, as one fingerprint committed here, which the Windows and the Ubuntu CI jobs both
+    /// compute; a model that differs between the two operating systems, or a change to what Ssdt.ReadModel keeps, fails here and prints the
+    /// new value.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void The_golden_project_reads_into_one_committed_fingerprint_on_every_operating_system() =>
-        Assert.Equal("9dc433f1c913cc65eac7c8d64c9ce6f136e3be016dda9ebce524b06757fe6b50", Fingerprint.Of(heads.Models["base"].Elements).ToString());
+        Assert.Equal("9dc433f1c913cc65eac7c8d64c9ce6f136e3be016dda9ebce524b06757fe6b50",
+            Fingerprint.Of(heads.Models["base"].Elements).ToString());
 
     [Theory]
     [Trait("Category", "fast")]
@@ -111,14 +113,15 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
         Assert.Equal([new Rename(phone, mobile)], after.Renames);
         Assert.Equal([new Rename(phone, mobile)], Between("base", "rename a column").Renamed);
-        var lost = Ok(Change.Between(before.Elements, SortedArray.Of(after.Elements.Where(e => e.Key.Type != Element.RefactorLogOperation)), []));
+        var lost = Ok(Change.Between(before.Elements, SortedArray.Of(after.Elements.Where(e => e.Key.Type != Element.RefactorLogOperation)),
+            []));
         Assert.Equal([mobile], lost.Created.Select(e => e.Key));
         Assert.Equal([phone], lost.Dropped.Select(e => e.Key));
     }
 
     /// <summary>
-    /// The rename sample change beside a table dbo.AAA with a column Host and an unnamed CHECK on two columns, whose key spells the column's path
-    /// ([dbo].[AAA].[Host]) and sorts before it: an entry's model.xml type pairs with the named objects only, so the column
+    /// The rename sample change beside a table dbo.AAA with a column Host and an unnamed CHECK on two columns, whose key spells the
+    /// column's path ([dbo].[AAA].[Host]) and sorts before it: an entry's model.xml type pairs with the named objects only, so the column
     /// rename stays one rename and is not read as a drop and an add.
     /// </summary>
     [Fact]
@@ -126,7 +129,8 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     public void A_rename_beside_an_unnamed_check_whose_key_spells_a_column_s_path_is_still_one_rename()
     {
         var (before, after) = (heads.Models["base"], heads.Models["rename beside a Host column"]);
-        var rename = new Rename(Key(before, "Column [dbo].[Customer].[ContactPhone]"), Key(after, "Column [dbo].[Customer].[MobileNumber]"));
+        var rename = new Rename(Key(before, "Column [dbo].[Customer].[ContactPhone]"),
+            Key(after, "Column [dbo].[Customer].[MobileNumber]"));
         var change = Between("base", "rename beside a Host column");
 
         Assert.Contains(after.Elements, e => e.Key.ToString() == "CheckConstraint [dbo].[AAA].[Host]");
@@ -166,9 +170,11 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     public void Grants_on_a_table_a_schema_and_the_database_and_extended_properties_each_read_into_a_key_of_their_own()
     {
         using var model = Model(
-            "CREATE TABLE dbo.P (Id INT NOT NULL PRIMARY KEY, A INT NULL);", "CREATE ROLE r1;", "CREATE ROLE r2;", "CREATE USER u1 WITHOUT LOGIN;", "CREATE USER u2 WITHOUT LOGIN;",
-            "GRANT SELECT ON dbo.P TO r1;", "GRANT INSERT ON dbo.P TO r1;", "GRANT SELECT ON dbo.P TO r2;", "DENY DELETE ON dbo.P TO r2;",
-            "GRANT SELECT ON SCHEMA::dbo TO r1;", "GRANT EXECUTE ON SCHEMA::dbo TO r2;", "GRANT VIEW DEFINITION TO u1;", "GRANT VIEW DEFINITION TO u2;",
+            "CREATE TABLE dbo.P (Id INT NOT NULL PRIMARY KEY, A INT NULL);", "CREATE ROLE r1;", "CREATE ROLE r2;",
+            "CREATE USER u1 WITHOUT LOGIN;", "CREATE USER u2 WITHOUT LOGIN;", "GRANT SELECT ON dbo.P TO r1;",
+            "GRANT INSERT ON dbo.P TO r1;", "GRANT SELECT ON dbo.P TO r2;", "DENY DELETE ON dbo.P TO r2;",
+            "GRANT SELECT ON SCHEMA::dbo TO r1;", "GRANT EXECUTE ON SCHEMA::dbo TO r2;", "GRANT VIEW DEFINITION TO u1;",
+            "GRANT VIEW DEFINITION TO u2;",
             "EXEC sys.sp_addextendedproperty @name = N'MS_Description', @value = N'P', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'P';",
             "EXEC sys.sp_addextendedproperty @name = N'MS_Description', @value = N'A', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'P', @level2type = N'COLUMN', @level2name = N'A';");
         var elements = Ok(Ssdt.ReadModel(model));
@@ -180,8 +186,10 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         Assert.True(Ok(Change.Between(elements, elements, [])).IsEmpty);
         Assert.Superset(
             new HashSet<string>([
-                "Permission [dbo].[P].[Grant.Select.Object].[r1].[dbo]", "Permission [dbo].[P].[Deny.Delete.Object].[r2].[dbo]", "Permission [dbo].[Grant.Select.Schema].[r1].[dbo]",
-                "Permission [DatabaseOptions].[Grant.ViewDefinition.Database].[u2].[dbo]", "ExtendedProperty [dbo].[P].[A].[SqlColumn].[MS_Description]"]),
+                "Permission [dbo].[P].[Grant.Select.Object].[r1].[dbo]", "Permission [dbo].[P].[Deny.Delete.Object].[r2].[dbo]",
+                "Permission [dbo].[Grant.Select.Schema].[r1].[dbo]",
+                "Permission [DatabaseOptions].[Grant.ViewDefinition.Database].[u2].[dbo]",
+                "ExtendedProperty [dbo].[P].[A].[SqlColumn].[MS_Description]"]),
             keyed.ToHashSet());
     }
 
@@ -195,12 +203,16 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     public void The_two_grants_to_public_SQL_Server_makes_in_every_database_are_left_out_and_other_grants_kept()
     {
         using var model = Model(
-            "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY);", "CREATE ROLE r1;", "GRANT VIEW ANY COLUMN ENCRYPTION KEY DEFINITION TO public;",
-            "GRANT VIEW ANY COLUMN MASTER KEY DEFINITION TO public;", "GRANT VIEW ANY COLUMN MASTER KEY DEFINITION TO r1;", "GRANT SELECT ON dbo.T TO public;");
+            "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY);", "CREATE ROLE r1;",
+            "GRANT VIEW ANY COLUMN ENCRYPTION KEY DEFINITION TO public;", "GRANT VIEW ANY COLUMN MASTER KEY DEFINITION TO public;",
+            "GRANT VIEW ANY COLUMN MASTER KEY DEFINITION TO r1;", "GRANT SELECT ON dbo.T TO public;");
 
         var permissions = Ok(Ssdt.ReadModel(model)).Where(e => e.Key.Type == "Permission").Select(e => e.Key.ToString());
 
-        Assert.Equal(["Permission [DatabaseOptions].[Grant.ViewAnyColumnMasterKeyDefinition.Database].[r1].[dbo]", "Permission [dbo].[T].[Grant.Select.Object].[public].[dbo]"], permissions);
+        Assert.Equal(
+            ["Permission [DatabaseOptions].[Grant.ViewAnyColumnMasterKeyDefinition.Database].[r1].[dbo]",
+                "Permission [dbo].[T].[Grant.Select.Object].[public].[dbo]"],
+            permissions);
     }
 
     /// <summary>
@@ -218,8 +230,12 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
         Assert.Equal(forward, backward);
         Assert.True(Ok(Change.Between(forward, backward, [])).IsEmpty);
-        Assert.Contains("A < 100", Expression(forward.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[A].[ExpressionDependencies 1]")), StringComparison.Ordinal);
-        Assert.Contains("A > 0", Expression(forward.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[A].[ExpressionDependencies 2]")), StringComparison.Ordinal);
+        Assert.Contains("A < 100",
+            Expression(forward.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[A].[ExpressionDependencies 1]")),
+            StringComparison.Ordinal);
+        Assert.Contains("A > 0",
+            Expression(forward.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[A].[ExpressionDependencies 2]")),
+            StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -238,7 +254,8 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         Assert.Equal(forward, backward);
         var keys = forward.Select(e => e.Key.ToString()).ToList();
         Assert.Superset(
-            new HashSet<string>(["PrimaryKeyConstraint [dbo].[T].[Host]", "CheckConstraint [dbo].[T].[B].[ExpressionDependencies]", "DefaultConstraint [dbo].[T].[A].[TargetColumn]",
+            new HashSet<string>(["PrimaryKeyConstraint [dbo].[T].[Host]", "CheckConstraint [dbo].[T].[B].[ExpressionDependencies]",
+                "DefaultConstraint [dbo].[T].[A].[TargetColumn]",
                 "DefaultConstraint [dbo].[T].[B].[TargetColumn]", "DatabaseOptions [DatabaseOptions]"]),
             keys.ToHashSet());
         var onA = forward.Single(e => e.Key.ToString() == "DefaultConstraint [dbo].[T].[A].[TargetColumn]");
@@ -261,8 +278,10 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
         var change = Ok(Change.Between(before.Elements, after.Elements, after.Renames));
 
-        Assert.Equal(["renamed Column [dbo].[T].[C] to Column [dbo].[T].[A]"], change.Renamed.Select(r => "renamed " + r.Before + " to " + r.After));
-        Assert.Equal(["created RefactorLogOperation [" + RenameKey + "]"], Lines(change).Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal)));
+        Assert.Equal(["renamed Column [dbo].[T].[C] to Column [dbo].[T].[A]"],
+            change.Renamed.Select(r => "renamed " + r.Before + " to " + r.After));
+        Assert.Equal(["created RefactorLogOperation [" + RenameKey + "]"],
+            Lines(change).Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal)));
     }
 
     /// <summary>
@@ -279,16 +298,23 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
         var change = Ok(Change.Between(before.Elements, after.Elements, after.Renames));
 
-        Assert.Contains("C > 5", Expression(before.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[C].[ExpressionDependencies]")), StringComparison.Ordinal);
-        Assert.Contains("A > 5", Expression(after.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[A].[ExpressionDependencies]")), StringComparison.Ordinal);
-        Assert.Equal(["CheckConstraint [dbo].[T].[A].[ExpressionDependencies]: Expression"], Lines(change).Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal) && !line.StartsWith("created ", StringComparison.Ordinal)));
+        Assert.Contains("C > 5",
+            Expression(before.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[C].[ExpressionDependencies]")),
+            StringComparison.Ordinal);
+        Assert.Contains("A > 5",
+            Expression(after.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[A].[ExpressionDependencies]")),
+            StringComparison.Ordinal);
+        Assert.Equal(["CheckConstraint [dbo].[T].[A].[ExpressionDependencies]: Expression"],
+            Lines(change)
+                .Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal)
+                    && !line.StartsWith("created ", StringComparison.Ordinal)));
         Assert.Single(change.Renamed);
     }
 
     /// <summary>
-    /// The case from the review of H1's second round (2026-09-25): dbo.T (Id, B INT NULL CHECK (B &gt; 0), A INT NULL CHECK (A &gt; 5)) becomes
-    /// (Id, B …, X INT NULL CHECK (X &lt; 9), A …), a column carrying an unnamed check inserted ahead of another checked column. Each
-    /// check is keyed under its column, so the change is the new column, its check and the table's column list, and neither
+    /// The case from the review of H1's second round (2026-09-25): dbo.T (Id, B INT NULL CHECK (B &gt; 0), A INT NULL CHECK (A &gt; 5))
+    /// becomes (Id, B …, X INT NULL CHECK (X &lt; 9), A …), a column carrying an unnamed check inserted ahead of another checked column.
+    /// Each check is keyed under its column, so the change is the new column, its check and the table's column list, and neither
     /// existing check reads as altered.
     /// </summary>
     [Fact]
@@ -319,130 +345,15 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         var elements = Ok(Ssdt.ReadModel(model));
 
         string Referenced(string key) => string.Join(", ", elements.Single(e => e.Key.ToString() == key).Relationships
-            .Where(r => r.Name is "Columns" or "ExpressionDependencies").SelectMany(r => r.Targets.Select(t => t.Key.Name.Base)).Order(StringComparer.Ordinal));
+            .Where(r => r.Name is "Columns" or "ExpressionDependencies").SelectMany(r => r.Targets.Select(t => t.Key.Name.Base))
+            .Order(StringComparer.Ordinal));
         Assert.Equal("Code", Referenced("UniqueConstraint [dbo].[T].[Code].[Columns]"));
         Assert.Equal("PId", Referenced("ForeignKeyConstraint [dbo].[T].[PId].[Columns]"));
-        Assert.Equal(("A, B", "B, C"), (Referenced("UniqueConstraint [dbo].[T].[Host 1]"), Referenced("UniqueConstraint [dbo].[T].[Host 2]")));
-        Assert.Equal(("A, B", "B, C"), (Referenced("CheckConstraint [dbo].[T].[Host 1]"), Referenced("CheckConstraint [dbo].[T].[Host 2]")));
+        Assert.Equal(("A, B", "B, C"),
+            (Referenced("UniqueConstraint [dbo].[T].[Host 1]"), Referenced("UniqueConstraint [dbo].[T].[Host 2]")));
+        Assert.Equal(("A, B", "B, C"),
+            (Referenced("CheckConstraint [dbo].[T].[Host 1]"), Referenced("CheckConstraint [dbo].[T].[Host 2]")));
     }
-
-    /// <summary>
-    /// A model holding one of each object that carries a secret, each planted with one value: a login's, a contained user's and an
-    /// application role's password; an asymmetric key's, a certificate's (its key's and its private key file's) and a symmetric
-    /// key's password; a symmetric key's KEY_SOURCE and IDENTITY_VALUE, from which SQL Server derives the key; a server credential's
-    /// and a database scoped credential's secret; the database master key's password; a signature's password; a linked server
-    /// login's password; a linked server's provider string (sp_addlinkedserver's @provstr) and an external data source's
-    /// CONNECTION_OPTIONS, each an ODBC or OLE DB connection string carrying PWD=. DacFx gives the planted value back from every
-    /// property <see cref="Ssdt.Secrets"/> lists, and Ssdt.ReadModel carries it in no property.
-    /// </summary>
-    [Fact]
-    [Trait("Category", "fast")]
-    [Trait("Value", "X2")]
-    public void A_secret_planted_in_every_property_that_holds_one_reaches_no_element_property()
-    {
-        const string Planted = "Pl4nted!secret#7f3a";
-        using var model = Model(new TSqlModelOptions { Containment = Containment.Partial },
-            "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY);",
-            "CREATE PROCEDURE dbo.P AS SELECT 1 AS One;",
-            "CREATE LOGIN L WITH PASSWORD = '" + Planted + "';",
-            "CREATE USER U WITH PASSWORD = '" + Planted + "';",
-            "CREATE APPLICATION ROLE AR WITH PASSWORD = '" + Planted + "';",
-            "CREATE MASTER KEY ENCRYPTION BY PASSWORD = '" + Planted + "';",
-            "CREATE ASYMMETRIC KEY AK WITH ALGORITHM = RSA_2048 ENCRYPTION BY PASSWORD = '" + Planted + "';",
-            "CREATE CERTIFICATE C1 ENCRYPTION BY PASSWORD = '" + Planted + "' WITH SUBJECT = 'c1';",
-            "CREATE CERTIFICATE C2 FROM FILE = 'c2.cer' WITH PRIVATE KEY (FILE = 'c2.pvk', DECRYPTION BY PASSWORD = '" + Planted + "', ENCRYPTION BY PASSWORD = '" + Planted + "');",
-            "CREATE SYMMETRIC KEY SK WITH ALGORITHM = AES_256, KEY_SOURCE = '" + Planted + "ks', IDENTITY_VALUE = '" + Planted + "iv' ENCRYPTION BY PASSWORD = '" + Planted + "';",
-            "CREATE CREDENTIAL CR WITH IDENTITY = 'i', SECRET = '" + Planted + "';",
-            "CREATE DATABASE SCOPED CREDENTIAL DC WITH IDENTITY = 'i', SECRET = '" + Planted + "';",
-            "CREATE EXTERNAL DATA SOURCE EDS WITH (LOCATION = 'sqlserver://remote', CONNECTION_OPTIONS = 'Server=remote;UID=u;PWD=" + Planted + "', CREDENTIAL = DC);",
-            "ADD SIGNATURE TO dbo.P BY CERTIFICATE C1 WITH PASSWORD = '" + Planted + "';",
-            "EXECUTE sp_addlinkedserver @server = N'LS', @srvproduct = N'', @provider = N'MSOLEDBSQL', @datasrc = N'remote', @provstr = N'UID=u;PWD=" + Planted + "';",
-            "EXECUTE sp_addlinkedsrvlogin @rmtsrvname = N'LS', @useself = N'FALSE', @locallogin = NULL, @rmtuser = N'u', @rmtpassword = N'" + Planted + "';");
-
-        var elements = Ok(Ssdt.ReadModel(model));
-
-        Assert.All(Ssdt.Secrets, secret => Assert.True(Held(model, secret, Planted), Qualified(secret) + " holds no planted value"));
-        Assert.Contains(elements, e => e.Key.ToString() == "Login [L]");
-        Assert.Contains(elements, e => e.Key.ToString() == "LinkedServer [LS]");
-        Assert.DoesNotContain(elements.SelectMany(e => e.Properties), p => Content(p.Value) is { } text && text.Contains(Planted, StringComparison.Ordinal));
-    }
-
-    /// <summary>
-    /// Every string-typed property DacFx 170.5.96's model declares, each reviewed on 2026-09-25 as a secret or as none, with the
-    /// reason. A property a later DacFx adds is on neither list, and the test names it; it is reviewed and listed before the upgrade
-    /// lands. The review covers string-typed properties only: a SqlScriptProperty-typed one (Parameter.DefaultExpression,
-    /// ExtendedProperty.Value, Table.QueryScript and the rest) is schema text, and Ssdt.ReadModel keeps it as written, as it does a
-    /// module's Definition and a deploy script, until the operator's decision 2.27 on schema text that sets a password.
-    /// </summary>
-    private static readonly Dictionary<string, string[]> NotSecret = new(StringComparer.Ordinal)
-    {
-        ["a name, an address, a file or a path the definition gives, which SQL Server shows to a reader holding VIEW DEFINITION"] =
-        [
-            "Aggregate.ClassName", "AsymmetricKey.ExecutableFile", "AsymmetricKey.File", "AsymmetricKey.ProviderKeyName", "BrokerPriority.RemoteServiceName",
-            "Certificate.ExistingKeysFilePath", "Certificate.PrivateKeyFilePath", "Certificate.Subject", "ClrTableOption.ClassName", "ClrTypeMethod.Name",
-            "ClrTypeMethodParameter.Name", "ClrTypeProperty.Name", "Column.EncryptionAlgorithmName", "ColumnMasterKey.KeyPath", "ColumnMasterKey.KeyStoreProviderName",
-            "Credential.Identity", "CryptographicProvider.DllPath", "DatabaseCredential.Identity", "DatabaseDdlTrigger.ClassName", "DatabaseDdlTrigger.MethodName",
-            "DatabaseEventNotification.BrokerInstanceSpecifier", "DatabaseEventNotification.BrokerService", "DatabaseOptions.DefaultFullTextLanguage",
-            "DatabaseOptions.DefaultLanguage", "DatabaseOptions.FileStreamDirectoryName", "DmlTrigger.ClassName", "DmlTrigger.MethodName", "ErrorMessage.Language",
-            "EventSessionAction.ActionName", "EventSessionAction.EventPackageName", "EventSessionDefinitions.EventName", "EventSessionDefinitions.EventPackageName",
-            "EventSessionSetting.SettingName", "EventSessionTarget.EventPackageName", "EventSessionTarget.TargetName", "ExternalDataSource.DatabaseName",
-            "ExternalDataSource.Location", "ExternalDataSource.ResourceManagerLocation", "ExternalDataSource.ShardMapName", "ExternalLanguage.LanguageName",
-            "ExternalLanguageFile.FileName", "ExternalLanguageFile.Path", "ExternalLanguageFile.Platform", "ExternalLibrary.Language", "ExternalLibrary.LibraryName",
-            "ExternalLibraryFile.Path", "ExternalLibraryFile.Platform", "ExternalModel.LocalRuntimePath", "ExternalModel.Location", "ExternalModel.ModelNameExternal",
-            "ExternalStream.Location", "ExternalTable.ExternalObjectName", "ExternalTable.ExternalSchemaName", "ExternalTable.Location", "ExternalTable.RejectedRowLocation",
-            "FileTable.FileTableDirectory", "FullTextCatalog.Path", "HttpProtocolSpecifier.AuthenticationRealm", "HttpProtocolSpecifier.DefaultLogonDomain",
-            "HttpProtocolSpecifier.Path", "HttpProtocolSpecifier.Website", "LinkedServer.Catalog", "LinkedServer.DataSource", "LinkedServer.Location",
-            "LinkedServer.ProductName", "LinkedServer.ProviderName", "LinkedServerLogin.LinkedServerLoginName", "Login.DefaultDatabase", "Login.DefaultLanguage",
-            "Procedure.ClassName", "Procedure.MethodName", "PromotedNodePathForSqlType.NodePath", "PromotedNodePathForXQueryType.NodePath",
-            "PromotedNodePathForXQueryType.Type", "QueueEventNotification.BrokerInstanceSpecifier", "QueueEventNotification.BrokerService", "RemoteServiceBinding.Service",
-            "Route.Address", "Route.BrokerInstance", "Route.MirrorAddress", "Route.ServiceName", "ScalarFunction.ClassName", "ScalarFunction.FillRowMethodName",
-            "ScalarFunction.MethodName", "SearchProperty.Description", "ServerAudit.FilePath", "ServerAudit.Path", "ServerDdlTrigger.ClassName", "ServerDdlTrigger.MethodName",
-            "ServerEventNotification.BrokerInstanceSpecifier", "ServerEventNotification.BrokerService", "SoapLanguageSpecifier.DatabaseName", "SoapLanguageSpecifier.Namespace",
-            "SoapLanguageSpecifier.WsdlSpName", "SoapMethodSpecification.WebMethodAlias", "SoapMethodSpecification.WebMethodNamespace", "SqlFile.FileName",
-            "SymmetricKey.ProviderKeyName", "Table.LedgerHistoryTableName", "Table.LedgerHistoryTableSchemaName", "Table.LedgerViewName",
-            "Table.LedgerViewOperationTypeColumnName", "Table.LedgerViewOperationTypeDescColumnName", "Table.LedgerViewSchemaName", "Table.LedgerViewSequenceNumberColumnName",
-            "Table.LedgerViewTransactionIdColumnName", "TableValuedFunction.ClassName", "TableValuedFunction.FillRowMethodName", "TableValuedFunction.MethodName",
-            "TableValuedFunction.ReturnTableVariableName", "TcpProtocolSpecifier.ListenerIPv4", "TcpProtocolSpecifier.ListenerIPv6", "User.DefaultLanguage",
-            "UserDefinedType.ClassName", "UserDefinedType.ValidationMethodName", "WorkloadClassifier.MemberName", "WorkloadClassifier.WlmContext",
-            "WorkloadClassifier.WlmLabel", "XmlNamespace.NamespaceUri", "XmlNamespace.Prefix",
-        ],
-        ["a setting, a number, a date, a label or a statement the definition states, with no password or key in its documented form"] =
-        [
-            "Certificate.ExpiryDate", "Certificate.StartDate", "Column.Collation", "Column.IdentityIncrement", "Column.IdentitySeed", "Column.MaskingFunction",
-            "Column.SensitivityInformationType", "Column.SensitivityInformationTypeId", "Column.SensitivityLabel", "Column.SensitivityLabelId",
-            "ColumnEncryptionKeyValue.EncryptionAlgorithm", "DatabaseOptions.Collation", "ErrorMessage.MessageText", "ExternalFileFormat.DataCompression",
-            "ExternalFileFormat.DateFormat", "ExternalFileFormat.Encoding", "ExternalFileFormat.FieldTerminator", "ExternalFileFormat.ParserVersion",
-            "ExternalFileFormat.SerDeMethod", "ExternalFileFormat.StringDelimiter", "ExternalLanguageFile.EnvironmentVariables", "ExternalLanguageFile.Parameters",
-            "ExternalModel.ApiFormat", "ExternalModel.Parameters", "ExternalStream.InputOptions", "ExternalStream.OutputOptions", "ExternalStreamingJob.Statement",
-            "ExternalTable.TableOptions", "FileTable.FileTableCollateFilename", "LinkedServer.CollationName", "Sequence.IncrementValue", "Sequence.MaxValue",
-            "Sequence.MinValue", "Sequence.StartValue", "TableTypeColumn.Collation", "TableTypeColumn.IdentityIncrement", "TableTypeColumn.IdentitySeed",
-            "WorkloadClassifier.EndTime", "WorkloadClassifier.StartTime",
-        ],
-        ["a value SQL Server generates and shows in its catalog views: a GUID, a SID, a signature, a statistics blob, a key value encrypted by its column master key"] =
-        [
-            "ColumnEncryptionKeyValue.EncryptedValue", "ColumnMasterKey.Signature", "EventSessionAction.EventModuleGuid", "EventSessionDefinitions.EventModuleGuid",
-            "EventSessionTarget.EventModuleGuid", "Login.Sid", "SearchProperty.PropertySetGuid", "ServerAudit.AuditGuid", "SignatureEncryptionMechanism.SignedBlob",
-            "Statistics.StatsStream", "User.Sid",
-        ],
-    };
-
-    [Fact]
-    [Trait("Category", "fast")]
-    [Trait("Value", "X2")]
-    public void Every_text_property_DacFx_declares_is_a_listed_secret_or_reviewed_as_not_a_secret()
-    {
-        var reviewed = NotSecret.Values.SelectMany(names => names).ToList();
-        var declared = typeof(ModelSchema).GetFields(BindingFlags.Public | BindingFlags.Static).Select(f => f.GetValue(null)).OfType<ModelTypeClass>()
-            .SelectMany(t => t.Properties.Concat(t.Relationships.SelectMany(r => r.Properties))).Where(p => p.DataType == typeof(string)).Distinct().ToList();
-
-        Assert.Empty(declared.Where(p => !Ssdt.Secrets.Contains(p) && !reviewed.Contains(Qualified(p))).Select(Qualified));
-        Assert.Empty(reviewed.Except(declared.Select(Qualified)));
-        Assert.Empty(reviewed.Intersect(Ssdt.Secrets.Select(Qualified)));
-        Assert.Equal(reviewed.Count, reviewed.Distinct().Count());
-    }
-
-    /// <summary>A property as Type.Property, a relationship's as Relationship.Property.</summary>
-    private static string Qualified(ModelPropertyClass p) => (p.OwningType?.Name ?? p.OwningRelationship?.Name) + "." + p.Name;
 
     /// <summary>
     /// A security policy composes its predicates, and DacFx also lists each predicate among the top-level objects: Ssdt.ReadModel
@@ -482,7 +393,8 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     public void A_module_s_body_edit_changes_the_fingerprint_and_is_one_property_of_the_module(string key, string property, string module)
     {
         const string table = "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY);";
-        var (before, after) = (Packaged(table, string.Format(CultureInfo.InvariantCulture, module, 1)), Packaged(table, string.Format(CultureInfo.InvariantCulture, module, 2)));
+        var (before, after) = (Packaged(table, string.Format(CultureInfo.InvariantCulture, module, 1)),
+            Packaged(table, string.Format(CultureInfo.InvariantCulture, module, 2)));
 
         Assert.NotEqual(Fingerprint.Of(before), Fingerprint.Of(after));
         Assert.Equal([key + ": " + property], Lines(Ok(Change.Between(before, after, []))));
@@ -511,208 +423,9 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     }
 
     /// <summary>
-    /// The golden project with a table of unnamed inline constraints, two of them checks on one column, and a procedure over it,
-    /// published to a registered copy and read back through SqlServer.Model: the database's model keys every object as the package's
-    /// does, though SQL Server named each constraint, and each unnamed key names the same constraint in both (the same
-    /// targets; the tied checks the same text once SQL Server's brackets and parentheses are set aside). Their values differ (SQL
-    /// Server stores a check's text as it normalized it), which is why model fingerprints are compared only between like sources.
-    /// The procedure's Definition reads alike from both: SQL Server keeps a module's text as the publish sent it.
-    /// </summary>
-    [Fact]
-    [Trait("Category", "fixture")]
-    public async Task A_package_and_the_database_it_was_published_to_key_every_object_alike_unnamed_constraints_included()
-    {
-        var package = heads.Models["unnamed constraints"].Elements
-            .Where(e => e.Key.Type is not (Element.PreDeploymentScript or Element.PostDeploymentScript or Element.RefactorLogOperation)).ToList();
-        var database = await PublishedAndRead(heads.Dacpacs["unnamed constraints"]);
-
-        Assert.Contains(package, e => e.Key.ToString() == "DefaultConstraint [dbo].[Note].[Pinned].[TargetColumn]");
-        Assert.Equal(package.Select(e => e.Key), database.Select(e => e.Key));
-        var unnamed = package.Where(e => e.Key.Name.Base.Split(' ')[0] is "Host" or "TargetColumn" or "ExpressionDependencies" or "Columns").ToList();
-        Assert.Equal(8, unnamed.Count(e => e.Key.Path.StartsWith("[dbo].[Note].", StringComparison.Ordinal)));
-        Assert.All(unnamed, e => Assert.Equal(e.Relationships, database.Single(d => d.Key == e.Key).Relationships));
-        Assert.All(["CheckConstraint [dbo].[Note].[Score].[ExpressionDependencies 1]", "CheckConstraint [dbo].[Note].[Score].[ExpressionDependencies 2]"], (string key) =>
-            Assert.Equal(Bare(Expression(package.Single(e => e.Key.ToString() == key))), Bare(Expression(database.Single(e => e.Key.ToString() == key)))));
-        var check = package.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[Note].[Pinned].[ExpressionDependencies]");
-        Assert.NotEqual(check["Expression"], database.Single(e => e.Key == check.Key)["Expression"]);
-        var procedure = package.Single(e => e.Key.ToString() == "Procedure [dbo].[NoteCount]");
-        Assert.Contains("WHERE CustomerId = @CustomerId", Assert.IsType<Value.Script>(procedure["Definition"]).Content, StringComparison.Ordinal);
-        Assert.Equal(procedure["Definition"], database.Single(e => e.Key == procedure.Key)["Definition"]);
-    }
-
-    /// <summary>
-    /// The grants head (two roles granted SELECT on dbo.Account, one also INSERT, and both VIEW DEFINITION on the database)
-    /// published to a registered copy and read back through SqlServer.Model holds the Permission keys the package's model holds.
-    /// DacFx 170.5.96's LoadFromDatabase leaves every permission out unless ModelExtractOptions.IgnorePermissions is set false.
-    /// </summary>
-    [Fact]
-    [Trait("Category", "fixture")]
-    public async Task A_package_s_grants_published_to_a_copy_read_back_as_the_same_Permission_keys()
-    {
-        var database = await PublishedAndRead(heads.Dacpacs["grants"]);
-
-        var (packaged, published) = (Permissions(heads.Models["grants"].Elements), Permissions(database));
-        output.WriteLine(string.Join('\n', published));
-
-        Assert.Contains("Permission [dbo].[Account].[Grant.Select.Object].[AppReader].[dbo]", packaged);
-        Assert.Equal(packaged, published);
-    }
-
-    /// <summary>
-    /// The case from the review of H1's first round (2026-09-25): dbo.T (Id, B INT NULL CHECK (B &gt; 0), A INT NULL CHECK (A &gt; 5)) packaged with
-    /// the refactorlog's entry renaming C to A, published to a registered copy and read back through SqlServer.Model. A database
-    /// has no refactorlog, so each unnamed check's key has to follow from what both models hold: each CheckConstraint key names the
-    /// check on the same column in the package's model and in the database's.
-    /// </summary>
-    [Fact]
-    [Trait("Category", "fixture")]
-    public async Task Unnamed_checks_beside_a_renamed_column_are_keyed_alike_in_a_package_and_the_database_it_was_published_to()
-    {
-        var dacpac = Built(RenameCToA, "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0), A INT NULL CHECK (A > 5));");
-        try
-        {
-            SortedArray<Element> package;
-            using (var loaded = Ok(Ssdt.Open(dacpac)))
-            {
-                package = Ok(Ssdt.ReadModel(loaded)).Elements;
-            }
-
-            var database = await PublishedAndRead(new DacDeployOptions(), dacpac);
-
-            output.WriteLine(Checked(database));
-            Assert.Contains("CheckConstraint [dbo].[T].[A].[ExpressionDependencies] → Column [dbo].[T].[A]", Checked(package), StringComparison.Ordinal);
-            Assert.Equal(Checked(package), Checked(database));
-        }
-        finally
-        {
-            Delete(dacpac);
-        }
-    }
-
-    /// <summary>
-    /// The two cases from the review of H1's second round (2026-09-25): a first package published to a registered database, then a second
-    /// that inserts a column carrying an unnamed check ahead of a checked column, published over it under the golden pipeline
-    /// profile's deploy options. That profile sets IgnoreColumnOrder, so DacFx appends the new column and the database holds its
-    /// columns in another order than the second package. Each CheckConstraint key names the check on the same column in the
-    /// second package's model and in the database's.
-    /// </summary>
-    [Theory]
-    [Trait("Category", "fixture")]
-    [InlineData("CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0));",
-        "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, A INT NULL CHECK (A > 5), B INT NULL CHECK (B > 0));")]
-    [InlineData("CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0), A INT NULL CHECK (A > 5));",
-        "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0), X INT NULL CHECK (X < 9), A INT NULL CHECK (A > 5));")]
-    public async Task Unnamed_checks_are_keyed_alike_in_a_package_and_a_database_that_holds_its_columns_in_another_order(string first, string second)
-    {
-        var (v1, v2) = (Built(null, first), Built(null, second));
-        try
-        {
-            SortedArray<Element> package;
-            using (var loaded = Ok(Ssdt.Open(v2)))
-            {
-                package = Ok(Ssdt.ReadModel(loaded)).Elements;
-            }
-
-            var profile = DacProfile.Load(GoldenProject.Profile).DeployOptions;
-            Assert.True(profile.IgnoreColumnOrder);
-            var database = await PublishedAndRead(profile, v1, v2);
-
-            var columns = database.Single(e => e.Key.ToString() == "Table [dbo].[T]").Relationships.Single(r => r.Name == "Columns").Targets.Select(t => t.Key.Name.Base);
-            Assert.NotEqual(package.Single(e => e.Key.ToString() == "Table [dbo].[T]").Relationships.Single(r => r.Name == "Columns").Targets.Select(t => t.Key.Name.Base), columns);
-            output.WriteLine(Checked(database));
-            Assert.Equal(Checked(package), Checked(database));
-        }
-        finally
-        {
-            Delete(v1);
-            Delete(v2);
-        }
-    }
-
-    /// <summary>Each CheckConstraint key of a model, with the keys of the objects its ExpressionDependencies names, one line each in key order.</summary>
-    private static string Checked(IEnumerable<Element> elements) => string.Join('\n', elements.Where(e => e.Key.Type == "CheckConstraint").OrderBy(e => e.Key.ToString(), StringComparer.Ordinal)
-        .Select(e => e.Key + " → " + string.Join(", ", e.Relationships.Where(r => r.Name == "ExpressionDependencies").SelectMany(r => r.Targets.Select(t => t.Key)))));
-
-    private static List<string> Permissions(IEnumerable<Element> elements) => [.. elements.Where(e => e.Key.Type == "Permission").Select(e => e.Key.ToString())];
-
-    /// <summary>A head's package published to a registered database under DacFx's default deploy options, then read back as io reads a copy; the database is dropped after.</summary>
-    private static Task<SortedArray<Element>> PublishedAndRead(string dacpac) => PublishedAndRead(new DacDeployOptions(), dacpac);
-
-    /// <summary>Packages published in turn to one registered database under the deploy options, then read back as io reads a copy; the database is dropped after.</summary>
-    private static async Task<SortedArray<Element>> PublishedAndRead(DacDeployOptions options, params string[] dacpacs)
-    {
-        await using var database = await SqlServerFixture.RegisterAsync();
-        foreach (var dacpac in dacpacs)
-        {
-            GoldenProject.Publish(dacpac, database, options);
-        }
-
-        using var package = Ok(DacFx.Extract(new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root)));
-        return Ok(package.Elements).Elements;
-    }
-
-    /// <summary>
-    /// R1's measurement, made before check drift planned package to package and kept as the pin (the ruling of 2026-09-25): the golden
-    /// project published to a registered database under the pipeline profile's options; then, for its own package and each sample change,
-    /// the deploy report of the package planned against the database extracted equals the report of DacServices.Script against the live
-    /// database, both read by DacFx.Report against the same element sets.
-    /// </summary>
-    [Fact]
-    [Trait("Category", "fixture")]
-    public async Task The_package_to_package_plan_reports_the_operations_the_live_plan_reports()
-    {
-        await using var database = await SqlServerFixture.RegisterAsync();
-        var profile = Ok(PublishProfiles.Load(GoldenProject.Profile));
-        GoldenProject.Publish(heads.Dacpacs["base"], database, profile.Options());
-        var copy = new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root);
-        using var extracted = Ok(DacFx.Extract(copy));
-        var target = Ok(extracted.Elements).Elements;
-
-        foreach (var head in (string[])["base", "make-mandatory", "add a nullable column", "drop a column", "widen a column", "add a check constraint", "add a foreign key", "rename a column"])
-        {
-            using var package = Ok(Ssdt.Open(heads.Dacpacs[head]));
-            var source = Ok(package.Elements).Elements;
-            var planned = Ok(DacFx.Plan(package, extracted, database.Name, profile, [])).Report;
-            var live = Ok(DacFx.Report(new DacServices(database.ConnectionString).Script(package.Dac, database.Name,
-                new PublishOptions { GenerateDeploymentReport = true, DeployOptions = profile.Options() }).DeploymentReport, source, target)).Report;
-
-            output.WriteLine(head + ": " + string.Join("; ", planned.Operations.Select(o => o.Kind + " " + o.Key)) + " | " + string.Join("; ", planned.Alerts.Select(a => a.Kind + " " + a.Text)));
-            Assert.True(live == planned, head + ": live " + string.Join("; ", live.Operations.Select(o => o.Kind + " " + o.Key)) + string.Join("; ", live.Alerts.Select(a => " " + a.Kind + " " + a.Text))
-                + "\npackage to package " + string.Join("; ", planned.Operations.Select(o => o.Kind + " " + o.Key)) + string.Join("; ", planned.Alerts.Select(a => " " + a.Kind + " " + a.Text)));
-        }
-    }
-
-    /// <summary>
-    /// The read did not change what it reads: the golden project published to a registered database, its elements as DacFx.Extract's package
-    /// gives them equal its elements as TSqlModel.LoadFromDatabase gave them under the options dbchange read a database with until
-    /// 2026-09-25, kept here alone.
-    /// </summary>
-    [Fact]
-    [Trait("Category", "fixture")]
-    public async Task The_elements_of_an_extracted_copy_fingerprint_as_the_elements_LoadFromDatabase_read()
-    {
-        await using var database = await SqlServerFixture.RegisterAsync();
-        GoldenProject.Publish(heads.Dacpacs["grants"], database, new DacDeployOptions());
-        var copy = new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root);
-        using var extracted = Ok(DacFx.Extract(copy));
-        using var loaded = TSqlModel.LoadFromDatabase(database.ConnectionString, new ModelExtractOptions
-        {
-            IgnorePermissions = false, IgnoreExtendedProperties = false, IgnoreUserLoginMappings = false, ExtractApplicationScopedObjectsOnly = true,
-            ExtractReferencedServerScopedElements = true, ExtractUsageProperties = false, LoadAsScriptBackedModel = false, VerifyExtraction = false,
-            Storage = DacSchemaModelStorageType.Memory, HashObjectNamesInLogs = false,
-        });
-
-        var (fromExtract, fromLoad) = (Ok(extracted.Elements).Elements, Ok(Ssdt.ReadModel(loaded)));
-
-        var differing = Ok(Change.Between(fromLoad, fromExtract, []));
-        Assert.True(differing.IsEmpty, string.Join('\n', Lines(differing)));
-        Assert.Equal(Fingerprint.Of(fromLoad), Fingerprint.Of(fromExtract));
-    }
-
-    /// <summary>
-    /// ModelTypes' one map against what DacFx 170.5.96 serializes: in the model.xml of each head the fixture builds, every element that names
-    /// an object the model holds once by that name has a serialized type the map reads as that object's type. A later DacFx that serializes
-    /// a type otherwise fails here, naming the pair to add.
+    /// ModelTypes' one map against what DacFx 170.5.96 serializes: in the model.xml of each head the fixture builds, every element that
+    /// names an object the model holds once by that name has a serialized type the map reads as that object's type. A later DacFx that
+    /// serializes a type otherwise fails here, naming the pair to add.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -723,10 +436,12 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         foreach (var dacpac in heads.Dacpacs.Values)
         {
             using var package = Ok(Ssdt.Open(dacpac));
-            var objects = Composed(package.Model).GroupBy(o => o.Name.ToString(), StringComparer.Ordinal).Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.Single().ObjectType.Name, StringComparer.Ordinal);
+            var objects = Composed(package.Model).GroupBy(o => o.Name.ToString(), StringComparer.Ordinal).Where(g => g.Count() == 1)
+                .ToDictionary(g => g.Key, g => g.Single().ObjectType.Name, StringComparer.Ordinal);
             using var zip = System.IO.Compression.ZipFile.OpenRead(dacpac);
             using var model = zip.GetEntry("model.xml")!.Open();
-            foreach (var element in System.Xml.Linq.XDocument.Load(model).Descendants().Where(e => e.Name.LocalName == "Element" && e.Attribute("Name") is not null))
+            foreach (var element in System.Xml.Linq.XDocument.Load(model).Descendants()
+                .Where(e => e.Name.LocalName == "Element" && e.Attribute("Name") is not null))
             {
                 var (serialized, name) = ((string)element.Attribute("Type")!, (string)element.Attribute("Name")!);
                 if (objects.TryGetValue(name, out var type))
@@ -743,12 +458,16 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         output.WriteLine(string.Join('\n', checkedTypes));
         Assert.Empty(misread);
         Assert.Superset(new SortedSet<string>(
-            ["SqlTable", "SqlSimpleColumn", "SqlComputedColumn", "SqlColumnSet", "SqlInlineTableValuedFunction", "SqlMultiStatementTableValuedFunction", "SqlTableTypeSimpleColumn",
-                "SqlTableTypeComputedColumn", "SqlPermissionStatement", "SqlStatistic", "SqlUserDefinedDataType", "SqlSubroutineParameter"], StringComparer.Ordinal), checkedTypes);
+            ["SqlTable", "SqlSimpleColumn", "SqlComputedColumn", "SqlColumnSet", "SqlInlineTableValuedFunction",
+                "SqlMultiStatementTableValuedFunction", "SqlTableTypeSimpleColumn",
+                "SqlTableTypeComputedColumn", "SqlPermissionStatement", "SqlStatistic", "SqlUserDefinedDataType", "SqlSubroutineParameter"],
+            StringComparer.Ordinal),
+            checkedTypes);
     }
 
     /// <summary>Each object of a model, top-level and composed.</summary>
-    private static IEnumerable<TSqlObject> Composed(TSqlModel model) => model.GetObjects(DacQueryScopes.UserDefined).SelectMany(Composed).Distinct();
+    private static IEnumerable<TSqlObject> Composed(TSqlModel model) =>
+        model.GetObjects(DacQueryScopes.UserDefined).SelectMany(Composed).Distinct();
 
     /// <summary>
     /// A property the model's platform does not carry reads as DacFx's default, a value SQL Server never held (measured: a Sql110 column's
@@ -775,8 +494,8 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     }
 
     /// <summary>
-    /// A model DacFx loaded with an error in it (a script it cannot parse, SQL46010, the kind TSqlModel.GetModelErrors reports) reads whole:
-    /// its other objects are elements, and the error is carried beside them as a model.error note, never a refusal.
+    /// A model DacFx loaded with an error in it (a script it cannot parse, SQL46010, the kind TSqlModel.GetModelErrors reports) reads
+    /// whole: its other objects are elements, and the error is carried beside them as a model.error note, never a refusal.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -794,28 +513,6 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         var note = Assert.Single(read.Notes("the model"));
         Assert.Equal(("model.error", Severity.Note, "the model"), (note.Code, note.Severity, note.Subject));
         Assert.Contains("SQL46010", note.Message, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// §5's unmeasured case, measured: a database holding a user whose login was dropped extracts whole under VerifyExtraction false, the user
-    /// read with no login, and DacFx reports no error in the model, so such a user is no model.error note.
-    /// </summary>
-    [Fact]
-    [Trait("Category", "fixture")]
-    public async Task A_database_holding_a_user_whose_login_was_dropped_extracts_whole_and_reads_the_user_without_a_login()
-    {
-        await using var database = await SqlServerFixture.RegisterAsync();
-        var login = database.Name + ReadOnlyPrincipal.Suffix;   // the fixture drops a login of this name with the database, should the test stop before it does
-        await SqlServerFixture.ExecuteAsync(database.ConnectionString, "DECLARE @sql nvarchar(max) = N'CREATE LOGIN ' + QUOTENAME(@name) + N' WITH PASSWORD = N''Orphan!"
-            + Guid.NewGuid().ToString("N")[..12] + "''; CREATE USER [orphan] FOR LOGIN ' + QUOTENAME(@name) + N'; DROP LOGIN ' + QUOTENAME(@name) + N';'; EXEC (@sql);", login);
-        var copy = new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root);
-
-        using var extracted = Ok(DacFx.Extract(copy));
-        var read = Ok(extracted.Elements);
-
-        var user = Assert.Single(read.Elements, e => e.Key.ToString() == "User [orphan]");
-        Assert.DoesNotContain(user.Relationships, r => r.Name == "Login" && r.Targets.Count > 0);
-        Assert.Empty(read.Errors);
     }
 
     [Fact]
@@ -862,10 +559,12 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         return model;
     }
 
-    /// <summary>A model built in memory from the scripts, packaged by DacFx, then loaded as Load loads a build's package and read into elements.</summary>
+    /// <summary>A model built in memory from the scripts, packaged by DacFx, then loaded as Load loads a build's package and read into
+    /// elements.</summary>
     private static SortedArray<Element> Packaged(params string[] scripts) => PackageModel(null, scripts).Elements;
 
-    /// <summary>The scripts packaged by DacFx with the refactorlog's text as the package's refactor.xml, where one is given, then loaded as Load loads a build's package and read into elements.</summary>
+    /// <summary>The scripts packaged by DacFx with the refactorlog's text as the package's refactor.xml, where one is given, then loaded as
+    /// Load loads a build's package and read into elements.</summary>
     private static Ssdt.ModelElements PackageModel(string? refactorlog, params string[] scripts)
     {
         var dacpac = Built(refactorlog, scripts);
@@ -880,7 +579,8 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         }
     }
 
-    /// <summary>The scripts packaged by DacFx under the temp folder, with the refactorlog's text as the package's refactor.xml where one is given; the caller deletes it with <see cref="Delete"/>.</summary>
+    /// <summary>The scripts packaged by DacFx under the temp folder, with the refactorlog's text as the package's refactor.xml where one is
+    /// given; the caller deletes it with <see cref="Delete"/>.</summary>
     private static string Built(string? refactorlog, params string[] scripts)
     {
         var path = Path.Combine(Path.GetTempPath(), "dbchange-model-" + Guid.NewGuid().ToString("N"));
@@ -890,7 +590,8 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         }
 
         using var model = Model(scripts);
-        DacPackageExtensions.BuildPackage(path + ".dacpac", model, new PackageMetadata(), new PackageOptions { RefactorLogPath = refactorlog is null ? null : path + ".refactorlog" });
+        DacPackageExtensions.BuildPackage(path + ".dacpac", model, new PackageMetadata(),
+            new PackageOptions { RefactorLogPath = refactorlog is null ? null : path + ".refactorlog" });
         return path + ".dacpac";
     }
 
@@ -900,97 +601,47 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         File.Delete(Path.ChangeExtension(dacpac, ".refactorlog"));
     }
 
-    /// <summary>Whether an object of the secret's type, top-level or composed by another (a symmetric key's password, a signature), gives back a value holding the planted one.</summary>
-    private static bool Held(TSqlModel model, ModelPropertyClass secret, string planted) => model.GetObjects(DacQueryScopes.UserDefined).SelectMany(Composed)
-        .Any(o => o.ObjectType == secret.OwningType && o.GetProperty(secret) is string value && value.Contains(planted, StringComparison.Ordinal));
+    /// <summary>Whether an object of the secret's type, top-level or composed by another (a symmetric key's password, a signature), gives
+    /// back a value holding the planted one.</summary>
+    private static bool Held(TSqlModel model, ModelPropertyClass secret, string planted) =>
+        model.GetObjects(DacQueryScopes.UserDefined).SelectMany(Composed)
+        .Any(o => o.ObjectType == secret.OwningType && o.GetProperty(secret) is string value
+            && value.Contains(planted, StringComparison.Ordinal));
 
     private static IEnumerable<TSqlObject> Composed(TSqlObject o) =>
-        [o, .. o.ObjectType.Relationships.Where(r => r.Type == RelationshipType.Composing).SelectMany(r => o.GetReferenced(r, DacQueryScopes.All)).SelectMany(Composed)];
+        [o,
+            .. o.ObjectType.Relationships.Where(r => r.Type == RelationshipType.Composing)
+                .SelectMany(r => o.GetReferenced(r, DacQueryScopes.All)).SelectMany(Composed)];
 
     private static string Expression(Element check) => ((Value.Script)check["Expression"]!).Content;
 
     /// <summary>The text a string or a script value holds; null for the other cases.</summary>
     private static string? Content(Value value) => value switch { Value.Text t => t.Content, Value.Script s => s.Content, _ => null };
 
-    /// <summary>A check's text with the brackets, parentheses and spaces SQL Server's normalization adds set aside: <c>([A]&lt;(100))</c> as <c>A&lt;100</c>.</summary>
+    /// <summary>A check's text with the brackets, parentheses and spaces SQL Server's normalization adds set aside: <c>([A]&lt;(100))</c>
+    /// as <c>A&lt;100</c>.</summary>
     private static string Bare(string expression) => new([.. expression.Where(c => c is not ('[' or ']' or '(' or ')' or ' '))]);
 
     private Change Between(string before, string after) =>
         Ok(Change.Between(heads.Models[before].Elements, heads.Models[after].Elements, heads.Models[after].Renames));
 
-    /// <summary>A change as lines: each element created, dropped or renamed, and each property (with its values, a script's text left out) or relationship that is altered.</summary>
+    /// <summary>A change as lines: each element created, dropped or renamed, and each property (with its values, a script's text left out)
+    /// or relationship that is altered.</summary>
     private static IEnumerable<string> Lines(Change change) =>
         change.Created.Select(e => "created " + e.Key)
             .Concat(change.Dropped.Select(e => "dropped " + e.Key))
             .Concat(change.Renamed.Select(r => "renamed " + r.Before + " to " + r.After))
             .Concat(change.Altered.SelectMany(a => a.Properties
-                .Select(p => a.Key + ": " + p.Name + (p.Before is Value.Text or Value.Script || p.After is Value.Text or Value.Script ? "" : " " + p.Before + " → " + p.After))
+                .Select(p => a.Key + ": " + p.Name
+                    + (p.Before is Value.Text or Value.Script || p.After is Value.Text or Value.Script ? ""
+                        : " " + p.Before + " → " + p.After))
                 .Concat(a.Relationships.Select(r => a.Key + ": " + r.Name))));
 
     private static ElementKey Key(Ssdt.ModelElements model, string key) => model.Elements.Single(e => e.Key.ToString() == key).Key;
 
-    private static string Text(Ssdt.ModelElements model, string type) => ((Value.Script)model.Elements.Single(e => e.Key.Type == type)["Text"]!).Content;
+    private static string Text(Ssdt.ModelElements model, string type) =>
+        ((Value.Script)model.Elements.Single(e => e.Key.Type == type)["Text"]!).Content;
 
-    private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
-}
-
-/// <summary>
-/// The golden project's heads by the names these tests use, each the sample changes of tests/Golden/changes/ it applies, built once per
-/// test run by GoldenProject, and the base built a second time into a folder of its own; then the base read again, alone, for the
-/// reading's time.
-/// </summary>
-public sealed class GoldenProjectModels : IAsyncLifetime
-{
-    /// <summary>The refactorlog key of the rename sample change, tests/Golden/changes/rename-a-column/edits.txt.</summary>
-    public const string RenameKey = "6d1c1b5e-3f0a-4c2e-9b7d-2a4f8e6c0d13";
-
-    /// <summary>Each head by its name here, and the sample changes that make it, none for the base.</summary>
-    private static readonly Dictionary<string, string[]> Heads = new()
-    {
-        ["base"] = [],
-        ["make-mandatory"] = ["make-mandatory"],
-        ["add a nullable column"] = ["add-a-nullable-column"],
-        ["drop a column"] = ["drop-a-column"],
-        ["widen a column"] = ["widen-a-column"],
-        ["add a check constraint"] = ["add-a-check-constraint"],
-        ["add a foreign key"] = ["add-a-foreign-key"],
-        ["a seed edit"] = ["edit-the-post-deploy-seed"],
-        ["a pre-deploy edit"] = ["edit-the-pre-deploy-script"],
-        ["rename a column"] = ["rename-a-column"],
-        ["unnamed constraints"] = ["add-unnamed-constraints"],
-        ["rename beside a Host column"] = ["rename-a-column", "add-a-table-with-an-unnamed-check-on-two-columns"],
-        ["grants"] = ["grant-two-roles"],
-        ["every serialized form"] = ["add-one-object-of-each-serialized-type"],
-    };
-
-    public Dictionary<string, Ssdt.ModelElements> Models { get; } = [];
-
-    public Dictionary<string, string> Dacpacs { get; } = [];
-
-    public TimeSpan ReadingTime { get; private set; }
-
-    public async Task InitializeAsync()
-    {
-        var built = await Task.WhenAll(Heads.Select(async head =>
-        {
-            SampleChange[] changes = [.. head.Value.Select(GoldenProject.Change)];
-            return (Head: head.Key, Dacpac: await GoldenProject.Built(changes), Model: await GoldenProject.Model(changes));
-        }).Append(Again()));
-        foreach (var (head, dacpac, model) in built)
-        {
-            (Models[head], Dacpacs[head]) = (model, dacpac);
-        }
-
-        // The base read into elements once more, alone and warm, for its time.
-        using var again = Ok(Ssdt.Open(Dacpacs["base"]));
-        var clock = Stopwatch.StartNew();
-        Assert.Equal(Models["base"], Ok(Ssdt.ReadModel(again)));
-        ReadingTime = clock.Elapsed;
-    }
-
-    private static async Task<(string Head, string Dacpac, Ssdt.ModelElements Model)> Again() => ("again", await GoldenProject.BuiltAgain(), await GoldenProject.ModelAgain());
-
-    public Task DisposeAsync() => Task.CompletedTask;
-
-    private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
+    private static T Ok<T>(Result<T> result) =>
+        result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }

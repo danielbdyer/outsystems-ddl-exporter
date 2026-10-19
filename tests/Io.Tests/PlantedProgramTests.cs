@@ -26,15 +26,19 @@ public sealed class PlantedProgramTests(PublishedTool tool) : IDisposable
     {
         CommandTests.Plant(scratch.Path, "git");
 
-        var ran = new Command("dotnet", [Path.Combine(tool.Folder, "dbchange.dll"), "read", "--from", "ref:HEAD", "--json"], TimeSpan.FromMinutes(2))
+        var ran = new Command("dotnet", [Path.Combine(tool.Folder, "dbchange.dll"), "read", "--from", "ref:HEAD", "--json"],
+            TimeSpan.FromMinutes(2))
         {
-            Directory = scratch.Path, Environment = new Dictionary<string, string?>(StringComparer.Ordinal) { ["NoDefaultCurrentDirectoryInExePath"] = null },
+            Directory = scratch.Path,
+            Environment = new Dictionary<string, string?>(StringComparer.Ordinal) { ["NoDefaultCurrentDirectoryInExePath"] = null },
         }.Run();
 
         var exited = Assert.IsType<Ran.Exited>(ran);
         var answer = JsonNode.Parse(exited.Output)!;
         Assert.True((exited.Code, (string?)answer["findings"]![0]!["code"]) == (6, "git.not-a-repository"), exited.Output + exited.Errors);
-        Assert.True(((string?)answer["findings"]![0]!["message"])!.Contains("not a git repository", StringComparison.Ordinal), exited.Output);   // git's own words, which the planted program never prints
+        // git's own words, which the planted program never prints
+        Assert.True(((string?)answer["findings"]![0]!["message"])!.Contains("not a git repository", StringComparison.Ordinal),
+            exited.Output);
         Assert.DoesNotContain("planted", exited.Output, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -27,7 +27,8 @@ internal sealed class DisposableCopy : IDisposable
 
         try
         {
-            Expect.Value(made.Copy.Publish(dacpac, profile ?? throw new ArgumentNullException(nameof(profile)), SqlServer.QueryLog.Start(repositoryRoot)));
+            Expect.Value(made.Copy.Publish(dacpac, profile ?? throw new ArgumentNullException(nameof(profile)),
+                SqlServer.QueryLog.Start(repositoryRoot)));
             return made;
         }
         catch

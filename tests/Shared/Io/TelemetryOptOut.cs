@@ -11,6 +11,7 @@ namespace DbChange.Tests;
 internal static class TelemetryOptOut
 {
     [ModuleInitializer]
-    [SuppressMessage("Usage", "CA2255:The 'ModuleInitializer' attribute should not be used in libraries", Justification = "A test assembly is a library to the runner, and only a module initializer runs before every test class.")]
+    [SuppressMessage("Usage", "CA2255:The 'ModuleInitializer' attribute should not be used in libraries",
+        Justification = "A test assembly is a library to the runner, and only a module initializer runs before every test class.")]
     internal static void BeforeAnyClass() => DbChange.Io.Telemetry.OptOut();
 }

@@ -22,11 +22,13 @@ public sealed class ReadOnlyPrincipal(string login, string reference)
     /// <summary>The login's name after its database's.</summary>
     public const string Suffix = "_reader";
 
-    private const string Integrated = "The SQL Server under the fixture tests authenticates Windows identities only (SERVERPROPERTY('IsIntegratedSecurityOnly') = 1), "
+    private const string Integrated =
+        "The SQL Server under the fixture tests authenticates Windows identities only (SERVERPROPERTY('IsIntegratedSecurityOnly') = 1), "
         + "so the read-only principal cannot be a SQL login there. Remedy: start Docker (the fixture then runs ci/sql.sh up, or ci/sql.ps1 up on Windows), "
         + "or set DBCHANGE_SQL to a server that accepts SQL logins.";
 
-    private const string Grant = "DECLARE @sql nvarchar(max) = N'CREATE LOGIN ' + QUOTENAME(@login) + N' WITH PASSWORD = ' + QUOTENAME(@password, '''') "
+    private const string Grant =
+        "DECLARE @sql nvarchar(max) = N'CREATE LOGIN ' + QUOTENAME(@login) + N' WITH PASSWORD = ' + QUOTENAME(@password, '''') "
         + "+ N', DEFAULT_DATABASE = ' + QUOTENAME(DB_NAME()) + N'; CREATE USER ' + QUOTENAME(@login) + N' FOR LOGIN ' + QUOTENAME(@login) "
         + "+ N'; ALTER ROLE db_datareader ADD MEMBER ' + QUOTENAME(@login) + N'; GRANT VIEW DEFINITION TO ' + QUOTENAME(@login) + N';'; EXEC (@sql);";
 
@@ -34,13 +36,18 @@ public sealed class ReadOnlyPrincipal(string login, string reference)
 
     public string Reference => reference;
 
-    /// <summary>The connection string the reference names, read as io/SqlServer reads a file: reference (git keeps the file out of every commit, and its owner alone reads it): never kept or printed.</summary>
-    public string ConnectionString => SqlServer.Read("the read-only principal's connection, " + reference + ",", Expect.Value(SecretReference.Of("the read-only principal", reference)), Repository.Root)
-        .Match(text => text ?? throw new InvalidOperationException(reference + " resolves to nothing"), error => throw new InvalidOperationException(error.Code + ": " + error.Message));
+    /// <summary>The connection string the reference names, read as io/SqlServer reads a file: reference (git keeps the file out of every
+    /// commit, and its owner alone reads it): never kept or printed.</summary>
+    public string ConnectionString =>
+        SqlServer.Read("the read-only principal's connection, " + reference + ",",
+            Expect.Value(SecretReference.Of("the read-only principal", reference)), Repository.Root)
+        .Match(text => text ?? throw new InvalidOperationException(reference + " resolves to nothing"),
+            error => throw new InvalidOperationException(error.Code + ": " + error.Message));
 
     public static async Task<ReadOnlyPrincipal> CreateAsync(RegisteredDatabase database)
     {
-        if (await SqlServerFixture.ScalarAsync(database.ConnectionString, "SELECT CAST(SERVERPROPERTY('IsIntegratedSecurityOnly') AS int);") == 1)
+        if (await SqlServerFixture.ScalarAsync(database.ConnectionString,
+            "SELECT CAST(SERVERPROPERTY('IsIntegratedSecurityOnly') AS int);") == 1)
         {
             throw new InvalidOperationException(Integrated);
         }
@@ -77,5 +84,6 @@ public sealed class ReadOnlyPrincipal(string login, string reference)
 
     public override string ToString() => login + " through " + reference;
 
-    private static string FileOf(string database) => Path.Combine(Repository.Root, ".dbchange", "principals", database + Suffix + ".connection");
+    private static string FileOf(string database) =>
+        Path.Combine(Repository.Root, ".dbchange", "principals", database + Suffix + ".connection");
 }

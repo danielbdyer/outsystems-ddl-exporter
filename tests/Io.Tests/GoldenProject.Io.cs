@@ -14,10 +14,10 @@ using Xunit;
 namespace DbChange.Tests;
 
 /// <summary>
-/// The golden project built against dist/dbchange/ once per test run for each head a test asks for: the base, the base again into a folder of
-/// its own, and the base with sample changes applied; at most as many builds at once as the machine has processors, and each head's model
-/// read once. The builds lie under .dbchange/golden/&lt;pid&gt;-&lt;random&gt;/, deleted when the process exits, or, after a run that was
-/// killed, by the next run's first build.
+/// The golden project built against dist/dbchange/ once per test run for each head a test asks for: the base, the base again into a folder
+/// of its own, and the base with sample changes applied; at most as many builds at once as the machine has processors, and each head's
+/// model read once. The builds lie under .dbchange/golden/&lt;pid&gt;-&lt;random&gt;/, deleted when the process exits, or, after a run that
+/// was killed, by the next run's first build.
 /// </summary>
 internal static partial class GoldenProject
 {
@@ -34,7 +34,8 @@ internal static partial class GoldenProject
     /// <summary>The package of the golden project with the sample changes applied in turn, none for the base.</summary>
     public static Task<string> Built(params SampleChange[] changes) => Built(Head(changes), [.. changes.SelectMany(c => c.Edits)]);
 
-    /// <summary>The base built a second time, into a folder of its own, so that two builds are compared and not one package with itself.</summary>
+    /// <summary>The base built a second time, into a folder of its own, so that two builds are compared and not one package with
+    /// itself.</summary>
     public static Task<string> BuiltAgain() => Built("again", []);
 
     /// <summary>The model the head's package reads into.</summary>
@@ -64,7 +65,8 @@ internal static partial class GoldenProject
         await Builds.WaitAsync();
         try
         {
-            var folder = Path.Combine(Run.Value, Interlocked.Increment(ref heads).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            var folder = Path.Combine(Run.Value,
+                Interlocked.Increment(ref heads).ToString(System.Globalization.CultureInfo.InvariantCulture));
             return Expect.Value(Ssdt.Build(CopyTo(folder, edits), new PublishedTool().Folder, Path.Combine(folder, "build"))).Path;
         }
         finally
@@ -79,11 +81,13 @@ internal static partial class GoldenProject
         return Expect.Value(package.Elements);
     })).Value;
 
-    /// <summary>This run's folder, made once the folders of runs whose process no longer runs are deleted, and deleted when this process exits.</summary>
+    /// <summary>This run's folder, made once the folders of runs whose process no longer runs are deleted, and deleted when this process
+    /// exits.</summary>
     private static string Swept()
     {
         var parent = Path.Combine(Repository.Root, ".dbchange", "golden");
-        foreach (var stale in (Directory.Exists(parent) ? Directory.GetDirectories(parent) : []).Where(f => int.TryParse(Path.GetFileName(f).Split('-')[0], out var pid) && !Running(pid)))
+        foreach (var stale in (Directory.Exists(parent) ? Directory.GetDirectories(parent) : [])
+            .Where(f => int.TryParse(Path.GetFileName(f).Split('-')[0], out var pid) && !Running(pid)))
         {
             Directory.Delete(stale, recursive: true);
         }

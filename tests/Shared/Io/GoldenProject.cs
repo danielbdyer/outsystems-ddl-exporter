@@ -10,9 +10,9 @@ namespace DbChange.Tests;
 /// <summary>
 /// The golden project (tests/Golden/project/) and the classic-minimal project, each copied beside the corpus's two stop files, which keep
 /// dbchange's build settings out, and the sample changes: tests/Golden/changes/&lt;name&gt;/edits.txt, the edits that make the change,
-/// and change.txt, where a test states it, the lines dbchange diff prints for it. An edits.txt names a file with <c>=== path</c>, then gives
-/// each edit as the lines it replaces, each after <c>--- </c>, and the lines that replace them, each after <c>+++ </c>. An edit's text must
-/// occur exactly once in its file, so a golden file that drifts fails the copy that edits it, naming the file.
+/// and change.txt, where a test states it, the lines dbchange diff prints for it. An edits.txt names a file with <c>=== path</c>, then
+/// gives each edit as the lines it replaces, each after <c>--- </c>, and the lines that replace them, each after <c>+++ </c>. An edit's
+/// text must occur exactly once in its file, so a golden file that drifts fails the copy that edits it, naming the file.
 /// </summary>
 internal static partial class GoldenProject
 {
@@ -22,12 +22,16 @@ internal static partial class GoldenProject
     private static readonly string Golden = Path.Combine(Repository.Root, "tests", "Golden");
 
     /// <summary>The sample changes the registry holds, in ordinal order of their names.</summary>
-    public static IReadOnlyList<SampleChange> SampleChanges { get; } = [.. Directory.GetDirectories(Path.Combine(Golden, "changes")).Order(StringComparer.Ordinal).Select(Read)];
+    public static IReadOnlyList<SampleChange> SampleChanges { get; } = [.. Directory.GetDirectories(Path.Combine(Golden, "changes"))
+        .Order(StringComparer.Ordinal).Select(Read)];
 
     /// <summary>The sample change of that name.</summary>
-    public static SampleChange Change(string name) => SampleChanges.SingleOrDefault(c => c.Name == name) ?? throw new ArgumentException("tests/Golden/changes/ holds no " + name, nameof(name));
+    public static SampleChange Change(string name) =>
+        SampleChanges.SingleOrDefault(c => c.Name == name)
+            ?? throw new ArgumentException("tests/Golden/changes/ holds no " + name, nameof(name));
 
-    /// <summary>The golden project under <paramref name="folder"/>/project/, the stop files beside it and each edit applied in turn; the .sqlproj.</summary>
+    /// <summary>The golden project under <paramref name="folder"/>/project/, the stop files beside it and each edit applied in turn; the
+    /// .sqlproj.</summary>
     public static string CopyTo(string folder, params IEnumerable<GoldenEdit> edits)
     {
         Copied("project", folder);
@@ -39,7 +43,8 @@ internal static partial class GoldenProject
         return Path.Combine(folder, "project", "SampleCatalog.sqlproj");
     }
 
-    /// <summary>The classic-minimal project under <paramref name="folder"/>/classic-minimal/, the stop files beside it; the .sqlproj.</summary>
+    /// <summary>The classic-minimal project under <paramref name="folder"/>/classic-minimal/, the stop files beside it; the
+    /// .sqlproj.</summary>
     public static string ClassicMinimalTo(string folder)
     {
         Copied("classic-minimal", folder);
@@ -81,16 +86,19 @@ internal static partial class GoldenProject
             }
 
             file = line.StartsWith("=== ", StringComparison.Ordinal) ? line[4..] : file;
-            (line.StartsWith("---", StringComparison.Ordinal) ? from : line.StartsWith("+++", StringComparison.Ordinal) ? to : null)?.Add(line.Length > 4 ? line[4..] : "");
+            (line.StartsWith("---", StringComparison.Ordinal) ? from : line.StartsWith("+++", StringComparison.Ordinal) ? to
+                : null)?.Add(line.Length > 4 ? line[4..] : "");
         }
 
         Made();
         var change = Path.Combine(folder, "change.txt");
-        return new SampleChange(Path.GetFileName(folder), edits, File.Exists(change) ? [.. File.ReadAllLines(change).Where(l => l.Length > 0)] : []);
+        return new SampleChange(Path.GetFileName(folder), edits,
+            File.Exists(change) ? [.. File.ReadAllLines(change).Where(l => l.Length > 0)] : []);
     }
 }
 
-/// <summary>A sample change of the golden project: its name, the edits that make it, and the lines dbchange diff prints for it, none where no test states them.</summary>
+/// <summary>A sample change of the golden project: its name, the edits that make it, and the lines dbchange diff prints for it, none where
+/// no test states them.</summary>
 internal sealed record SampleChange(string Name, IReadOnlyList<GoldenEdit> Edits, IReadOnlyList<string> Lines)
 {
     public override string ToString() => Name;
@@ -103,7 +111,8 @@ internal sealed record GoldenEdit(string File, string From, string To)
     {
         var path = Path.Combine(project, File);
         var text = System.IO.File.ReadAllText(path);
-        Assert.True(text.Split(From).Length == 2, path + " holds '" + From + "' " + (text.Split(From).Length - 1) + " times, where an edit needs it once");
+        Assert.True(text.Split(From).Length == 2,
+            path + " holds '" + From + "' " + (text.Split(From).Length - 1) + " times, where an edit needs it once");
         System.IO.File.WriteAllText(path, text.Replace(From, To, StringComparison.Ordinal));
     }
 }

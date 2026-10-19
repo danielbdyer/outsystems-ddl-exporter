@@ -56,7 +56,8 @@ public sealed class WriteTests : IDisposable
     public void A_UTF_16_file_is_rewritten_as_UTF_8_in_the_line_ending_it_declares(bool littleEndian, string onDisk, string expected)
     {
         var path = directory.Under("file.ps1");
-        var encoding = littleEndian ? new UnicodeEncoding(bigEndian: false, byteOrderMark: true) : new UnicodeEncoding(bigEndian: true, byteOrderMark: true);
+        var encoding = littleEndian ? new UnicodeEncoding(bigEndian: false, byteOrderMark: true)
+            : new UnicodeEncoding(bigEndian: true, byteOrderMark: true);
         File.WriteAllBytes(path, [.. encoding.GetPreamble(), .. encoding.GetBytes(onDisk)]);
 
         Value(Write.Text(path, "a\nb\n"));
@@ -76,7 +77,8 @@ public sealed class WriteTests : IDisposable
         Assert.Equal("", File.ReadAllText(file));
     }
 
-    /// <summary>A target this identity may not replace, read-only on Windows and in a folder it may not write elsewhere: file.unwritable, the old content kept, no temporary file left.</summary>
+    /// <summary>A target this identity may not replace, read-only on Windows and in a folder it may not write elsewhere: file.unwritable,
+    /// the old content kept, no temporary file left.</summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Value", "D3")]
@@ -199,7 +201,8 @@ public sealed class WriteTests : IDisposable
         Assert.Equal("-- one\nSELECT 1;\nGO\n-- two\nSELECT 2;\nGO\n", Read(path));
     }
 
-    /// <summary>A second Ctrl-C, SIGKILL or a power loss can leave a write's temporary file beside its target; the next write of that target removes one older than an hour and keeps a fresh one, which a write in progress may own.</summary>
+    /// <summary>A second Ctrl-C, SIGKILL or a power loss can leave a write's temporary file beside its target; the next write of that
+    /// target removes one older than an hour and keeps a fresh one, which a write in progress may own.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_temporary_file_an_ended_write_left_is_removed_by_the_next_write_of_its_target_and_a_fresh_one_is_kept()

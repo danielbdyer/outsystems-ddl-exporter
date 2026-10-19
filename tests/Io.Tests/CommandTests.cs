@@ -64,7 +64,8 @@ public sealed class CommandTests : IDisposable
     [Trait("Category", "fast")]
     public void A_rooted_program_that_does_not_exist_and_a_cmd_or_bat_named_bare_are_NotFound_with_the_reason()
     {
-        var missing = Assert.IsType<Ran.NotFound>(new Command(scratch.Under("none" + (OperatingSystem.IsWindows() ? ".exe" : "")), [], TimeSpan.FromSeconds(10)).Run());
+        var missing = Assert.IsType<Ran.NotFound>(new Command(scratch.Under("none" + (OperatingSystem.IsWindows() ? ".exe" : "")), [],
+            TimeSpan.FromSeconds(10)).Run());
         var batch = Assert.IsType<Ran.NotFound>(new Command("dbchange-stand-in.cmd", [], TimeSpan.FromSeconds(10)).Run());
 
         Assert.Contains("cannot be started", missing.Why, StringComparison.Ordinal);
@@ -82,8 +83,10 @@ public sealed class CommandTests : IDisposable
         var timedOut = Assert.IsType<Ran.TimedOut>(ran);
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(15), "the timed-out run returned after " + clock.Elapsed);
         Assert.Equal(TimeSpan.FromSeconds(1), timedOut.Timeout);
-        var child = int.Parse(timedOut.Output.Split('\n')[0].Trim(), CultureInfo.InvariantCulture);   // the child, sharing the pipe, prints its own id after its parent did
-        Assert.True(SpinWait.SpinUntil(() => !Running(child), TimeSpan.FromSeconds(5)), "the child process " + child + " still runs after its parent was killed");
+        // the child, sharing the pipe, prints its own id after its parent did
+        var child = int.Parse(timedOut.Output.Split('\n')[0].Trim(), CultureInfo.InvariantCulture);
+        Assert.True(SpinWait.SpinUntil(() => !Running(child), TimeSpan.FromSeconds(5)),
+            "the child process " + child + " still runs after its parent was killed");
     }
 
     [Fact]
@@ -92,7 +95,8 @@ public sealed class CommandTests : IDisposable
     {
         const int Megabyte = 1 << 20;
 
-        var flood = Assert.IsType<Ran.Exited>(new Command("dotnet", [Assembly, "flood", Megabyte.ToString(CultureInfo.InvariantCulture)], TimeSpan.FromMinutes(2)).Run());
+        var flood = Assert.IsType<Ran.Exited>(new Command("dotnet", [Assembly, "flood", Megabyte.ToString(CultureInfo.InvariantCulture)],
+            TimeSpan.FromMinutes(2)).Run());
         var utf8 = Assert.IsType<Ran.Exited>(new Command("dotnet", [Assembly, "utf8"], TimeSpan.FromMinutes(2)).Run());
 
         Assert.Equal((0, Megabyte, Megabyte), (flood.Code, flood.Output.Length, flood.Errors.Length));
@@ -107,13 +111,15 @@ public sealed class CommandTests : IDisposable
         using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
         var clock = Stopwatch.StartNew();
 
-        var thrown = Assert.Throws<OperationCanceledException>(() => new Command("dotnet", [Assembly, "sleep", "60"], TimeSpan.FromMinutes(1)).Run(cancel.Token));
+        var thrown = Assert.Throws<OperationCanceledException>(() => new Command("dotnet", [Assembly, "sleep", "60"],
+            TimeSpan.FromMinutes(1)).Run(cancel.Token));
 
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(6), "the cancelled run threw after " + clock.Elapsed);
         Assert.Equal(cancel.Token, thrown.CancellationToken);
     }
 
-    /// <summary>The run's interruption (Interruption) ends a command its caller passed no token to, and a cleanup command marked Interruptible = false still runs after it.</summary>
+    /// <summary>The run's interruption (Interruption) ends a command its caller passed no token to, and a cleanup command marked
+    /// Interruptible = false still runs after it.</summary>
     [Fact]
     [Trait("Category", "build")]
     public void The_run_s_interruption_ends_a_command_given_no_token_and_a_cleanup_command_runs_after_it()
@@ -132,14 +138,22 @@ public sealed class CommandTests : IDisposable
     [Trait("Category", "build")]
     public void The_environment_given_is_applied_over_dbchange_s_own_and_a_null_value_removes_the_variable()
     {
-        var (set, removed) = ("DBCHANGE_TEST_SET_" + Guid.NewGuid().ToString("N")[..8], "DBCHANGE_TEST_REMOVED_" + Guid.NewGuid().ToString("N")[..8]);
+        var (set, removed) = ("DBCHANGE_TEST_SET_" + Guid.NewGuid().ToString("N")[..8],
+            "DBCHANGE_TEST_REMOVED_" + Guid.NewGuid().ToString("N")[..8]);
         Environment.SetEnvironmentVariable(removed, "present");
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal) { [set] = "given", [removed] = null };
         try
         {
-            Assert.Equal("given", Assert.IsType<Ran.Exited>(new Command("dotnet", [Assembly, "env", set], TimeSpan.FromMinutes(1)) { Environment = environment }.Run()).Output.Trim());
-            Assert.Equal("<unset>", Assert.IsType<Ran.Exited>(new Command("dotnet", [Assembly, "env", removed], TimeSpan.FromMinutes(1)) { Environment = environment }.Run()).Output.Trim());
-            Assert.Equal("present", Assert.IsType<Ran.Exited>(new Command("dotnet", [Assembly, "env", removed], TimeSpan.FromMinutes(1)).Run()).Output.Trim());
+            Assert.Equal("given",
+                Assert.IsType<Ran.Exited>(new Command("dotnet", [Assembly, "env", set],
+                    TimeSpan.FromMinutes(1)) { Environment = environment }.Run()).Output
+                    .Trim());
+            Assert.Equal("<unset>",
+                Assert.IsType<Ran.Exited>(new Command("dotnet", [Assembly, "env", removed],
+                    TimeSpan.FromMinutes(1)) { Environment = environment }.Run()).Output
+                    .Trim());
+            Assert.Equal("present",
+                Assert.IsType<Ran.Exited>(new Command("dotnet", [Assembly, "env", removed], TimeSpan.FromMinutes(1)).Run()).Output.Trim());
         }
         finally
         {
@@ -147,12 +161,14 @@ public sealed class CommandTests : IDisposable
         }
     }
 
-    /// <summary>A program of the name planted in <paramref name="folder"/>: on Windows a copy of whoami.exe, elsewhere a script that prints "planted".</summary>
+    /// <summary>A program of the name planted in <paramref name="folder"/>: on Windows a copy of whoami.exe, elsewhere a script that prints
+    /// "planted".</summary>
     internal static void Plant(string folder, string name)
     {
         if (OperatingSystem.IsWindows())
         {
-            File.Copy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "whoami.exe"), Path.Combine(folder, name + ".exe"));
+            File.Copy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "whoami.exe"),
+                Path.Combine(folder, name + ".exe"));
         }
         else
         {

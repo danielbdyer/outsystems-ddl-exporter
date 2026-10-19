@@ -14,7 +14,8 @@ namespace DbChange.Io.Tests;
 /// </summary>
 public sealed class LocalStateTests : IDisposable
 {
-    private static readonly string[] Stops = ["Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "Directory.Build.rsp"];
+    private static readonly string[] Stops = ["Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props",
+        "Directory.Build.rsp"];
 
     private readonly Scratch scratch = new();
 
@@ -63,13 +64,14 @@ public sealed class LocalStateTests : IDisposable
         };
 
         var state = new LocalState(scratch.Root);
-        Assert.Contains(Directory.EnumerateFiles(state.Folder, "*", SearchOption.AllDirectories), path => Path.GetFileName(path) != ".gitignore");
+        Assert.Contains(Directory.EnumerateFiles(state.Folder, "*", SearchOption.AllDirectories),
+            path => Path.GetFileName(path) != ".gitignore");
         Assert.Equal("", scratch.Git("status", "--porcelain", "--ignored=no", "--untracked-files=all"));
     }
 
     /// <summary>
-    /// M2 of the pre-M2 review: a log that cannot be written is file.unwritable naming the run's folder. It once threw, and the verb answered
-    /// internal.unexpected, a defect in dbchange with no cause named, for a full disk or a file in the folder's place.
+    /// M2 of the pre-M2 review: a log that cannot be written is file.unwritable naming the run's folder. It once threw, and the verb
+    /// answered internal.unexpected, a defect in dbchange with no cause named, for a full disk or a file in the folder's place.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -87,15 +89,18 @@ public sealed class LocalStateTests : IDisposable
     }
 
     /// <summary>
-    /// N4 of the pre-M2 review: a run's folder, made for its first write, leaves the newest fifty run folders, its own among them, and deletes
-    /// the older ones with what they hold; .dbchange/runs/ once grew by a folder per command for good.
+    /// N4 of the pre-M2 review: a run's folder, made for its first write, leaves the newest fifty run folders, its own among them, and
+    /// deletes the older ones with what they hold; .dbchange/runs/ once grew by a folder per command for good.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_new_run_s_folder_leaves_the_newest_fifty_run_folders()
     {
         var state = new LocalState(scratch.Root);
-        var older = Enumerable.Range(0, 55).Select(i => Path.Combine(state.Runs, "20260925T0000" + i.ToString("D2", System.Globalization.CultureInfo.InvariantCulture) + "Z-1-ab")).ToList();
+        var older = Enumerable.Range(0, 55)
+            .Select(i => Path.Combine(state.Runs,
+                "20260925T0000" + i.ToString("D2", System.Globalization.CultureInfo.InvariantCulture) + "Z-1-ab"))
+            .ToList();
         older.ForEach(run => File.WriteAllText(Path.Combine(Directory.CreateDirectory(run).FullName, "queries.log"), "-- one\n"));
         var newest = Path.Combine(state.Runs, "20260926T000000Z-1-ab");
 
@@ -111,7 +116,8 @@ public sealed class LocalStateTests : IDisposable
         var state = new LocalState(scratch.Root);
 
         Value(state.Made(state.Runs));
-        var elsewhere = Stops.Where(stop => File.Exists(Path.Combine(state.Runs, stop)) || File.Exists(Path.Combine(state.Folder, stop))).ToList();
+        var elsewhere = Stops.Where(stop => File.Exists(Path.Combine(state.Runs, stop)) || File.Exists(Path.Combine(state.Folder, stop)))
+            .ToList();
         Value(state.Made(state.Worktree("0123")));
         var written = Stops.Select(stop => File.ReadAllText(Path.Combine(state.Worktrees, stop))).ToList();
         File.WriteAllText(Path.Combine(state.Worktrees, "Directory.Build.rsp"), "-v:n\n");

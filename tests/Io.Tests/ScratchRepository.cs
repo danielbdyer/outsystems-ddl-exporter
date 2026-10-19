@@ -11,9 +11,10 @@ using Xunit;
 namespace DbChange.Io.Tests;
 
 /// <summary>
-/// An SSDT repository for the verbs (WP 1.7), in a git repository of its own: the golden project with its stop files, a dbchange/environments.json
-/// naming no environment and the sample toolchain ledger, committed as Base; then Customer.Email made mandatory, committed as Head, the
-/// make-mandatory sample change. dbchange runs in this process against it, its tool folder dist/dbchange/ (PublishedTool).
+/// An SSDT repository for the verbs (WP 1.7), in a git repository of its own: the golden project with its stop files, a
+/// dbchange/environments.json naming no environment and the sample toolchain ledger, committed as Base; then Customer.Email made mandatory,
+/// committed as Head, the make-mandatory sample change. dbchange runs in this process against it, its tool folder dist/dbchange/
+/// (PublishedTool).
 /// </summary>
 public sealed class ScratchRepository : IDisposable
 {
@@ -26,10 +27,12 @@ public sealed class ScratchRepository : IDisposable
         Tool = new PublishedTool();
         GoldenProject.CopyTo(Root);
         Ledger(Root);
-        Base = scratch.Commit("the golden project", (".gitignore", ".dbchange/\n"), ("dbchange/environments.json", "{ \"environments\": {} }\n"));
+        Base = scratch.Commit("the golden project", (".gitignore", ".dbchange/\n"),
+            ("dbchange/environments.json", "{ \"environments\": {} }\n"));
         var mandatory = GoldenProject.Change("make-mandatory").Edits.Single();
         mandatory.ApplyTo(Path.Combine(Root, "project"));
-        Head = scratch.Commit("Customer.Email made mandatory", ("project/" + mandatory.File, File.ReadAllText(Path.Combine(Root, "project", mandatory.File))));
+        Head = scratch.Commit("Customer.Email made mandatory",
+            ("project/" + mandatory.File, File.ReadAllText(Path.Combine(Root, "project", mandatory.File))));
     }
 
     public PublishedTool Tool { get; }
@@ -45,13 +48,16 @@ public sealed class ScratchRepository : IDisposable
     /// <summary>dbchange run at the repository's root with --json: its exit and its answer, valid against its schema.</summary>
     public (int Exit, JsonNode Answer) Answer(params string[] arguments) => AnswerAt(Root, arguments);
 
-    /// <summary>dbchange run with <paramref name="root"/> as the repository root and --json: its exit and its answer, valid against its schema.</summary>
-    public (int Exit, JsonNode Answer) AnswerAt(string root, params string[] arguments) => VerbAnswer.Of(new Checkout(root, root, Tool.Folder, Cli.Contract.Version), arguments);
+    /// <summary>dbchange run with <paramref name="root"/> as the repository root and --json: its exit and its answer, valid against its
+    /// schema.</summary>
+    public (int Exit, JsonNode Answer) AnswerAt(string root, params string[] arguments) =>
+        VerbAnswer.Of(new Checkout(root, root, Tool.Folder, Cli.Contract.Version), arguments);
 
     /// <summary>dbchange run at the repository's root.</summary>
     public (int Exit, string Output) Run(params string[] arguments) => RunAt(Root, arguments);
 
-    /// <summary>dbchange run in this process with <paramref name="root"/> as the repository root and dist/dbchange/ as its tool folder: its exit and its output.</summary>
+    /// <summary>dbchange run in this process with <paramref name="root"/> as the repository root and dist/dbchange/ as its tool folder: its
+    /// exit and its output.</summary>
     public (int Exit, string Output) RunAt(string root, params string[] arguments)
     {
         using var output = new MemoryStream();
@@ -60,8 +66,8 @@ public sealed class ScratchRepository : IDisposable
     }
 
     /// <summary>
-    /// A repository root beside this repository's own, under it, whose environments file names environments: each a reference to a connection file,
-    /// under the golden profile; its registry, its runs and its builds are its own.
+    /// A repository root beside this repository's own, under it, whose environments file names environments: each a reference to a
+    /// connection file, under the golden profile; its registry, its runs and its builds are its own.
     /// </summary>
     public string Named(params (string Name, string Connection)[] environments)
     {
@@ -72,10 +78,12 @@ public sealed class ScratchRepository : IDisposable
         var environmentsFile = new JsonObject();
         foreach (var (name, connection) in environments)
         {
-            environmentsFile[name] = new JsonObject { ["host"] = "localhost", ["connection"] = "file:" + connection.Replace('\\', '/'), ["profile"] = "profiles/pipeline.publish.xml" };
+            environmentsFile[name] = new JsonObject { ["host"] = "localhost", ["connection"] = "file:" + connection.Replace('\\', '/'),
+                ["profile"] = "profiles/pipeline.publish.xml" };
         }
 
-        File.WriteAllText(Path.Combine(root, "dbchange", "environments.json"), new JsonObject { ["environments"] = environmentsFile }.ToJsonString());
+        File.WriteAllText(Path.Combine(root, "dbchange", "environments.json"),
+            new JsonObject { ["environments"] = environmentsFile }.ToJsonString());
         return root;
     }
 
@@ -85,6 +93,7 @@ public sealed class ScratchRepository : IDisposable
     private static void Ledger(string root)
     {
         Directory.CreateDirectory(Path.Combine(root, "dbchange", "ledgers"));
-        File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "dbchange", "ledgers", "toolchain.md"), Path.Combine(root, "dbchange", "ledgers", "toolchain.md"));
+        File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "dbchange", "ledgers", "toolchain.md"),
+            Path.Combine(root, "dbchange", "ledgers", "toolchain.md"));
     }
 }

@@ -20,7 +20,8 @@ public sealed class SqlServerFixtureTests
             Assert.NotEqual(registered[0].Name, registered[1].Name);
             foreach (var database in registered)
             {
-                await SqlServerFixture.ExecuteAsync(database.ConnectionString, "CREATE TABLE dbo.Proof (Id INT NOT NULL PRIMARY KEY); INSERT dbo.Proof (Id) VALUES (1);");
+                await SqlServerFixture.ExecuteAsync(database.ConnectionString,
+                    "CREATE TABLE dbo.Proof (Id INT NOT NULL PRIMARY KEY); INSERT dbo.Proof (Id) VALUES (1);");
                 Assert.Equal(1, await SqlServerFixture.ScalarAsync(database.ConnectionString, "SELECT COUNT(*) FROM dbo.Proof;"));
             }
         }

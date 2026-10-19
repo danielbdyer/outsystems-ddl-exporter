@@ -31,14 +31,16 @@ public sealed class InterruptionTests : IDisposable
         using var output = new MemoryStream();
         var clock = Stopwatch.StartNew();
 
-        var exit = Cli.Program.Run(["read", "--from", "ref:HEAD", "--timeout", "1", "--json"], output, new Checkout(scratch.Root, scratch.Root, null, Cli.Contract.Version));
+        var exit = Cli.Program.Run(["read", "--from", "ref:HEAD", "--timeout", "1", "--json"], output,
+            new Checkout(scratch.Root, scratch.Root, null, Cli.Contract.Version));
 
         var answer = JsonNode.Parse(output.ToArray())!;
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), "the interrupted verb answered after " + clock.Elapsed);
         Assert.Equal(130, exit);
         VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
         Assert.Equal(("interrupted", 130), ((string?)answer["outcome"], (int)answer["exit"]!));
-        Assert.Equal("dbchange read stopped after --timeout 1: it ended the programs it had started and released its locks.", (string?)answer["message"]);
+        Assert.Equal("dbchange read stopped after --timeout 1: it ended the programs it had started and released its locks.",
+            (string?)answer["message"]);
         Assert.Empty(answer["findings"]!.AsArray());
         Assert.False(Directory.Exists(state.Worktree(commit)), "the interrupted verb made the worktree");
         GitTests.Failed(FileLock.Take(state.WorktreesLock, TimeSpan.Zero), "lock.timed-out");   // still this test's
@@ -75,15 +77,18 @@ public sealed class InterruptionTests : IDisposable
     [InlineData("--timeout", "1.5", "arguments.timeout")]
     [InlineData("--timeout", "--json", "arguments.timeout")]
     [InlineData("--from", "ref:HEAD", "arguments.missing-flag")]
-    public void A_timeout_that_is_no_whole_number_of_seconds_from_1_to_86400_is_arguments_timeout_at_exit_1(string flag, string value, string code)
+    public void A_timeout_that_is_no_whole_number_of_seconds_from_1_to_86400_is_arguments_timeout_at_exit_1(string flag, string value,
+        string code)
     {
         using var output = new MemoryStream();
 
-        var exit = Cli.Program.Run(["diff", flag, value, "--json"], output, new Checkout(scratch.Root, scratch.Root, null, Cli.Contract.Version));
+        var exit = Cli.Program.Run(["diff", flag, value, "--json"], output,
+            new Checkout(scratch.Root, scratch.Root, null, Cli.Contract.Version));
 
         var answer = JsonNode.Parse(output.ToArray())!;
         Assert.Equal((1, code), (exit, (string?)answer["findings"]![0]!["code"]));
-        Assert.Equal(code == "arguments.timeout", ((string?)answer["findings"]![0]!["remedy"])!.Contains("--timeout 600", StringComparison.Ordinal));
+        Assert.Equal(code == "arguments.timeout",
+            ((string?)answer["findings"]![0]!["remedy"])!.Contains("--timeout 600", StringComparison.Ordinal));
     }
 }
 
@@ -106,7 +111,8 @@ public sealed class InterruptedProcessTests(PublishedTool tool) : IDisposable
         scratch.Commit("first", ("a.sql", "SELECT 1;\n"));
         using var held = GitTests.Ok(FileLock.Take(new LocalState(scratch.Root).WorktreesLock, TimeSpan.Zero));
 
-        (string? Signal, string Cause)[] ways = OperatingSystem.IsWindows() ? [(null, "--timeout 2")] : [("INT", "Ctrl-C"), ("TERM", "SIGTERM")];
+        (string? Signal, string Cause)[] ways = OperatingSystem.IsWindows() ? [(null, "--timeout 2")]
+            : [("INT", "Ctrl-C"), ("TERM", "SIGTERM")];
         foreach (var (signal, cause) in ways)
         {
             var (exit, output) = signal is null ? Timed() : Signalled(signal);
@@ -121,16 +127,22 @@ public sealed class InterruptedProcessTests(PublishedTool tool) : IDisposable
     /// <summary>dbchange read at the repository, given --timeout 2, through io/Command.</summary>
     private (int Exit, string Output) Timed()
     {
-        var ran = Assert.IsType<Ran.Exited>(new Command("dotnet", [Path.Combine(tool.Folder, "dbchange.dll"), "read", "--from", "ref:HEAD", "--timeout", "2", "--json"], TimeSpan.FromMinutes(1)) { Directory = scratch.Root }.Run());
+        var ran = Assert.IsType<Ran.Exited>(new Command("dotnet",
+            [Path.Combine(tool.Folder, "dbchange.dll"), "read", "--from", "ref:HEAD", "--timeout", "2", "--json"],
+            TimeSpan.FromMinutes(1)) { Directory = scratch.Root }.Run());
         return (ran.Code, ran.Output);
     }
 
-    /// <summary>dbchange read at the repository, sent the signal by kill once it has had three seconds to reach its lock wait; a raw process, since the test needs its id while it runs.</summary>
+    /// <summary>dbchange read at the repository, sent the signal by kill once it has had three seconds to reach its lock wait; a raw
+    /// process, since the test needs its id while it runs.</summary>
     private (int Exit, string Output) Signalled(string signal)
     {
-        using var process = Process.Start(new ProcessStartInfo("dotnet", [Path.Combine(tool.Folder, "dbchange.dll"), "read", "--from", "ref:HEAD", "--json"]) { WorkingDirectory = scratch.Root, RedirectStandardOutput = true })!;
+        using var process = Process.Start(new ProcessStartInfo("dotnet",
+            [Path.Combine(tool.Folder, "dbchange.dll"), "read", "--from", "ref:HEAD", "--json"]) { WorkingDirectory = scratch.Root,
+                RedirectStandardOutput = true })!;
         Thread.Sleep(TimeSpan.FromSeconds(3));
-        Assert.IsType<Ran.Exited>(new Command("kill", ["-" + signal, process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)], TimeSpan.FromSeconds(10)).Run());
+        Assert.IsType<Ran.Exited>(new Command("kill",
+            ["-" + signal, process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)], TimeSpan.FromSeconds(10)).Run());
         var output = process.StandardOutput.ReadToEnd();
         Assert.True(process.WaitForExit(TimeSpan.FromSeconds(20)), "dbchange did not stop within twenty seconds of SIG" + signal);
         return (process.ExitCode, output);

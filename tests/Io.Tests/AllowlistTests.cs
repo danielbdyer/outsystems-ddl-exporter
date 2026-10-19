@@ -36,8 +36,10 @@ public sealed class AllowlistTests
 
         var query = SqlServer.AggregateQuery.Of(text, "corpus");
 
-        Assert.True(admitted == query is Result<SqlServer.AggregateQuery>.Ok, (admitted ? "refused: " : "admitted: ") + label + "\n" + query.Match(q => q.Statement, e => e.Message));
-        Assert.All(new[] { query }.OfType<Result<SqlServer.AggregateQuery>.Failed>(), r => Assert.Equal("aggregate-query.refused", r.Error.Code));
+        Assert.True(admitted == query is Result<SqlServer.AggregateQuery>.Ok,
+            (admitted ? "refused: " : "admitted: ") + label + "\n" + query.Match(q => q.Statement, e => e.Message));
+        Assert.All(new[] { query }.OfType<Result<SqlServer.AggregateQuery>.Failed>(),
+            r => Assert.Equal("aggregate-query.refused", r.Error.Code));
     }
 
     /// <summary>Every form the work package names is planted, forbidden and allowed alike, so a corpus trimmed of one fails here.</summary>
@@ -46,12 +48,15 @@ public sealed class AllowlistTests
     [Trait("Value", "P2")]
     public void The_corpus_plants_every_form_the_work_package_names()
     {
-        string[] refused = ["STRING_AGG", "MIN over a bare column", "MAX over a bare column", "AVG over a bare column", "SELECT INTO", "EXEC", "INSERT", "UPDATE", "DELETE",
-            "MERGE", "TRUNCATE", "CREATE", "ALTER", "DROP", "OPENROWSET", "OPENQUERY", "OPENDATASOURCE", "OPENXML", "three-part", "four-part", "two statements",
-            "a forbidden function inside an allowed one", "disguised by comments", "bucket boundary read from the data", "a join boundary read from the data",
-            "a cross join boundary", "a derived table's column as a length's boundary", "a correlated EXISTS boundary", "written as an equality of their difference",
+        string[] refused = ["STRING_AGG", "MIN over a bare column", "MAX over a bare column", "AVG over a bare column", "SELECT INTO",
+            "EXEC", "INSERT", "UPDATE", "DELETE",
+            "MERGE", "TRUNCATE", "CREATE", "ALTER", "DROP", "OPENROWSET", "OPENQUERY", "OPENDATASOURCE", "OPENXML", "three-part",
+            "four-part", "two statements", "a forbidden function inside an allowed one", "disguised by comments",
+            "bucket boundary read from the data", "a join boundary read from the data", "a cross join boundary",
+            "a derived table's column as a length's boundary", "a correlated EXISTS boundary", "written as an equality of their difference",
             "a value computed in a derived table's select list", "a value computed in the select list of IN's subquery"];
-        string[] admitted = ["COUNT of every row", "COUNT_BIG of every row", "COUNT of DISTINCT", "COUNT_BIG of DISTINCT", "SUM of CASE", "MIN over LEN", "MAX over LEN",
+        string[] admitted = ["COUNT of every row", "COUNT_BIG of every row", "COUNT of DISTINCT", "COUNT_BIG of DISTINCT", "SUM of CASE",
+            "MIN over LEN", "MAX over LEN",
             "MIN over DATALENGTH", "MAX over DATALENGTH", "CASE WHEN EXISTS", "an integer literal"];
 
         Assert.DoesNotContain(refused, form => !Cases.Any(c => !c.Admitted && c.Label.Contains(form, StringComparison.Ordinal)));
@@ -73,17 +78,22 @@ public sealed class AllowlistTests
         Assert.InRange(drawn.Count(v => v.Admitted), 40, 360);   // both kinds are drawn, so neither half of the property holds vacuously
 
         // A forbidden variant is refused for its form: it parses, so no variant passes by being unreadable.
-        Variants.Sample(variant => SqlServer.AggregateQuery.Of(variant.Text, "variant").Match(_ => variant.Admitted, r => !variant.Admitted && !r.Message.Contains("does not parse", StringComparison.Ordinal)),
-            iter: 2000, print: variant => (variant.Admitted ? "allowed but refused: " : "forbidden but admitted, or unparsed: ") + variant.Text);
+        Variants.Sample(
+            variant => SqlServer.AggregateQuery.Of(variant.Text, "variant")
+                .Match(_ => variant.Admitted, r => !variant.Admitted && !r.Message.Contains("does not parse", StringComparison.Ordinal)),
+            iter: 2000,
+            print: variant => (variant.Admitted ? "allowed but refused: " : "forbidden but admitted, or unparsed: ") + variant.Text);
     }
 
-    /// <summary>A refusal says where the query breaks the allowlist and which form it is; it quotes none of the query's literals, which a caller may have taken from anywhere.</summary>
+    /// <summary>A refusal says where the query breaks the allowlist and which form it is; it quotes none of the query's literals, which a
+    /// caller may have taken from anywhere.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("SELECT MAX(Email) FROM dbo.Customer WHERE Email = N'planted-7f3a';", "line 1, column 8", "MAX over a bare column")]
     [InlineData("SELECT COUNT(*)\nFROM dbo.Customer\nWHERE STRING_AGG(Email, N'planted-7f3a') IS NULL;", "line 3, column 7", "STRING_AGG")]
     [InlineData("SELECT COUNT(*) FROM Orders.dbo.Customer WHERE Email = N'planted-7f3a';", "line 1, column 22", "a name of 3 parts")]
-    [InlineData("SELECT COUNT(*) FROM dbo.Customer WHERE Email = N'planted-7f3a'; DELETE FROM dbo.Customer;", "2 statements", "one statement at a time")]
+    [InlineData("SELECT COUNT(*) FROM dbo.Customer WHERE Email = N'planted-7f3a'; DELETE FROM dbo.Customer;", "2 statements",
+        "one statement at a time")]
     [Trait("Value", "X2")]
     public void A_refusal_names_the_form_and_its_place_and_quotes_no_literal(string text, string place, string form)
     {
@@ -94,12 +104,14 @@ public sealed class AllowlistTests
         new PlantedValue("planted-7f3a").AbsentFrom(error);
     }
 
-    /// <summary>What an admitted query runs is the statement the allowlist checked, as ScriptDom writes it back: no comment and no batch separator reaches SQL Server.</summary>
+    /// <summary>What an admitted query runs is the statement the allowlist checked, as ScriptDom writes it back: no comment and no batch
+    /// separator reaches SQL Server.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void An_admitted_query_runs_the_statement_it_was_checked_as_without_comments_or_a_batch_separator()
     {
-        var query = Expect.Value(SqlServer.AggregateQuery.Of("/* one */ select count_big( * ) -- two\nfrom dbo.Customer ;\nGO\n", "dbo.Customer Presence"));
+        var query = Expect.Value(SqlServer.AggregateQuery.Of("/* one */ select count_big( * ) -- two\nfrom dbo.Customer ;\nGO\n",
+            "dbo.Customer Presence"));
 
         Assert.Equal("SELECT count_big(*)\nFROM   dbo.Customer", query.Statement);
     }
@@ -113,15 +125,18 @@ public sealed class AllowlistTests
     [Trait("Category", "fast")]
     public void A_query_built_as_ScriptDom_fragments_is_checked_as_built_and_runs_as_the_same_query_read_from_text()
     {
-        var built = Expect.Value(SqlServer.AggregateQuery.Of(Built(Call("COUNT_BIG", new ColumnReferenceExpression { ColumnType = ColumnType.Wildcard })), "dbo.Customer Rows"));
+        var built = Expect.Value(SqlServer.AggregateQuery.Of(
+            Built(Call("COUNT_BIG", new ColumnReferenceExpression { ColumnType = ColumnType.Wildcard })), "dbo.Customer Rows"));
         var read = Expect.Value(SqlServer.AggregateQuery.Of("SELECT COUNT_BIG(*) FROM dbo.Customer;", "dbo.Customer Rows"));
-        var refused = Expect.Failed(SqlServer.AggregateQuery.Of(Built(Call("MAX", ColumnOf("Email"))), "dbo.Customer.Email Fits"), "aggregate-query.refused");
+        var refused = Expect.Failed(SqlServer.AggregateQuery.Of(Built(Call("MAX", ColumnOf("Email"))), "dbo.Customer.Email Fits"),
+            "aggregate-query.refused");
 
         Assert.Equal(read.Statement, built.Statement);
         Assert.Equal("The query dbo.Customer.Email Fits is refused at its FunctionCall: MAX over a bare column.", refused.Message);
     }
 
-    /// <summary>An object's name as ScriptDom reads it: its parts unquoted, a doubled bracket read as one, and no name past four parts.</summary>
+    /// <summary>An object's name as ScriptDom reads it: its parts unquoted, a doubled bracket read as one, and no name past four
+    /// parts.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("[dbo].[Cust]]omer]", "dbo|Cust]omer")]
@@ -131,7 +146,8 @@ public sealed class AllowlistTests
     public void An_object_s_name_reads_into_its_parts_unquoted(string name, string? parts) =>
         Assert.Equal(parts, TSql.NameParts(name) is { } read ? string.Join('|', read) : null);
 
-    /// <summary>SELECT item FROM dbo.Customer, built in code as M2's builders build a query, so no node carries a line or a column.</summary>
+    /// <summary>SELECT item FROM dbo.Customer, built in code as M2's builders build a query, so no node carries a line or a
+    /// column.</summary>
     private static SelectStatement Built(ScalarExpression item) => new()
     {
         QueryExpression = new QuerySpecification
@@ -139,16 +155,19 @@ public sealed class AllowlistTests
             SelectElements = { new SelectScalarExpression { Expression = item } },
             FromClause = new FromClause
             {
-                TableReferences = { new NamedTableReference { SchemaObject = new SchemaObjectName { Identifiers = { new Identifier { Value = "dbo" }, new Identifier { Value = "Customer" } } } } },
+                TableReferences = { new NamedTableReference { SchemaObject = new SchemaObjectName { Identifiers = {
+                    new Identifier { Value = "dbo" }, new Identifier { Value = "Customer" } } } } },
             },
         },
     };
 
-    private static FunctionCall Call(string name, ScalarExpression parameter) => new() { FunctionName = new Identifier { Value = name }, Parameters = { parameter } };
+    private static FunctionCall Call(string name, ScalarExpression parameter) =>
+        new() { FunctionName = new Identifier { Value = name }, Parameters = { parameter } };
 
     private static ColumnReferenceExpression ColumnOf(string name) => new()
     {
-        ColumnType = ColumnType.Regular, MultiPartIdentifier = new MultiPartIdentifier { Identifiers = { new Identifier { Value = name } } },
+        ColumnType = ColumnType.Regular,
+        MultiPartIdentifier = new MultiPartIdentifier { Identifiers = { new Identifier { Value = name } } },
     };
 
     private static List<(bool, string, string)> Read()
@@ -159,7 +178,10 @@ public sealed class AllowlistTests
             if (line.StartsWith("=== ", StringComparison.Ordinal))
             {
                 var (kind, label) = (line[4..].Split(':', 2)[0], line[4..].Split(':', 2)[1].Trim());
-                cases.Add((kind == "admit" ? true : kind == "refuse" ? false : throw new InvalidDataException("a case is admit or refuse: " + line), label, ""));
+                cases.Add((
+                    kind == "admit" ? true : kind == "refuse" ? false
+                        : throw new InvalidDataException("a case is admit or refuse: " + line),
+                    label, ""));
             }
             else if (cases.Count > 0)
             {
@@ -174,14 +196,19 @@ public sealed class AllowlistTests
     /// <summary>A generated query: its text, and whether nothing forbidden went into it.</summary>
     public sealed record Variant(string Text, bool Admitted);
 
-    private static readonly Gen<string[]> Column = Gen.OneOfConst("Email", "Region", "c.Email", "c.Region", "[c].[Name]").Select(c => (string[])[c]);
+    private static readonly Gen<string[]> Column = Gen.OneOfConst("Email", "Region", "c.Email", "c.Region", "[c].[Name]")
+        .Select(c => (string[])[c]);
 
     /// <summary>A name of three or four parts where a column goes.</summary>
-    private static readonly Gen<string[]> Overnamed = Gen.OneOfConst("dbo.Customer.Email", "Orders.dbo.Customer.Email").Select(c => (string[])[c]);
+    private static readonly Gen<string[]> Overnamed = Gen.OneOfConst("dbo.Customer.Email", "Orders.dbo.Customer.Email")
+        .Select(c => (string[])[c]);
 
-    private static readonly Gen<string> Literal = Gen.OneOf(Gen.Int[0, 500].Select(n => n.ToString(System.Globalization.CultureInfo.InvariantCulture)), Gen.OneOfConst("N'West'", "'x@example.invalid'"));
+    private static readonly Gen<string> Literal = Gen.OneOf(
+        Gen.Int[0, 500].Select(n => n.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        Gen.OneOfConst("N'West'", "'x@example.invalid'"));
 
-    /// <summary>A comparison the allowlist admits, over the columns given: null tests, lengths against literals, LIKE, TRY_CONVERT, IN, EXISTS, and = or &lt;&gt; against another column.</summary>
+    /// <summary>A comparison the allowlist admits, over the columns given: null tests, lengths against literals, LIKE, TRY_CONVERT, IN,
+    /// EXISTS, and = or &lt;&gt; against another column.</summary>
     private static Gen<string[]> Comparison(Gen<string[]> column) => Gen.OneOf(
         column.Select(c => (string[])[.. c, "IS", "NULL"]),
         Gen.Select(column, Literal).Select((c, n) => (string[])["LEN", "(", .. c, ")", ">", n]),
@@ -197,7 +224,8 @@ public sealed class AllowlistTests
     /// </summary>
     private static readonly Gen<string[]> Forbidden = Gen.OneOf(
         Comparison(Overnamed).Where(c => c[0] != "EXISTS"),
-        Column.Select(c => (string[])["LEN", "(", .. c, ")", ">", "(", "SELECT", "MAX", "(", "LEN", "(", "Email", ")", ")", "FROM", "dbo.Customer", ")"]),
+        Column.Select(c => (string[])["LEN", "(", .. c, ")", ">", "(", "SELECT", "MAX", "(", "LEN", "(", "Email", ")", ")", "FROM",
+            "dbo.Customer", ")"]),
         Column.Select(c => (string[])["CONVERT", "(", "int", ",", .. c, ")", ">", "0"]),
         Column.Select(c => (string[])["LEN", "(", "STRING_AGG", "(", .. c, ",", "N','", ")", ")", ">", "0"]),
         Column.Select(c => (string[])[.. c, ">", "@x"]),
@@ -208,13 +236,15 @@ public sealed class AllowlistTests
         Column.Select(c => (string[])["ABS", "(", .. c, "-", "a.Balance", ")", "+", .. c, "-", "a.Balance", "=", "0"]),
         Column.Select(c => (string[])["NULLIF", "(", .. c, ",", "a.Balance", ")", "IS", "NULL"]));
 
-    /// <summary>The predicate given, inside up to <paramref name="depth"/> admitted layers: NOT, AND or OR beside an admitted comparison, EXISTS around it.</summary>
+    /// <summary>The predicate given, inside up to <paramref name="depth"/> admitted layers: NOT, AND or OR beside an admitted comparison,
+    /// EXISTS around it.</summary>
     private static Gen<string[]> Nested(Gen<string[]> inner, int depth) => depth == 0 ? inner : Gen.OneOf(
         inner,
         Nested(inner, depth - 1).Select(p => (string[])["NOT", "(", .. p, ")"]),
         Gen.Select(Nested(inner, depth - 1), Comparison(Column), Gen.Bool, Gen.OneOfConst("AND", "OR")).Select((p, q, first, and) =>
             first ? (string[])["(", .. p, ")", and, "(", .. q, ")"] : ["(", .. q, ")", and, "(", .. p, ")"]),
-        Nested(inner, depth - 1).Select(p => (string[])["EXISTS", "(", "SELECT", "1", "FROM", "dbo.Account", "AS", "a", "WHERE", .. p, ")"]));
+        Nested(inner, depth - 1)
+            .Select(p => (string[])["EXISTS", "(", "SELECT", "1", "FROM", "dbo.Account", "AS", "a", "WHERE", .. p, ")"]));
 
     private static readonly Gen<string[]> Predicate = Nested(Comparison(Column), 3);
 
@@ -224,17 +254,20 @@ public sealed class AllowlistTests
     /// <summary>The items that carry a predicate: SUM of CASE, and CASE WHEN EXISTS.</summary>
     private static Gen<string[]> Counting(Gen<string[]> predicate) => Gen.OneOf(
         predicate.Select(p => (string[])["SUM", "(", "CASE", "WHEN", .. p, "THEN", "1", "ELSE", "0", "END", ")"]),
-        predicate.Select(p => (string[])["CASE", "WHEN", "EXISTS", "(", "SELECT", "1", "FROM", "dbo.Customer", "AS", "c", "WHERE", .. p, ")", "THEN", "1", "ELSE", "0", "END"]));
+        predicate.Select(p => (string[])["CASE", "WHEN", "EXISTS", "(", "SELECT", "1", "FROM", "dbo.Customer", "AS", "c", "WHERE", .. p,
+            ")", "THEN", "1", "ELSE", "0", "END"]));
 
     /// <summary>The items that carry a column: COUNT or COUNT_BIG of DISTINCT it, MIN or MAX over its LEN or DATALENGTH.</summary>
     private static Gen<string[]> Measuring(Gen<string[]> column) => Gen.OneOf(
         Gen.Select(Gen.OneOfConst("COUNT", "COUNT_BIG"), column).Select((f, c) => (string[])[f, "(", "DISTINCT", .. c, ")"]),
-        Gen.Select(Gen.OneOfConst("MIN", "MAX"), Gen.OneOfConst("LEN", "DATALENGTH"), column).Select((m, l, c) => (string[])[m, "(", l, "(", .. c, ")", ")"]));
+        Gen.Select(Gen.OneOfConst("MIN", "MAX"), Gen.OneOfConst("LEN", "DATALENGTH"), column)
+            .Select((m, l, c) => (string[])[m, "(", l, "(", .. c, ")", ")"]));
 
     /// <summary>An item in up to two pairs of parentheses, with an alias or none.</summary>
     private static Gen<string[]> Written(Gen<string[]> item) =>
         Gen.Select(item, Gen.Int[0, 2], Gen.OneOfConst("", "AS n", "AS [rows]", "total")).Select((i, parentheses, alias) =>
-            (string[])[.. Enumerable.Repeat("(", parentheses), .. i, .. Enumerable.Repeat(")", parentheses), .. alias.Split(' ', StringSplitOptions.RemoveEmptyEntries)]);
+            (string[])[.. Enumerable.Repeat("(", parentheses), .. i, .. Enumerable.Repeat(")", parentheses),
+                .. alias.Split(' ', StringSplitOptions.RemoveEmptyEntries)]);
 
     private static readonly Gen<string[]> Item = Written(Gen.OneOf(
         Counting(Predicate),
@@ -251,28 +284,35 @@ public sealed class AllowlistTests
         Column,
         Gen.Const((string[])["N'x'"])));
 
-    private static readonly Gen<string[]> Table = Gen.OneOfConst("dbo.Customer AS c", "[dbo].[Customer] AS c", "Customer AS c", "dbo.Customer c",
-        "dbo.Customer AS c LEFT OUTER JOIN dbo.Account AS a ON a.Id = c.AccountId", "dbo.Customer AS c CROSS JOIN ( SELECT Id , MAX ( LEN ( Name ) ) AS m FROM dbo.Account GROUP BY Id ) AS d")
+    private static readonly Gen<string[]> Table = Gen.OneOfConst("dbo.Customer AS c", "[dbo].[Customer] AS c", "Customer AS c",
+        "dbo.Customer c",
+        "dbo.Customer AS c LEFT OUTER JOIN dbo.Account AS a ON a.Id = c.AccountId",
+        "dbo.Customer AS c CROSS JOIN ( SELECT Id , MAX ( LEN ( Name ) ) AS m FROM dbo.Account GROUP BY Id ) AS d")
         .Select(t => t.Split(' '));
 
-    /// <summary>A table the allowlist refuses: a name of too many parts, a hint, a rowset function; a join on a boundary read from the data; a value computed in a derived table.</summary>
+    /// <summary>A table the allowlist refuses: a name of too many parts, a hint, a rowset function; a join on a boundary read from the
+    /// data; a value computed in a derived table.</summary>
     private static readonly Gen<string[]> ForbiddenTable = Gen.OneOfConst(
         "Orders.dbo.Customer AS c", "Linked.Orders.dbo.Customer AS c", "dbo.Customer AS c WITH (NOLOCK)",
         "OPENROWSET ( 'SQLNCLI' , 'Server=elsewhere;Trusted_Connection=yes;' , 'SELECT 1' ) AS c", "OPENQUERY ( Linked , 'SELECT 1' ) AS c",
         "OPENDATASOURCE ( 'SQLNCLI' , 'Data Source=elsewhere' ).Orders.dbo.Customer AS c", "OPENXML ( @doc , N'/root' , 1 ) AS c",
-        "dbo.Customer AS c INNER JOIN dbo.Account AS a ON c.Id <= a.Balance", "dbo.Customer AS c JOIN dbo.Account AS a ON c.Id BETWEEN 1 AND a.Balance",
+        "dbo.Customer AS c INNER JOIN dbo.Account AS a ON c.Id <= a.Balance",
+        "dbo.Customer AS c JOIN dbo.Account AS a ON c.Id BETWEEN 1 AND a.Balance",
         "dbo.Customer AS c INNER JOIN dbo.Account AS a ON a.Id = c.AccountId AND c.Id <= TRY_CONVERT ( int , a.Phone )",
         "dbo.Customer AS c INNER JOIN ( SELECT MAX ( LEN ( Email ) ) AS m FROM dbo.Customer ) AS d ON LEN ( c.Email ) > d.m",
         "( SELECT c.Id - a.Balance AS m FROM dbo.Customer AS c CROSS JOIN dbo.Account AS a ) AS c",
-        "dbo.Customer AS c CROSS JOIN ( SELECT TOP 1 ABS ( Balance ) AS m FROM dbo.Account ) AS d").Select(t => t.Split(' '));
+        "dbo.Customer AS c CROSS JOIN ( SELECT TOP 1 ABS ( Balance ) AS m FROM dbo.Account ) AS d")
+        .Select(t => t.Split(' '));
 
     /// <summary>A form that turns the query into something else, and whether it follows the select list (INTO) or the statement.</summary>
     private static readonly Gen<(string[] Tokens, bool AfterItems)> Decoration = Gen.OneOf(
         Gen.OneOfConst("INTO #leak", "INTO dbo.Leak").Select(into => (into.Split(' '), true)),
-        Gen.OneOfConst("; SELECT 1", "; DELETE FROM dbo.Customer", "; EXEC sp_who", "OPTION ( MAXDOP 1 )", "FOR XML PATH", "UNION ALL SELECT 1", "\nGO\nSELECT 1")
+        Gen.OneOfConst("; SELECT 1", "; DELETE FROM dbo.Customer", "; EXEC sp_who", "OPTION ( MAXDOP 1 )", "FOR XML PATH",
+            "UNION ALL SELECT 1", "\nGO\nSELECT 1")
             .Select(after => (after.Split(' '), false)));
 
-    /// <summary>What may stand between two tokens: space, a line break, a tab, a block comment, or a line comment and its line break.</summary>
+    /// <summary>What may stand between two tokens: space, a line break, a tab, a block comment, or a line comment and its line
+    /// break.</summary>
     private static readonly string[] Gaps = [" ", " ", " ", "\n", "\t", "  ", " /* note */ ", "/**/", " -- note\n", "\r\n"];
 
     /// <summary>
@@ -280,8 +320,9 @@ public sealed class AllowlistTests
     /// table, the WHERE clause, or a decoration of the statement.
     /// </summary>
     private static readonly Gen<Variant> Variants = Gen.Select(
-        Gen.Int[0, 7], Gen.Select(Item.Array[1, 3], Gen.Int[0, 2], ForbiddenItem), Gen.Select(Table, ForbiddenTable), Gen.Select(Predicate, ForbiddenPredicate, Gen.Bool),
-        Decoration, Gen.Int[0, 1 << 20].Array[128]).Select((slot, items, tables, predicates, decoration, noise) =>
+        Gen.Int[0, 7], Gen.Select(Item.Array[1, 3], Gen.Int[0, 2], ForbiddenItem), Gen.Select(Table, ForbiddenTable),
+        Gen.Select(Predicate, ForbiddenPredicate, Gen.Bool), Decoration, Gen.Int[0, 1 << 20].Array[128])
+        .Select((slot, items, tables, predicates, decoration, noise) =>
         {
             var (allowed, at, forbidden) = items;
             string[][] selected = [.. allowed.Select((item, i) => slot == 4 && i == at % allowed.Length ? forbidden : item)];
@@ -297,7 +338,8 @@ public sealed class AllowlistTests
             return new Variant(Written(tokens, noise), slot < 4);
         });
 
-    /// <summary>The tokens with a gap the noise picks between each two, and each word in the case the noise picks; a literal, a variable or a temporary table as it is.</summary>
+    /// <summary>The tokens with a gap the noise picks between each two, and each word in the case the noise picks; a literal, a variable or
+    /// a temporary table as it is.</summary>
     private static string Written(IReadOnlyList<string> tokens, int[] noise) => string.Concat(tokens.Select((token, i) =>
     {
         var draw = noise[i % noise.Length];
