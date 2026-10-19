@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using DbChange.Kernel;
 using Microsoft.SqlServer.Dac.Model;
+using Column = Microsoft.SqlServer.Dac.Model.Column;
 using Permission = Microsoft.SqlServer.Dac.Model.Permission;
 
 namespace DbChange.Io;

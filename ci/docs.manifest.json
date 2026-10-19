@@ -214,6 +214,16 @@
       "ancestor": ["archive/v2/scripts/warm-sql.sh"]
     },
     {
+      "path": "ci/readside.sh",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the SQL lane on Ubuntu", "regenerating WP 3.1's read-side facts"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/src/Projection.Adapters.Sql/ReadSide.fs", "archive/v2/src/Projection.Targets.Json/CatalogCodec.fs"]
+    },
+    {
       "path": "ci/budgets.json",
       "kind": "hand",
       "owner": "tool",
