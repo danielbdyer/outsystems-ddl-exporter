@@ -19,7 +19,8 @@ public readonly record struct DacFxVersion : IComparable<DacFxVersion>
     public static Result<DacFxVersion> Of(string? text) =>
         text?.Split('.') is { Length: >= 2 and <= 4 } groups && groups.All(group => group.Length > 0 && group.All(char.IsAsciiDigit))
             ? new DacFxVersion(text)
-            : new Error("toolchain.dacfx-version", $"'{text}' is not a DacFx release version.", "Name the DacFx package version, such as 170.5.96.");
+            : new Error("toolchain.dacfx-version", $"'{text}' is not a DacFx release version.",
+                "Name the DacFx package version, such as 170.5.96.");
 
     public int CompareTo(DacFxVersion other)
     {
@@ -35,7 +36,8 @@ public readonly record struct DacFxVersion : IComparable<DacFxVersion>
         return mine.Length.CompareTo(theirs.Length) is var count and not 0 ? count : string.CompareOrdinal(ToString(), other.ToString());
     }
 
-    public override string ToString() => _text ?? throw new InvalidOperationException("default(DacFxVersion) is not a version; make one with DacFxVersion.Of.");
+    public override string ToString() =>
+        _text ?? throw new InvalidOperationException("default(DacFxVersion) is not a version; make one with DacFxVersion.Of.");
 
     /// <summary>Each group without its leading zeros, so a longer group is the larger number.</summary>
     private string[] Groups() => [.. ToString().Split('.').Select(group => group.TrimStart('0'))];
@@ -78,8 +80,10 @@ public abstract record Pin
         _ => null,
         pin => committed == pin.Release || committed == pin.Before ? null : new Error(
             "toolchain.outside-window",
-            $"The committed DacFx, {committed}, is neither the pinned release {pin.Release} nor the release before it{(pin.Before is { } b ? ", " + b : "")}.",
-            $"Rebuild dbchange with ci/publish against DacFx {pin.Release}, or record the Octopus step's new DacFx release in dbchange/ledgers/toolchain.md."));
+            $"The committed DacFx, {committed}, is neither the pinned release {pin.Release}"
+            + $" nor the release before it{(pin.Before is { } b ? ", " + b : "")}.",
+            $"Rebuild dbchange with ci/publish against DacFx {pin.Release},"
+            + " or record the Octopus step's new DacFx release in dbchange/ledgers/toolchain.md."));
 
     /// <summary>No DacFx release pinned: the ledger's row reads UNPINNED, or the SSDT repository commits no ledger.</summary>
     public sealed record Unpinned : Pin

@@ -22,7 +22,8 @@ public sealed record Error
                 nameof(code));
         var word = code[..code.IndexOf('.', StringComparison.Ordinal)];
         Category = ErrorCode.Parse(word) ?? throw new ArgumentException(
-            $"'{code}' names the category '{word}', which ErrorCategory does not hold; add the member and its exit in cli/Contract.cs, or use a category it holds.",
+            $"'{code}' names the category '{word}', which ErrorCategory does not hold;"
+            + " add the member and its exit in cli/Contract.cs, or use a category it holds.",
             nameof(code));
         Message = Present(message, nameof(message));
         Remedy = Present(remedy, nameof(remedy));

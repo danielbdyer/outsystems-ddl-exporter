@@ -37,8 +37,8 @@ public sealed record Rename(ElementKey Before, ElementKey After) : IComparable<R
 /// puts no key in two of the lists; a Change built by hand (check drift's empty set of columns, Drift.Of's columns) keeps that by its
 /// builder's care, since the positional constructor checks nothing.
 /// </summary>
-public sealed record Change(SortedArray<Element> Created, SortedArray<Element> Dropped, SortedArray<Rename> Renamed, SortedArray<Change.Alteration> Altered,
-    SortedArray<Rename> CaseOnlyRenamed = default)
+public sealed record Change(SortedArray<Element> Created, SortedArray<Element> Dropped, SortedArray<Rename> Renamed,
+    SortedArray<Change.Alteration> Altered, SortedArray<Rename> CaseOnlyRenamed = default)
 {
     public bool IsEmpty => Created.Count + Dropped.Count + Renamed.Count + Altered.Count == 0;
 
@@ -58,7 +58,8 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
     /// renamed, altered, and matched in letter case alone. A model in which two elements share a key under the collation is the error
     /// model.duplicate-key.
     /// </summary>
-    public static Result<Change> Between(SortedArray<Element> before, SortedArray<Element> after, SortedArray<Rename> renames, Collation collation)
+    public static Result<Change> Between(SortedArray<Element> before, SortedArray<Element> after, SortedArray<Rename> renames,
+        Collation collation)
     {
         var comparer = ElementKey.Comparer(collation);
         if ((Duplicate(before, comparer, collation) ?? Duplicate(after, comparer, collation)) is { } error)
@@ -83,7 +84,8 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
         private readonly ILookup<ElementKey, ElementKey> next;
         private readonly Dictionary<ElementKey, Place> places = [];
 
-        public Images(SortedArray<Element> before, SortedArray<Element> after, SortedArray<Rename> renames, IEqualityComparer<ElementKey> comparer)
+        public Images(SortedArray<Element> before, SortedArray<Element> after, SortedArray<Rename> renames,
+            IEqualityComparer<ElementKey> comparer)
         {
             was = before.ToDictionary(e => e.Key, comparer);
             now = after.ToDictionary(e => e.Key, comparer);
@@ -173,7 +175,8 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
     /// ordinally at its last level), and altered (continued elements that differ property by property or relationship by
     /// relationship, their old targets read through the images).
     /// </summary>
-    private static Change Partition(SortedArray<Element> before, SortedArray<Element> after, Images images, Dictionary<ElementKey, Element> continues, IEqualityComparer<ElementKey> comparer)
+    private static Change Partition(SortedArray<Element> before, SortedArray<Element> after, Images images,
+        Dictionary<ElementKey, Element> continues, IEqualityComparer<ElementKey> comparer)
     {
         var continued = continues.Values.Select(e => e.Key).ToHashSet();
         var pairs = continues.Select(c => (Was: c.Value, Now: images.At(c.Key)!)).ToList();
@@ -182,12 +185,14 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
             SortedArray.Of(before.Where(e => !continued.Contains(e.Key))),
             SortedArray.Of(pairs.Where(p => images.Claimed(p.Was.Key) == Claim.Renamed).Select(p => new Rename(p.Was.Key, p.Now.Key))),
             SortedArray.Of(pairs.Select(p => AlterationOf(p.Was, p.Now, images.Image, comparer)).OfType<Alteration>()),
-            SortedArray.Of(pairs.Where(p => images.Claimed(p.Was.Key) == Claim.Live && p.Was.Key.Name != p.Now.Key.Name).Select(p => new Rename(p.Was.Key, p.Now.Key))));
+            SortedArray.Of(pairs.Where(p => images.Claimed(p.Was.Key) == Claim.Live && p.Was.Key.Name != p.Now.Key.Name)
+                .Select(p => new Rename(p.Was.Key, p.Now.Key))));
     }
 
     // How an element is altered from the one it continues as, its old targets read through the renames and compared under the collation;
     // null when alike.
-    private static Alteration? AlterationOf(Element was, Element now, Func<ElementKey, ElementKey> image, IEqualityComparer<ElementKey> comparer)
+    private static Alteration? AlterationOf(Element was, Element now, Func<ElementKey, ElementKey> image,
+        IEqualityComparer<ElementKey> comparer)
     {
         var properties = SortedArray.Of(was.Properties.Select(p => p.Name).Union(now.Properties.Select(p => p.Name))
             .Select(name => new Property(name, was[name], now[name]))
@@ -199,8 +204,10 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
     }
 
     /// <summary>Whether two target lists name the same objects in the same order under the collation.</summary>
-    private static bool SameTargets(IReadOnlyList<Element.Relationship.Target> imaged, SortedArray<Element.Relationship.Target> after, IEqualityComparer<ElementKey> comparer) =>
-        imaged.Count == after.Count && imaged.Zip(after).All(pair => pair.First.Position == pair.Second.Position && comparer.Equals(pair.First.Key, pair.Second.Key));
+    private static bool SameTargets(IReadOnlyList<Element.Relationship.Target> imaged, SortedArray<Element.Relationship.Target> after,
+        IEqualityComparer<ElementKey> comparer) =>
+        imaged.Count == after.Count && imaged.Zip(after)
+            .All(pair => pair.First.Position == pair.Second.Position && comparer.Equals(pair.First.Key, pair.Second.Key));
 
     private static SortedArray<Element.Relationship.Target> Targets(Element element, string name) =>
         element.Relationships.FirstOrDefault(r => r.Name == name)?.Targets ?? default;
@@ -212,12 +219,14 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
         var seen = new HashSet<ElementKey>(comparer);
         return model.Where(e => !seen.Add(e.Key)).Select(e => new Error(
             "model.duplicate-key",
-            "Two elements of one model have the key " + e.Key + (collation.IsCaseSensitive ? "." : " under " + collation.Name + ", which reads letter case as one name."),
+            "Two elements of one model have the key " + e.Key
+                + (collation.IsCaseSensitive ? "." : " under " + collation.Name + ", which reads letter case as one name."),
             "Report the model's source: a key names one element, so what read this model into elements has a defect.")).FirstOrDefault();
     }
 
     /// <summary>An element in both models that is altered: its key after, and each property and relationship that differs.</summary>
-    public sealed record Alteration(ElementKey Key, SortedArray<Property> Properties, SortedArray<Relationship> Relationships) : IComparable<Alteration>
+    public sealed record Alteration(ElementKey Key, SortedArray<Property> Properties, SortedArray<Relationship> Relationships)
+        : IComparable<Alteration>
     {
         public int CompareTo(Alteration? other) =>
             other is null ? 1
@@ -239,7 +248,8 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
     }
 
     /// <summary>A relationship that differs: its targets before and after, empty where the element has none.</summary>
-    public sealed record Relationship(string Name, SortedArray<Element.Relationship.Target> Before, SortedArray<Element.Relationship.Target> After)
+    public sealed record Relationship(string Name, SortedArray<Element.Relationship.Target> Before,
+        SortedArray<Element.Relationship.Target> After)
         : IComparable<Relationship>
     {
         public int CompareTo(Relationship? other) =>

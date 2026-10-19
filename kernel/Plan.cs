@@ -186,7 +186,8 @@ public abstract record Drift
             return new InSync();
         }
 
-        var tables = plan.Operations.Where(o => o.Kind is PlanOperationKind.Alter or PlanOperationKind.TableRebuild && o.Key.Type == "Table").Select(o => o.Key)
+        var tables = plan.Operations
+            .Where(o => o.Kind is PlanOperationKind.Alter or PlanOperationKind.TableRebuild && o.Key.Type == "Table").Select(o => o.Key)
             .ToHashSet(ElementKey.Comparer(collation));
         return Change.Between(target, package, [], collation).Map(change => (Drift)new Differs(plan, ColumnsUnder(change, tables)));
     }
@@ -200,7 +201,8 @@ public abstract record Drift
             SortedArray.Of(change.Created.Where(e => Under(e.Key))),
             SortedArray.Of(change.Dropped.Where(e => Under(e.Key))),
             [],
-            SortedArray.Of(change.Altered.Where(a => Under(a.Key)).Select(a => a with { Properties = SortedArray.Of(a.Properties.Where(p => p.Name != Normalized)) })
+            SortedArray.Of(change.Altered.Where(a => Under(a.Key))
+                .Select(a => a with { Properties = SortedArray.Of(a.Properties.Where(p => p.Name != Normalized)) })
                 .Where(a => a.Properties.Count + a.Relationships.Count > 0)),
             SortedArray.Of(change.CaseOnlyRenamed.Where(r => Under(r.After))));
     }
@@ -225,9 +227,11 @@ public readonly record struct Platform
 
     /// <summary>The platform DacFx names <paramref name="name"/>, or model.platform for a name of other than letters and digits.</summary>
     public static Result<Platform> Of(string? name) => name is { Length: > 0 } && name.All(char.IsAsciiLetterOrDigit) ? new Platform(name)
-        : new Error("model.platform", "'" + name + "' is no DacFx platform name, such as Sql160.", "Report the package's source with this error; DacFx names each platform it knows.");
+        : new Error("model.platform", "'" + name + "' is no DacFx platform name, such as Sql160.",
+            "Report the package's source with this error; DacFx names each platform it knows.");
 
-    public override string ToString() => _name ?? throw new InvalidOperationException("default(Platform) is not a platform; make one with Platform.Of.");
+    public override string ToString() =>
+        _name ?? throw new InvalidOperationException("default(Platform) is not a platform; make one with Platform.Of.");
 }
 
 /// <summary>How dbchange writes one of DacFx's names in a code or in JSON.</summary>

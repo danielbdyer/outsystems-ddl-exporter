@@ -21,14 +21,18 @@ public enum DacFxMessageType
 /// </summary>
 public sealed record DacFxMessage : IComparable<DacFxMessage>
 {
-    private static readonly Regex Line = new(@"\A(?<type>Error|Warning|Message)\s+(?<prefix>[A-Za-z]+)(?<number>[0-9]{1,9})\s*:\s*(?<text>.*?)\s*\z", RegexOptions.CultureInvariant);
+    private static readonly Regex Line = new(
+        @"\A(?<type>Error|Warning|Message)\s+(?<prefix>[A-Za-z]+)(?<number>[0-9]{1,9})\s*:\s*(?<text>.*?)\s*\z",
+        RegexOptions.CultureInvariant);
 
     private static readonly Regex Msg = new(@"\bMsg ([0-9]{1,9})\b", RegexOptions.CultureInvariant);
 
     public DacFxMessage(DacFxMessageType type, string prefix, int number, string text, string? elementType)
     {
         (MessageType, Prefix, Number, Text, ElementType) = (type, prefix, number, text, elementType);
-        SqlServerNumber = Msg.Match(text) is { Success: true } quoted ? int.Parse(quoted.Groups[1].Value, CultureInfo.InvariantCulture) : null;
+        SqlServerNumber = Msg.Match(text) is { Success: true } quoted
+            ? int.Parse(quoted.Groups[1].Value, CultureInfo.InvariantCulture)
+            : null;
     }
 
     public DacFxMessageType MessageType { get; }
@@ -49,7 +53,8 @@ public sealed record DacFxMessage : IComparable<DacFxMessage>
     /// <summary>The message a line of DacFx's text holds, "Error SQL71501: text" or "Warning SQL71502: text"; null for any other line, such
     /// as "Altering Table [dbo].[T]...".</summary>
     public static DacFxMessage? Parse(string line) => Line.Match(line) is { Success: true } m
-        ? new DacFxMessage(Enum.Parse<DacFxMessageType>(m.Groups["type"].Value), m.Groups["prefix"].Value, int.Parse(m.Groups["number"].Value, CultureInfo.InvariantCulture), m.Groups["text"].Value, null)
+        ? new DacFxMessage(Enum.Parse<DacFxMessageType>(m.Groups["type"].Value), m.Groups["prefix"].Value,
+            int.Parse(m.Groups["number"].Value, CultureInfo.InvariantCulture), m.Groups["text"].Value, null)
         : null;
 
     /// <summary>By type (errors first), prefix, number and text, all ordinal.</summary>

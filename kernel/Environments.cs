@@ -28,7 +28,8 @@ public sealed record Environments
     {
         var all = SortedArray.Of(environments);
         return all.Where((e, i) => i > 0 && all[i - 1].Name == e.Name).FirstOrDefault() is { } repeated
-            ? new Error("environments.environment-name", subject + " names " + repeated.Target + " twice.", "Keep one entry for each environment.")
+            ? new Error("environments.environment-name", subject + " names " + repeated.Target + " twice.",
+                "Keep one entry for each environment.")
             : new Environments(all, localServer);
     }
 
@@ -83,9 +84,10 @@ public abstract record LocalServerKind
 /// </summary>
 public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 {
-    private NamedEnvironment(EnvironmentName name, Host host, Classification classification, SortedArray<string> readerGroups, SecretReference connection,
-        PublishProfilePath profile, SortedArray<SqlCmdVariable> sqlCmd, SecretReference? metamodel) =>
-        (Name, Host, Classification, ReaderGroups, Connection, Profile, SqlCmd, Metamodel) = (name, host, classification, readerGroups, connection, profile, sqlCmd, metamodel);
+    private NamedEnvironment(EnvironmentName name, Host host, Classification classification, SortedArray<string> readerGroups,
+        SecretReference connection, PublishProfilePath profile, SortedArray<SqlCmdVariable> sqlCmd, SecretReference? metamodel) =>
+        (Name, Host, Classification, ReaderGroups, Connection, Profile, SqlCmd, Metamodel) =
+            (name, host, classification, readerGroups, connection, profile, sqlCmd, metamodel);
 
     /// <summary>The key dbchange/environments.json gives it: dev, qa, uat.</summary>
     public EnvironmentName Name { get; }
@@ -112,14 +114,17 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 
     /// <summary>An environment of the values given, or the error of a reader group blank or given twice, or of a SQLCMD variable given
     /// twice in any case.</summary>
-    public static Result<NamedEnvironment> Of(string subject, EnvironmentName name, Host host, Classification classification, IEnumerable<string> readerGroups,
+    public static Result<NamedEnvironment> Of(string subject, EnvironmentName name, Host host, Classification classification,
+        IEnumerable<string> readerGroups,
         SecretReference connection, PublishProfilePath profile, IEnumerable<SqlCmdVariable> sqlCmd, SecretReference? metamodel)
     {
         var (groups, values) = (SortedArray.Of(readerGroups), SortedArray.Of(sqlCmd));
         return groups.Where((g, i) => string.IsNullOrWhiteSpace(g) || g.Any(char.IsControl) || (i > 0 && groups[i - 1] == g)).Any()
-                ? new Error("environments.reader-groups", subject + " names a reader group that is blank or given twice.", "Name each group that reads the environment once.")
+                ? new Error("environments.reader-groups", subject + " names a reader group that is blank or given twice.",
+                    "Name each group that reads the environment once.")
             : values.Where((v, i) => i > 0 && values[i - 1].Name == v.Name).Any()
-                ? new Error("environments.sqlcmd-repeated", subject + " gives one SQLCMD variable twice; sqlcmd reads names in any case as one.",
+                ? new Error("environments.sqlcmd-repeated",
+                    subject + " gives one SQLCMD variable twice; sqlcmd reads names in any case as one.",
                     "Keep one value for each SQLCMD variable.")
             : new NamedEnvironment(name, host, classification, groups, connection, profile, values, metamodel);
     }
@@ -144,16 +149,19 @@ public readonly record struct PublishProfilePath : IComparable<PublishProfilePat
     /// <summary>The path <paramref name="text"/> gives, or environments.profile-path led by <paramref name="subject"/>.</summary>
     public static Result<PublishProfilePath> Of(string subject, string? text) => InsideTheEstate(text) ? new PublishProfilePath(text!)
         : new Error("environments.profile-path", subject + " gives its profile a path that leaves the repository or names no .publish.xml.",
-            "Write the profile's path from the repository root with '/' between its parts, such as dbchange/profiles/pipeline.publish.xml.");
+            "Write the profile's path from the repository root with '/' between its parts,"
+            + " such as dbchange/profiles/pipeline.publish.xml.");
 
     /// <summary>Ordinally.</summary>
     public int CompareTo(PublishProfilePath other) => string.CompareOrdinal(_text, other._text);
 
-    public override string ToString() => _text ?? throw new InvalidOperationException("default(PublishProfilePath) is not a path; make one with PublishProfilePath.Of.");
+    public override string ToString() =>
+        _text ?? throw new InvalidOperationException("default(PublishProfilePath) is not a path; make one with PublishProfilePath.Of.");
 
     private static bool InsideTheEstate(string? path) =>
         path is { Length: > 0 } && path.EndsWith(".publish.xml", StringComparison.Ordinal) && !path.StartsWith('/')
-        && !path.Any(c => char.IsControl(c) || c is '\\' or ':') && path.Split('/').All(part => part.Length > 0 && part is not ("." or ".."));
+        && !path.Any(c => char.IsControl(c) || c is '\\' or ':')
+        && path.Split('/').All(part => part.Length > 0 && part is not ("." or ".."));
 }
 
 /// <summary>
@@ -177,12 +185,15 @@ public sealed record SecretReference : IComparable<SecretReference>
         || (text?.StartsWith(FilePrefix, StringComparison.Ordinal) == true && text[FilePrefix.Length..] is { Length: > 0 } path
             && path == path.Trim() && !path.Any(c => char.IsControl(c) || c is '=' or ';'))
             ? new SecretReference(text)
-            : new Error("reference.malformed", subject + " is neither env:NAME nor file:path; a path holds no '=' or ';', the marks of a connection string.",
-                "Write it as env:NAME, an environment variable, or file:path, a file outside git, and keep the value itself out of the repository.");
+            : new Error("reference.malformed",
+                subject + " is neither env:NAME nor file:path; a path holds no '=' or ';', the marks of a connection string.",
+                "Write it as env:NAME, an environment variable, or file:path, a file outside git,"
+                + " and keep the value itself out of the repository.");
 
     /// <summary>The environment variable's name, or the file's path, as the reference gives it.</summary>
     public T Match<T>(Func<string, T> variable, Func<string, T> file) =>
-        Text.StartsWith(VariablePrefix, StringComparison.Ordinal) ? variable(Text[VariablePrefix.Length..]) : file(Text[FilePrefix.Length..]);
+        Text.StartsWith(VariablePrefix, StringComparison.Ordinal) ? variable(Text[VariablePrefix.Length..])
+            : file(Text[FilePrefix.Length..]);
 
     public int CompareTo(SecretReference? other) => string.CompareOrdinal(Text, other?.Text);
 
@@ -201,9 +212,12 @@ public sealed record Confirmation
 
     public static Result<Confirmation> Of(string subject, string? lead, string? on) =>
         string.IsNullOrWhiteSpace(lead) || lead.Length > 128 || lead.Any(char.IsControl) ? new Error("environments.confirmation",
-            subject + " carries a confirmation with no lead's name on one line.", "Write confirmedBy as the name of the lead who confirmed the classification.")
-        : !DateOnly.TryParseExact(on, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ? new Error("environments.confirmation",
-            subject + " carries a confirmation with no date written as yyyy-MM-dd.", "Write confirmedOn as the date the lead confirmed it, such as 2026-09-20.")
+            subject + " carries a confirmation with no lead's name on one line.",
+            "Write confirmedBy as the name of the lead who confirmed the classification.")
+        : !DateOnly.TryParseExact(on, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? new Error("environments.confirmation",
+                subject + " carries a confirmation with no date written as yyyy-MM-dd.",
+                "Write confirmedOn as the date the lead confirmed it, such as 2026-09-20.")
         : new Confirmation(lead.Trim(), date);
 
     public override string ToString() => "confirmed by " + Lead + " on " + On.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -225,13 +239,15 @@ public abstract record Classification
         "synthetic" when confirmation is not null => new Synthetic(confirmation),
         "synthetic" => new Error("environments.unconfirmed", subject + " is marked synthetic with no lead's dated confirmation.",
             "Commit confirmedBy and confirmedOn beside it, the lead's name and the date, or mark it real."),
-        _ => new Error("environments.classification", subject + " is classified as neither real nor synthetic.", "Write its classification as real or synthetic."),
+        _ => new Error("environments.classification", subject + " is classified as neither real nor synthetic.",
+            "Write its classification as real or synthetic."),
     };
 
     public T Match<T>(Func<Real, T> real, Func<Synthetic, T> synthetic) =>
         this is Real r ? real(r) : this is Synthetic s ? synthetic(s) : throw new UnreachableException();
 
-    public sealed override string ToString() => Match(r => r.Confirmation is null ? "real" : "real, " + r.Confirmation, s => "synthetic, " + s.Confirmation);
+    public sealed override string ToString() =>
+        Match(r => r.Confirmation is null ? "real" : "real, " + r.Confirmation, s => "synthetic, " + s.Confirmation);
 
     public sealed record Real(Confirmation? Confirmation) : Classification;
 
