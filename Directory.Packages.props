@@ -9,6 +9,8 @@
     <PackageVersion Include="Microsoft.SqlServer.DacFx" Version="170.5.96" />
     <PackageVersion Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.102.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.5" />
+    <!-- Above Microsoft.Data.SqlClient 6.1.5's own 9.0.11, which NuGet's audit reports as vulnerable (DECISIONS 2026-10-19). -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="9.0.21" />
     <PackageVersion Include="Bogus" Version="35.6.5" />
     <!-- analyzers -->
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="4.14.0" />

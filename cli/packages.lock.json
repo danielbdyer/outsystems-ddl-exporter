@@ -258,11 +258,6 @@
           "System.Configuration.ConfigurationManager": "8.0.1"
         }
       },
-      "System.Security.Cryptography.Pkcs": {
-        "type": "Transitive",
-        "resolved": "9.0.11",
-        "contentHash": "YS2YqtN6fFjlTDIQI+ucjbbrEvwMn796r+VLTQRr/5Oy6g+i+m7nIou83KnJCnAcKna2I+5eVJRks6SoHSpetQ=="
-      },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Transitive",
         "resolved": "9.0.11",
@@ -288,7 +283,8 @@
           "DbChange.Kernel": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[6.1.5, )",
           "Microsoft.SqlServer.DacFx": "[170.5.96, )",
-          "Microsoft.SqlServer.TransactSql.ScriptDom": "[180.102.0, )"
+          "Microsoft.SqlServer.TransactSql.ScriptDom": "[180.102.0, )",
+          "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
       "DbChange.Kernel": {
@@ -344,6 +340,12 @@
         "requested": "[180.102.0, )",
         "resolved": "180.102.0",
         "contentHash": "hIE9+a4TUrk1KQY+byb2WioGn6pmR2o03XzFm4kxloPdWio8bJJYfIFhGuveOT3426ZfnNxT6e9hfXb9EA0a9g=="
+      },
+      "System.Security.Cryptography.Pkcs": {
+        "type": "CentralTransitive",
+        "requested": "[9.0.21, )",
+        "resolved": "9.0.21",
+        "contentHash": "KD+oHoYIxwNCajjVe58WVwq9cRpum+Pg3tRveDRtkcaw6w3oc7sNBoMRtb5P5OehI3bgv1ucMpgjf8lpj5J96A=="
       }
     }
   }

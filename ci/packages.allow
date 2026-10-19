@@ -8,5 +8,6 @@ Microsoft.NETFramework.ReferenceAssemblies.net472
 Microsoft.SqlServer.DacFx
 Microsoft.SqlServer.TransactSql.ScriptDom
 NetArchTest.Rules
+System.Security.Cryptography.Pkcs
 xunit
 xunit.runner.visualstudio
