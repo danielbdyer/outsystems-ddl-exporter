@@ -98,23 +98,23 @@ public sealed class PlanTests
             .Sample((target, package) => Ok(Drift.Of(new DeployReport([], []), target, package, Collation.CaseSensitive)) is Drift.InSync);
         Gen.Select(Sets, Sets, Gen.Int[0, 1000], Gen.Bool).Where((target, package, _, _) => Tables(target, package).Count > 0)
             .Sample((target, package, pick, rebuilt) =>
-        {
-            var tables = Tables(target, package);
-            var table = tables[pick % tables.Count];
-            var other = tables.FirstOrDefault(t => t != table);
-            SortedArray<PlanOperation> operations = [
-                new PlanOperation(rebuilt ? new PlanOperationKind.TableRebuild() : new PlanOperationKind.Alter(), table, []),
-                .. other is null ? [] : new[] { new PlanOperation(new PlanOperationKind.Refresh(), other, []) }];
-            var columns = Assert.IsType<Drift.Differs>(Ok(Drift.Of(new DeployReport(operations, []), target, package,
-                Collation.CaseSensitive))).Columns;
+            {
+                var tables = Tables(target, package);
+                var table = tables[pick % tables.Count];
+                var other = tables.FirstOrDefault(t => t != table);
+                SortedArray<PlanOperation> operations = [
+                    new PlanOperation(rebuilt ? new PlanOperationKind.TableRebuild() : new PlanOperationKind.Alter(), table, []),
+                    .. other is null ? [] : new[] { new PlanOperation(new PlanOperationKind.Refresh(), other, []) }];
+                var columns = Assert.IsType<Drift.Differs>(Ok(Drift.Of(new DeployReport(operations, []), target, package,
+                    Collation.CaseSensitive))).Columns;
 
-            var (was, now) = (Columns(target, table), Columns(package, table));
-            var differing = was.Keys.Union(now.Keys)
-                .Where(key => !was.TryGetValue(key, out var a) || !now.TryGetValue(key, out var b) || a != b).ToHashSet();
-            var listed = columns.Created.Select(e => e.Key).Concat(columns.Dropped.Select(e => e.Key))
-                .Concat(columns.Altered.Select(a => a.Key)).ToList();
-            return listed.ToHashSet().SetEquals(differing) && listed.All(key => key.Parent == table);
-        });
+                var (was, now) = (Columns(target, table), Columns(package, table));
+                var differing = was.Keys.Union(now.Keys)
+                    .Where(key => !was.TryGetValue(key, out var a) || !now.TryGetValue(key, out var b) || a != b).ToHashSet();
+                var listed = columns.Created.Select(e => e.Key).Concat(columns.Dropped.Select(e => e.Key))
+                    .Concat(columns.Altered.Select(a => a.Key)).ToList();
+                return listed.ToHashSet().SetEquals(differing) && listed.All(key => key.Parent == table);
+            });
     }
 
     /// <summary>DF-8: SQL Server keeps a computed column's text as it normalized it, so a column differing from its package in Expression

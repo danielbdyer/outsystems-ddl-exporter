@@ -43,8 +43,8 @@ internal static class KernelProperties
     public static readonly Gen<SortedArray<Element>> Sets = Keys.SelectMany(keys =>
         Gen.Select(Properties.Array[keys.Length], Relationships(keys).Array[keys.Length], ScriptText, ScriptText)
             .Select((ps, rs, pre, post) =>
-            SortedArray.Of(keys.Select((k, i) => New(k, ps[i].DistinctBy(p => p.Item1), rs[i].DistinctBy(r => r.Item1)))
-                .Append(Element.PreDeploy(pre)).Append(Element.PostDeploy(post)))));
+                SortedArray.Of(keys.Select((k, i) => New(k, ps[i].DistinctBy(p => p.Item1), rs[i].DistinctBy(r => r.Item1)))
+                    .Append(Element.PreDeploy(pre)).Append(Element.PostDeploy(post)))));
 
     /// <summary>A set and one edit of one of its elements, with the change the edit makes.</summary>
     public static readonly Gen<(SortedArray<Element> Before, Edit Edit)> Edits =
@@ -63,25 +63,25 @@ internal static class KernelProperties
     public static readonly Gen<Renaming> Renamings = Sets.SelectMany(a =>
         Gen.Select(Gen.Int[0, 2].Array[a.Count], Properties.Array[a.Count], Sets, Gen.Int[0, 1000].Array[0, 5])
             .Select((fates, properties, other, picks) =>
-        {
-            var kept = a.Select((e, i) => fates[i] switch
             {
-                0 => null,
-                1 => Ok(Element.Of(e.Key, properties[i].DistinctBy(p => p.Item1).Select(p => new Element.Property(p.Item1, p.Item2)),
-                    e.Relationships)),
-                _ => e,
-            }).OfType<Element>().ToArray();
-            var after = SortedArray.Of(kept.Concat(other.Where(o => a.All(e => e.Key != o.Key))));
-            var entries = new List<Rename>();
-            foreach (var pick in after.Count == 0 ? [] : picks)
-            {
-                var e = after[pick % after.Count];
-                (after, var made) = Renamed(after, (e.Key, e.Key.Name.Base + "~"));
-                entries.AddRange(made);
-            }
+                var kept = a.Select((e, i) => fates[i] switch
+                {
+                    0 => null,
+                    1 => Ok(Element.Of(e.Key, properties[i].DistinctBy(p => p.Item1).Select(p => new Element.Property(p.Item1, p.Item2)),
+                        e.Relationships)),
+                    _ => e,
+                }).OfType<Element>().ToArray();
+                var after = SortedArray.Of(kept.Concat(other.Where(o => a.All(e => e.Key != o.Key))));
+                var entries = new List<Rename>();
+                foreach (var pick in after.Count == 0 ? [] : picks)
+                {
+                    var e = after[pick % after.Count];
+                    (after, var made) = Renamed(after, (e.Key, e.Key.Name.Base + "~"));
+                    entries.AddRange(made);
+                }
 
-            return new Renaming(a, after, entries, [.. a.Where((_, i) => fates[i] == 0)], [.. kept.Select(e => e.Key)]);
-        }));
+                return new Renaming(a, after, entries, [.. a.Where((_, i) => fates[i] == 0)], [.. kept.Select(e => e.Key)]);
+            }));
 
     /// <summary>A generated renaming: both models, the entries in the order they were made, what was dropped and what was kept.</summary>
     /// <summary>Two models and the change between them under the renamings' refactorlog, as M2's claims will draw them.</summary>
