@@ -1,5 +1,5 @@
 {
-  "about": "Line ceilings the Budgets test enforces, from V3_MILESTONES.md Appendix F. A budget counts the physical lines of every file its include globs match, minus its exclude globs and neverCounted. A ceiling rises only with a DECISIONS.md line in the same pull request. planned, plannedFiles and plannedByMilestone are the plan's figures: data to compare against, never a failure.",
+  "about": "Line ceilings the Budgets test enforces. A package ceiling is the package's lines after the reflow to 140 characters and the splits of 2026-10-19, plus twice the lines V3_MILESTONES.md Appendix F still plans for M2 to M7, rounded up to the next hundred (DECISIONS.md, 2026-10-19); the corpus keeps its 3,000. A budget counts the physical lines of every file its include globs match, minus its exclude globs and neverCounted. A ceiling rises only with a DECISIONS.md line in the same pull request. planned, plannedFiles and plannedByMilestone are the plan's figures: data to compare against, never a failure.",
   "neverCounted": ["**/bin/**", "**/obj/**"],
   "eachFile": {
     "about": "Ceilings on each C# file on its own, beside the package budgets (the operator's ruling of 2026-10-19: a package ceiling may rise, the lines per file hold). A file of one of the groups below holds its group's ceiling in physical lines, counted as the package budgets count them, and every line of it holds widthCeiling: its length in characters as a .NET string counts them, a trailing carriage return not counted. A file over its ceiling is split into partial files; a line over the width is broken without changing what it means. These ceilings rise only with a DECISIONS.md line in the same pull request.",
@@ -20,18 +20,18 @@
     }
   },
   "code": {
-    "about": "C# in the three packages together; tests are budgeted separately.",
+    "about": "C# in the three packages together; tests are budgeted separately. The ceiling is the sum of the three package ceilings. plannedByMilestone's M3 is Appendix F's re-cut figure, pending the operator's decision on V3_MILESTONES.md section 17 item 20; planned and the M3 rows of plannedFiles are the plan before the re-cut, when M3 planned 4,840.",
     "budgets": ["kernel", "io", "cli"],
-    "ceiling": 14900,
+    "ceiling": 26000,
     "planned": 13970,
-    "plannedByMilestone": { "M0": 1120, "M1": 2560, "M2": 1880, "M3": 4840, "M4": 790, "M5": 1440, "M6": 880, "M7": 460 }
+    "plannedByMilestone": { "M0": 1120, "M1": 2560, "M2": 1880, "M3": 2270, "M4": 790, "M5": 1440, "M6": 880, "M7": 460 }
   },
   "budgets": {
     "kernel": {
       "about": "code: the pure kernel. plannedFiles names files within kernel/, matched by file name.",
       "include": ["kernel/**/*.cs"],
       "exclude": [],
-      "ceiling": 6800,
+      "ceiling": 9100,
       "planned": 6460,
       "plannedFiles": [
         { "files": ["SortedArray.cs", "Result.cs", "Error.cs", "Name.cs", "Fingerprint.cs"], "what": null, "lines": 410, "milestones": ["M0"] },
@@ -54,7 +54,7 @@
       "about": "code: everything that touches SQL Server, DacFx, git, Docker and files. plannedFiles names files within io/, matched by file name; LocalServer.cs and Json.cs each appear twice, once per milestone that grows them.",
       "include": ["io/**/*.cs"],
       "exclude": [],
-      "ceiling": 6400,
+      "ceiling": 13500,
       "planned": 5980,
       "plannedFiles": [
         { "files": ["Write.cs", "Json.cs"], "what": "and the telemetry opt-out", "lines": 250, "milestones": ["M0"] },
@@ -74,7 +74,7 @@
       "about": "code: the dbchange executable. The dispatcher, the verb table and the renderers first, then one file per verb at about a hundred lines, so plannedFiles carries no file names.",
       "include": ["cli/**/*.cs"],
       "exclude": [],
-      "ceiling": 1700,
+      "ceiling": 3400,
       "planned": 1530,
       "plannedFiles": [
         { "files": [], "what": "the dispatcher, the verb table and the renderers", "lines": 280, "milestones": ["M0"] },
@@ -91,7 +91,7 @@
       "about": "C# in every test project; the corpus under tests/Golden/ is data and has its own budget.",
       "include": ["tests/**/*.cs"],
       "exclude": ["tests/Golden/**"],
-      "ceiling": 20000,
+      "ceiling": 41600,
       "planned": 20000,
       "plannedByMilestone": { "M0": 2491, "M1": 5302, "M2": 1984, "M3": 3510, "M4": 2441, "M5": 1831, "M6": 1068, "M7": 1373 }
     },
