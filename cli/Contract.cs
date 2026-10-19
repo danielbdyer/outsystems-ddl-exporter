@@ -208,7 +208,7 @@ public static class Contract
             "Blocked by the data, a finding and not a failure: blocked by BlockOnPossibleDataLoss, which stopped the publish because the"
                 + " table has rows; or by a constraint violation, SQL Server refusing the change on existing rows (Msg 547, Msg 2628).",
             "Change the operation at the site the finding names: its two-release shape, or the rows it counts.", false),
-        new(4, "unreachable", "The target is unreachable: no local server, or SQL Server, Docker or LocalDB not answering.",
+        new(4, "unreachable", "The target is unreachable: no local server, or SQL Server or LocalDB not answering.",
             "Run dbchange doctor, then start the local server with ci/sql.sh up (ci/sql.ps1 up on Windows).", true),
         new(5, "differs", "Divergence found: the target differs from the repository; the findings name each differing object.",
             "Correct the target or the repository at the objects the findings name.", false),

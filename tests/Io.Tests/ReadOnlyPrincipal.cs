@@ -24,8 +24,8 @@ public sealed class ReadOnlyPrincipal(string login, string reference)
 
     private const string Integrated =
         "The SQL Server under the fixture tests authenticates Windows identities only (SERVERPROPERTY('IsIntegratedSecurityOnly') = 1), "
-        + "so the read-only principal cannot be a SQL login there. Remedy: start Docker (the fixture then runs ci/sql.sh up, or ci/sql.ps1 up on Windows), "
-        + "or set DBCHANGE_SQL to a server that accepts SQL logins.";
+        + "so the read-only principal cannot be a SQL login there. Remedy: set DBCHANGE_SQL to a server that accepts SQL logins, "
+        + "such as the SQL Server Express ci/sql.sh up starts on Linux.";
 
     private const string Grant =
         "DECLARE @sql nvarchar(max) = N'CREATE LOGIN ' + QUOTENAME(@login) + N' WITH PASSWORD = ' + QUOTENAME(@password, '''') "

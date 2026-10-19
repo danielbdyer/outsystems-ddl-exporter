@@ -13,16 +13,17 @@ namespace DbChange.Io.Tests;
 
 /// <summary>
 /// One SQL Server per test run, and a registered database per test, dbchange_&lt;host&gt;_&lt;pid&gt;_&lt;rand&gt;, dropped after it, so
-/// concurrent runs and agents sharing a server never collide. The server is io/LocalServer's (WP 1.4): DBCHANGE_SQL when set; else,
-/// where docker info answers, the dbchange-sql container that ci/sql.sh up (ci/sql.ps1 up on Windows) pulls and starts, reached
-/// through ~/.dbchange/sql.env; else LocalDB's MSSQLLocalDB. With none, every fixture test fails with the remedy; the fixture lane
-/// never skips. Every login made for a database is named after it, &lt;database&gt;_&lt;role&gt;, and is dropped with it.
+/// concurrent runs and agents sharing a server never collide. The server is io/LocalServer's (WP 1.4): DBCHANGE_SQL when set; else the
+/// SQL Server ~/.dbchange/sql.env names, which ci/sql.sh up installs and starts; else LocalDB's MSSQLLocalDB, which ci/sql.ps1 up
+/// starts. The fixture starts none of them, as io does not (DECISIONS.md, 2026-10-19). With none, every fixture test fails with the
+/// remedy; the fixture lane never skips. Every login made for a database is named after it, &lt;database&gt;_&lt;role&gt;, and is
+/// dropped with it.
 /// </summary>
 public static class SqlServerFixture
 {
     private const string NoServer =
-        "No SQL Server for the fixture tests: DBCHANGE_SQL is unset, docker info does not answer, and sqllocaldb is absent. "
-        + "Remedy: start Docker (the fixture then runs ci/sql.sh up, or ci/sql.ps1 up on Windows); or set DBCHANGE_SQL to a connection string; or install SQL Server Express LocalDB.";
+        "No SQL Server for the fixture tests: DBCHANGE_SQL is unset, ~/.dbchange/sql.env names no server, and LocalDB is not installed. "
+        + "Remedy: run ci/sql.sh up, or ci/sql.ps1 up on Windows; or set DBCHANGE_SQL to a connection string.";
 
     private const string Create = "DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql);";
 
@@ -84,16 +85,15 @@ public static class SqlServerFixture
         ReadOnlyPrincipal.Forget(name);
     }
 
-    /// <summary>io/LocalServer's choice, once the fixture has started what it chooses: the container when docker info answers, else
-    /// LocalDB's instance.</summary>
+    /// <summary>io/LocalServer's choice: DBCHANGE_SQL, else the SQL Server sql.env names, else LocalDB's instance where sqllocaldb
+    /// knows it.</summary>
     private static async Task<string> ChooseAsync()
     {
         var given = Environment.GetEnvironmentVariable("DBCHANGE_SQL");
-        var docker = string.IsNullOrEmpty(given)
-            && new Command("docker", ["info"], TimeSpan.FromSeconds(30)).Run() is Ran.Exited { Code: 0 } && Up();
-        var localDb = string.IsNullOrEmpty(given) && !docker
-            && new Command("sqllocaldb", ["start", "MSSQLLocalDB"], TimeSpan.FromMinutes(2)).Run() is Ran.Exited { Code: 0 };
-        var chosen = LocalServer.Server(given, docker ? LocalState.UserSqlEnv : null, localDb)
+        var sqlEnv = LocalState.UserSqlEnv is { } path && File.Exists(path) ? Private(path) : null;
+        var localDb = string.IsNullOrEmpty(given) && sqlEnv is null
+            && new Command("sqllocaldb", ["info", "MSSQLLocalDB"], TimeSpan.FromMinutes(2)).Run() is Ran.Exited { Code: 0 };
+        var chosen = LocalServer.Server(given, sqlEnv, localDb)
             .Match(server => server, _ => throw new InvalidOperationException(NoServer));
         var master = new SqlConnectionStringBuilder(chosen) { InitialCatalog = "master", ApplicationName = "dbchange-tests",
             TrustServerCertificate = true, ConnectTimeout = 60 }.ConnectionString;
@@ -111,27 +111,18 @@ public static class SqlServerFixture
         return master;
     }
 
-    /// <summary>The dbchange-sql container, up: its port and SA password go into ~/.dbchange/sql.env, which only the scripts
-    /// write.</summary>
-    private static bool Up()
+    /// <summary>Finding NFR-13: ci/sql.sh leaves the SA password in sql.env readable by its owner alone, mode 0600; Windows keeps no
+    /// such mode. The file's path, once its mode is checked.</summary>
+    private static string Private(string sqlEnv)
     {
-        var (exit, output) = (OperatingSystem.IsWindows()
-            ? Programs.InRepository("pwsh", "-NoProfile", "-File", Path.Combine(Repository.Root, "ci", "sql.ps1"), "up")
-            : Programs.InRepository("bash", Path.Combine(Repository.Root, "ci", "sql.sh"), "up")).Finish().Joined();
-        if (exit != 0)
-        {
-            throw new InvalidOperationException("ci/sql up failed:\n" + output);
-        }
-
-        // Finding NFR-13: the scripts leave the SA password readable by its owner alone, mode 0600; Windows keeps no such mode.
-        if (!OperatingSystem.IsWindows() && File.GetUnixFileMode(LocalState.UserSqlEnv!) is var mode
+        if (!OperatingSystem.IsWindows() && File.GetUnixFileMode(sqlEnv) is var mode
             && mode != (UnixFileMode.UserRead | UnixFileMode.UserWrite))
         {
-            throw new InvalidOperationException(LocalState.UserSqlEnv + " is mode " + Convert.ToString((int)mode, 8)
-                + " after ci/sql up, and the SA password it holds is read by its owner alone (0600).");
+            throw new InvalidOperationException(sqlEnv + " is mode " + Convert.ToString((int)mode, 8)
+                + ", and the SA password it holds is read by its owner alone (0600): run ci/sql.sh up, which sets the mode again.");
         }
 
-        return true;
+        return sqlEnv;
     }
 
     /// <summary>Drops what this host registered for a process no longer running: a killed run's databases, and the logins named after

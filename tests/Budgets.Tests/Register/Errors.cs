@@ -68,23 +68,23 @@ public sealed class Errors
     }
 
     /// <summary>
-    /// S27 of the pre-M2 review: each remedy the doctor gives, on a bare machine and on one whose Docker does not answer or answers past its
+    /// S27 of the pre-M2 review: each remedy the doctor gives, on a bare machine and on one whose sqllocaldb fails or answers past its
     /// timeout, is one move in the register, as an error's is; the doctor's remedies are no error's, so the drivers above never read them.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Value", "O4")]
     [InlineData("nothing installed")]
-    [InlineData("Docker not answering")]
-    [InlineData("Docker past its timeout")]
+    [InlineData("sqllocaldb failing")]
+    [InlineData("sqllocaldb past its timeout")]
     public void Every_remedy_the_doctor_gives_is_one_move_in_the_register(string machine)
     {
         using var bare = ScratchFolder.Temporary("doctor-register");
         Runner run = machine switch
         {
             "nothing installed" => (c, _) => new Ran.NotFound(c.Program, "not installed"),
-            "Docker not answering" => (c, _) => c.Program == "docker" ? new Ran.Exited(1, "", "Cannot connect to the Docker daemon") : new Ran.NotFound(c.Program, "not installed"),
-            _ => (c, _) => c.Program == "docker" ? new Ran.TimedOut(c.Timeout, "", "") : new Ran.NotFound(c.Program, "not installed"),
+            "sqllocaldb failing" => (c, _) => c.Program == "sqllocaldb" ? new Ran.Exited(1, "", "LocalDB instance \"MSSQLLocalDB\" doesn't exist!") : new Ran.NotFound(c.Program, "not installed"),
+            _ => (c, _) => c.Program == "sqllocaldb" ? new Ran.TimedOut(c.Timeout, "", "") : new Ran.NotFound(c.Program, "not installed"),
         };
 
         var remedies = Doctor.Examine(new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null, bare.Under("no-sql.env"), Environment.Version), run)

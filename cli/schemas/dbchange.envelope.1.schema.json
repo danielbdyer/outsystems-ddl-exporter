@@ -501,27 +501,20 @@
       "additionalProperties": false,
       "required": [
         "version",
-        "compatibilityLevel",
-        "image"
+        "edition",
+        "compatibilityLevel"
       ],
       "properties": {
         "version": {
           "type": "string",
           "pattern": "^[0-9]{1,5}(\\.[0-9]{1,5}){3}$"
         },
+        "edition": {
+          "type": "string",
+          "minLength": 1
+        },
         "compatibilityLevel": {
           "type": "integer"
-        },
-        "image": {
-          "anyOf": [
-            {
-              "type": "null"
-            },
-            {
-              "type": "string",
-              "pattern": "^sha256:[0-9a-f]{64}$"
-            }
-          ]
         }
       }
     },

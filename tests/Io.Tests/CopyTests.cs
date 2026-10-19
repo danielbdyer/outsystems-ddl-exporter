@@ -220,7 +220,7 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
 
     /// <summary>
     /// DF-4: DacFx's own failure, with no SqlException inside. A package built for a newer platform (Sql180) than the SQL Server it is
-    /// planned against (SQL Server 2022 in the container, an older release in the Windows runner's LocalDB), planned against a named
+    /// planned against (SQL Server 2022 Express on Linux, SQL Server 2025's LocalDB 17.0 on the Windows runner), planned against a named
     /// environment's extracted package under the pipeline's profile (AllowIncompatiblePlatform False), is plan.platform, naming
     /// both platforms; nothing SQL Server says is in it.
     /// </summary>
@@ -253,9 +253,43 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
             Made(PublishProfiles.Load(project.Profile)), [])).Error;
 
         Assert.Equal("plan.platform", error.Code);
-        // The platform of the server differs between the container and the Windows runner's LocalDB; a failure prints the whole message.
+        // The platform of the server differs between SQL Server 2022 Express and the Windows runner's LocalDB; a failure prints the whole
+        // message.
         Assert.True(error.Message.StartsWith("The package targets Sql180 and env:dev is Sql", StringComparison.Ordinal), error.Message);
         Assert.DoesNotContain("withheld", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// R5's window (DECISIONS.md, 2026-10-19): a package whose platform names a newer SQL Server than the copy's, Sql180 against SQL Server
+    /// 2022 Express or LocalDB 17.0, is refused by name before DacFx runs, so the copy holds no table of it; DacFx's own refusal
+    /// would be plan.platform after it had planned.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    [Trait("Value", "R5")]
+    public async Task A_SQL_Server_version_outside_the_window_is_refused()
+    {
+        var dacpac = Path.Combine(root, "vnext.dacpac");
+        using (var model = new TSqlModel(SqlServerVersion.Sql180, new TSqlModelOptions()))
+        {
+            model.AddObjects("CREATE TABLE dbo.Customer (Id INT NOT NULL);");
+            DacPackageExtensions.BuildPackage(dacpac, model, new PackageMetadata());
+        }
+
+        var copy = Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(root)));
+        try
+        {
+            var error = Assert.IsType<Result<SqlServer.Copy>.Failed>(copy.Publish(dacpac, Made(PublishProfiles.Load(project.Profile)),
+                SqlServer.QueryLog.Start(root))).Error;
+
+            Assert.Equal("toolchain.server-window", error.Code);
+            Assert.Contains("the package's platform, Sql180, which needs SQL Server 18 or later", error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(Extracted(copy), e => e.Key.ToString().Contains("[dbo].[Customer]", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Made(LocalServer.Drop(copy, SqlServer.QueryLog.Start(root)));
+        }
     }
 
     /// <summary>A copy's elements, as io reads a database: extracted once.</summary>

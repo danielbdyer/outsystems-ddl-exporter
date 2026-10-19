@@ -573,13 +573,10 @@ public sealed class ContractTests
         File.Copy(Path.Combine(AppContext.BaseDirectory, Ssdt.BuildTargets.Task), machine.Under(Ssdt.BuildTargets.Task));
 
         machine.File("global.json", """{ "sdk": { "version": "10.0.401" } }""");
-        machine.File("sql.env", "MSSQL_SA_PASSWORD=x\nDBCHANGE_SQL_PORT=11433\n");
+        machine.File("sql.env", "MSSQL_SA_PASSWORD=x\nDBCHANGE_SQL_PORT=11434\n");
         Runner answers = (command, _) => (command.Program + " " + command.Arguments[0]) switch
         {
             "dotnet --list-sdks" => new Ran.Exited(0, "10.0.402 [x]\n", ""),
-            "docker info" => new Ran.Exited(0, "29.5.3\n", ""),
-            "docker image" => new Ran.Exited(0, "sha256:5b09\n", ""),
-            "docker container" => new Ran.Exited(0, Doctor.SqlServerImage + "\n", ""),
             "git --version" => new Ran.Exited(0, "git version 2.31.1.windows.1\n", ""),
             "git lfs" => new Ran.Exited(0, "git-lfs/3.4.0 (GitHub; windows amd64; go 1.21.1)\n", ""),
             _ => new Ran.NotFound(command.Program, "not installed"),
@@ -591,7 +588,7 @@ public sealed class ContractTests
         VerbAnswer.Valid("dbchange.doctor.1.schema.json", json);
         Assert.Equal((0, "ready"), (answer.Exit, answer.Outcome.Word));
         Assert.Equal("dbchange doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED) | build=dotnet with the tool folder's targets"
-            + " | git=2.31.1 | local-server=dbchange-sql container (localhost,11433) | image=present | lfs=git-lfs/3.4.0", answer.Message);
+            + " | git=2.31.1 | local-server=the SQL Server ~/.dbchange/sql.env names (localhost,11434) | lfs=git-lfs/3.4.0", answer.Message);
         Assert.Empty(answer.Findings);
         Assert.Equal((DacFx.Version.Match(v => v.ToString(), e => e.Message), "UNPINNED", null), ((string?)json["dacfx"], (string?)json["pin"], json["server"]));
     }
@@ -647,7 +644,8 @@ public sealed class ContractTests
                 WithProvenance(p => p["existingData"] = "sha256:" + new string('3', 64))),
             ["a provenance's server is null exactly when it lacks it"] = (WithProvenance(p => p["server"] = null, "existingData", "server"), WithProvenance(p => p["server"] = null)),
             ["a provenance lacks only an input it can lack"] = (WithProvenance(_ => { }), WithProvenance(_ => { }, "existingData", "seed")),
-            ["the server names the image by its digest"] = (WithProvenance(_ => { }), WithProvenance(p => p["server"]!["image"] = "16.0.4295.3")),
+            ["the server names its edition"] = (WithProvenance(_ => { }), WithProvenance(p => p["server"]!["edition"] = "")),
+            ["the server names no image"] = (WithProvenance(_ => { }), WithProvenance(p => p["server"]!["image"] = "sha256:" + new string('5', 64))),
             ["the server's version is SQL Server's product version"] = (WithStamp(s => s["server"]!["version"] = "15.0.4430.1"), WithStamp(s => s["server"]!["version"] = "SQL Server 2022")),
             ["the stamp's DacFx is a release version"] = (WithStamp(s => s["dacfx"] = "170.5.96.0"), WithStamp(s => s["dacfx"] = "latest")),
             ["the stamp's pin is UNPINNED or a release version"] = (WithStamp(s => s["pin"] = "170.5.96"), WithStamp(s => s["pin"] = "unpinned")),
@@ -760,7 +758,7 @@ public sealed class ContractTests
         answer["provenance"] = provenance;
     };
 
-    private static JsonObject Server() => new() { ["version"] = "16.0.4295.3", ["compatibilityLevel"] = 160, ["image"] = "sha256:" + new string('5', 64) };
+    private static JsonObject Server() => new() { ["version"] = "16.0.4305.5", ["edition"] = "Express Edition (64-bit)", ["compatibilityLevel"] = 160 };
 
     /// <summary>Runs the built dbchange, as a process, and returns its exit code and standard output alone, which its JSON answer is.</summary>
     private static (int Exit, string Output) Run(params string[] arguments)
