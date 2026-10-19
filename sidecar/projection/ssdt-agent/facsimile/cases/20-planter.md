@@ -1695,7 +1695,7 @@ note:     Skipping a populated table would make HasRows read no in the copy, tur
 ### PLT-122 · how often the real estate needs a declared row (ARCH §11.7)
 ```case
 kind:     manual
-setup:    the corporate laptop · LocalDB 2022 · schema.Dev.dacpac of the real estate
+setup:    a team laptop · LocalDB 2022 · schema.Dev.dacpac of the real estate
 action:   facsimile up --fresh against the estate's project, then count the tables that stop planter-needs-row, by reason
 expect:   files      a table of reason → table count (CHECK, CLR or typed xml, self-reference or cycle, narrow unique, computed)
                      recorded in this case as its receipt

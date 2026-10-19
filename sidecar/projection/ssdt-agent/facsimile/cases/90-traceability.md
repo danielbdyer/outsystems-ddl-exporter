@@ -390,7 +390,7 @@ Each is settled by its first run against SQL Server 2022 and LocalDB (gate G2), 
 | CFG-17 | duplicate keys | whether ConvertFrom-Json on 5.1 and on 7 reports a same-case duplicate or keeps the last value silently; if silently, Read-FxConfig must find it in th |
 | CI-02 | the LocalDB job | which LocalDB major the windows-latest image carries; a 15.x would stop `platform` on Sql160 |
 | CI-14 | the ConstrainedLanguage job | whether `__PSLockdownPolicy` forces ConstrainedLanguage for Windows PowerShell 5.1 and for PowerShell 7 on the hosted image (it is a test hook, not a  |
-| TLC-07 | a classic .sqlproj builds with Visual Studio's MSBuild | ARCH §11.4: whether the classic project builds with only VS's MSBuild on a corporate laptop, and how long it takes |
+| TLC-07 | a classic .sqlproj builds with Visual Studio's MSBuild | ARCH §11.4: whether the classic project builds with only VS's MSBuild on a team laptop, and how long it takes |
 | TLC-08 | an SDK-style .sqlproj | whether VS's MSBuild resolves the Microsoft.Build.Sql SDK through the proxy without a .NET SDK |
 | TLC-09 | sqlcmd flavours | ARCH §11.5: whether VS ships sqlcmd, and whether go-sqlcmd reaches LocalDB with the same flags (-b, -V, -h -1, -W) |
 | TLC-11 | CREATE, RESTORE and DROP get 180 seconds | ARCH §11.6: how long LocalDB takes to CREATE, RESTORE and DROP a ~300-table schema; the 180 s is v3's (TWIN_SUCCESSION Appendix B) and ARCH §6's toolc |
@@ -406,5 +406,5 @@ Each is settled by its first run against SQL Server 2022 and LocalDB (gate G2), 
 | TWN-223 | row 24 · identity-swap · removing IDENTITY from Order.Id is a table rebuild | the Twin fact accepts either outcome and asserts the end state only (Id no longer IDENTITY; keys, rows and the incoming FK preserved): SamplePr "ident |
 | TWN-224 | row 24 · temporal-convert · the existing populated Customer becomes system-versioned | the Twin fact accepts either outcome and asserts the end state only (temporal, history linked, rows and business data unchanged): SamplePr "temporal-c |
 | TWN-302 | row 22 · `twin up` when current → "Nothing to apply.", fast | the Twin answered in about a second (THE_TWIN §7); whether the facsimile's no-op stays that fast depends on fingerprinting head without a full MSBuild |
-| TWN-314 | row 1 · G4: the laptop check; `twin up` users move to `facsimile up` on the corporate machine | ARCH §11.4–11.6, §11.8 · TWIN_SUCCESSION Appendix C |
+| TWN-314 | row 1 · G4: the laptop check; `twin up` users move to `facsimile up` on a team machine | ARCH §11.4–11.6, §11.8 · TWIN_SUCCESSION Appendix C |
 

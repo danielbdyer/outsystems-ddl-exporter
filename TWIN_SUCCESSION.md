@@ -118,7 +118,7 @@ There is no third outcome. Something unknown is a stop, never a "clean".
 | The decisive rows are hand-planted, not minted. | `ssdt-agent/proving-ground/Data/Seed.sql:3-6`: "These rows are the WHOLE POINT." |
 | The Twin mint skips seeded tables. | `Twin.Runtime/Mint.fs:110`; `Runs.fs:232-248` |
 | The Twin cannot plant violations. | Its post-mint trust gate refuses them (`Runs.fs:252-258`). |
-| The Twin cannot run on the corporate network. | It needs Docker: `Runs.up` always calls `TwinContainer.ensureRunning` (`docker inspect` / `docker run`), and the connection is hard-wired to `localhost,<port>` with `sa`. |
+| The Twin cannot run on the estate's network. | It needs Docker: `Runs.up` always calls `TwinContainer.ensureRunning` (`docker inspect` / `docker run`), and the connection is hard-wired to `localhost,<port>` with `sa`. |
 | The Twin rides about 114K lines of F# kernel. | — |
 | The data-loss guard is data-blind. | `V3_ARCHITECTURE.md` §2.2; findings F1, F7 |
 | Volume never flips a verdict; it only affects timing. | F20: volume only feeds the ">1M rows: schedule a window" scrutiny line. |
@@ -131,11 +131,11 @@ environment has rows, a null where it has nulls, an orphan where it has orphans"
 
 ## 2. What the local proof is for
 
-Octopus publishes with `BlockOnPossibleDataLoss` on. **That publish is the final proof; the local one
+The deployment tool publishes with `BlockOnPossibleDataLoss` on. **That publish is the final proof; the local one
 is a rehearsal.** The rehearsal earns its keep three ways:
 
 1. **It predicts how the change ships before release night.** Without it, the change ships as written
-   and the block is discovered in Octopus.
+   and the block is discovered in the deployment tool.
 2. **It catches green-but-harmful publishes the guard cannot see:**
    - the lag-window revert (F17);
    - a pre-deploy script's side effect surviving a failed deploy (F2, F6);
@@ -460,11 +460,11 @@ into branch policy.
 | The Twin's broader promise ("a local database full of realistic data") | Consciously dropped. OutSystems apps run on the platform against real environments, so realistic local data is not on the proof path. If ever needed again, it is a separate project |
 | `ssdt-agent/scripts/*.mjs` | `prove.mjs` is the donor for `prove.ps1` (build detection, delta signals, exit vocabulary). The rest goes |
 | `origin/claude/v3-build` (`dbchange`) | *Superseded 2026-10-19: the C# gate passed, and v3 is the facsimile's home (`sidecar/projection/ssdt-agent/facsimile/HANDOFF.md`).* Originally: tag `v3-donor`, then close. Appendix B lists the parts worth lifting |
-| `ssdt-playbook/` | Move to the ADO wiki as human curriculum. Skills stop citing it |
+| `ssdt-playbook/` | Move to the wiki as human curriculum. Skills stop citing it |
 
 ## 10. The handoff
 
-**Day 1 (no code; the IT calendar is the critical path, at 1–3 weeks):**
+**Day 1 (no code; the machine administrators' calendar is the critical path, at 1–3 weeks):**
 1. Capture the Octopus step's **effective** options: the profile XML *plus* `/p:` overrides *plus*
    per-environment SQLCMD values. Also capture its **DacFx version**, and write both into
    `ledgers/toolchain.md`.
@@ -483,7 +483,7 @@ into branch policy.
 - Write `plant.sql` (presence plus NULL, duplicate, orphan, over-length and CHECK) and the probes.
 - Run the loop on the real estate.
 - Build the PR pipeline with break-glass.
-- Day 5: a senior drives "make Email required" end to end while Danny stays silent. Record it, and
+- Day 5: a senior drives "make Email required" end to end while the operator stays silent. Record it, and
   fix every stumble.
 
 **Weeks 2–4** (if there's time):
@@ -492,13 +492,13 @@ into branch policy.
 - Three recordings with the principal driving: authoring, reviewing, and maintaining (bump the
   sqlpackage pin, fix a red build).
 - Each senior ships one change solo.
-- Danny answers only in writing.
+- The operator answers only in writing.
 - Delete whatever nobody touched.
 - Publish an ownership table (pipeline, pins, in-flight ledger, break-glass approver), each owner with
   a backup.
 
 **If there is only one week:** do Day 1 and Week 1, and cut everything else. The make-mandatory
-recording on the real estate is the one act that cannot happen after Danny leaves.
+recording on the real estate is the one act that cannot happen after the operator leaves.
 
 **The actual window (decided 2026-10-15): about one week, with the F# turnover on day 1.**
 
@@ -518,7 +518,7 @@ recording on the real estate is the one act that cannot happen after Danny leave
    - Strip the Twin, Docker, F# and Node paths from the vendored tree.
    - Write Proof plans for five ops: make-mandatory, narrow, create-fk, add-unique, delete-attribute.
      Everything else routes to `LONG_TAIL.md`.
-4. **Day 5:** a senior drives make-mandatory end to end while Danny stays silent, and it is
+4. **Day 5:** a senior drives make-mandatory end to end while the operator stays silent, and it is
    recorded. A lead extends it to QA and UAT.
 5. **Deferred to the principals, in writing:**
    - **The PR pipeline gate.** Don't leave a half-built gate with no owner: a red gate nobody can fix
@@ -658,7 +658,7 @@ How to read the output:
 | `SDKs:` lists 8.0 or later, and `Runtimes:` lists `Microsoft.NETCore.App 8.x` or later | .NET is present | The facsimile's C# realization can run (TARGET.md §1, gate 1) |
 | `dotnet: not on PATH`, or nothing at 8.0 or later | No usable .NET | Install the .NET SDK (often possible without admin), or use the PowerShell realization |
 | `NuGet sources:` lists an Azure Artifacts feed or nuget.org | Packages can be restored | Gate 3 holds; the tool can be distributed as a `dotnet` tool |
-| `WDAC user mode: 2` | Code integrity is enforced | Unsigned assemblies may be blocked even under `dotnet`: ask IT about signing internal tools, or use the PowerShell realization (gate 2) |
+| `WDAC user mode: 2` | Code integrity is enforced | Unsigned assemblies may be blocked even under `dotnet`: ask whoever manages the machines about signing internal tools, or use the PowerShell realization (gate 2) |
 
 ## Appendix D — The shape profile (discovery for one column)
 

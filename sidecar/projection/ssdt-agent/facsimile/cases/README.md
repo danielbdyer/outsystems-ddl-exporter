@@ -140,7 +140,7 @@ table not mentioned is empty. `Customer 0 rows` states emptiness explicitly when
 | `sql` | SQL Server | builds the `env` database, runs `action` (a probe, the planter, `shape`, `hash`), and compares |
 | `corpus` | SQL Server | builds the stand-in **env** database from the fixture and runs `read` against it under a read-only login, then `prove`. In parallel, as **the oracle**, it restores a full copy of env and publishes head onto it directly. It requires facsimile verdict = oracle verdict (F3) **and** = the `expect` line |
 | `process` | the tool and a file system | runs verbs and checks files, stdout, exit codes and the lint |
-| `manual` | the corporate machine (Windows, LocalDB, Visual Studio, Octopus, a real environment) | a checklist item for the laptop check and the G4 window. The runner lists these and does not execute them |
+| `manual` | a team machine (Windows, LocalDB, Visual Studio, Octopus, a real environment) | a checklist item for the laptop check and the G4 window. The runner lists these and does not execute them |
 
 A `corpus` case may end in a **stop**. When the stop is a designed one (INVARIANTS F3 *Scope*), the
 case asserts the stop, and the oracle's verdict is recorded for information only.

@@ -1447,7 +1447,7 @@ action:   facsimile prove Dev with no head cache
 expect:   files      head.dacpac built by the MSBuild that vswhere finds; the build's duration on stderr and in
                      doctor.json
 laws:     A3 D5
-source:   verify · ARCH §11.4: whether the classic project builds with only VS's MSBuild on a corporate laptop, and
+source:   verify · ARCH §11.4: whether the classic project builds with only VS's MSBuild on a team laptop, and
           how long it takes
 ```
 
@@ -1455,7 +1455,7 @@ source:   verify · ARCH §11.4: whether the classic project builds with only VS
 ```case
 kind:     process
 setup:    proving-ground's SampleCatalog.sqlproj (Microsoft.Build.Sql 2.2.0) · rows: (a) a .NET SDK present · (b) no
-          .NET SDK, VS's MSBuild only, NuGet through the corporate proxy
+          .NET SDK, VS's MSBuild only, NuGet through the network's proxy
 action:   facsimile prove Dev
 expect:   outcome    head.dacpac built in both rows, or row (b) stops toolchain naming the .NET SDK · exit 6; never
                      build-failed for a missing SDK

@@ -153,7 +153,7 @@ expect:   answers    HasRows(Customer)=yes · NotNull(Customer.Email)=unmeasured
           files      the error is recorded as Msg 230 by number; its text is not recorded
 laws:     H2 H3 P3
 source:   expected · Microsoft docs (a column-level DENY overrides table-level SELECT; Msg 230)
-note:     Corporate estates often deny PII columns. The run must stop, never count around the column.
+note:     Estates often deny read access to PII columns. The run must stop, never count around the column.
 ```
 
 ### ENV-10 · VIEW DEFINITION granted on one schema only
@@ -190,7 +190,7 @@ source:   expected · TWIN_SUCCESSION §8 (the lead's review extends the proof t
 ### ENV-12 · the developers' real Dev login
 ```case
 kind:     manual
-setup:    a developer's corporate laptop; facsimile.json Dev = the real Dev server and database
+setup:    a developer's laptop; facsimile.json Dev = the real Dev server and database
 action:   as that developer: SELECT HAS_PERMS_BY_NAME(NULL,'DATABASE','VIEW DEFINITION'),
           HAS_PERMS_BY_NAME(NULL,'DATABASE','SELECT'); then facsimile read Dev
 expect:   outcome    both 1 and read completes; otherwise the access ticket names the missing grant

@@ -648,7 +648,7 @@ source:   expected · ARCH §2 row 29 · TWIN_SUCCESSION §7 (bake.mjs leaves th
 ### TWN-142 · row 30 · the PR pipeline proved into an empty database; the facsimile proves the committed proofs
 ```case
 kind:     process
-setup:    an ADO PR making Customer.Email NOT NULL · committed proofs/<slug>/: schema.Dev.dacpac, delta.Dev.sql,
+setup:    a pull request making Customer.Email NOT NULL · committed proofs/<slug>/: schema.Dev.dacpac, delta.Dev.sql,
           delta.pr.sql, answers.Dev.json (HasRows(Customer)=yes · NotNull(Customer.Email)=violating)
 action:   (old) pipelines/ssdt-agent-pr-validation.yml: bake restore into <base>_<fp>, then
           `prove.mjs verdict --db $(Build.BuildId)_pr` · (new) `facsimile prove Dev` on the agent
@@ -1889,10 +1889,10 @@ laws:     T4 F3 F9
 source:   expected · T4, F3
 ```
 
-### TWN-314 · row 1 · G4: the laptop check; `twin up` users move to `facsimile up` on the corporate machine
+### TWN-314 · row 1 · G4: the laptop check; `twin up` users move to `facsimile up` on a team machine
 ```case
 kind:     manual
-setup:    corporate Windows laptop · VS 2022 MSBuild · LocalDB as installed · no Docker · ConstrainedLanguage mode
+setup:    team Windows laptop · VS 2022 MSBuild · LocalDB as installed · no Docker · ConstrainedLanguage mode
 action:   facsimile doctor · up · up · prove Dev on one real change
 expect:   doctor ends done, or names a stop (platform when LocalDB is older than the DSP) · up converges, then prints DONE up · Nothing to apply · prove reaches a verdict · every verb runs under ConstrainedLanguage (A2) · timings are recorded
           against ARCH §11.4 and §11.6

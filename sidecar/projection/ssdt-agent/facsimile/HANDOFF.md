@@ -61,7 +61,7 @@ environment. M3's *existing-data tier* is the facsimile. WP 3.3 already states i
 |---|---|---|
 | C#, not PowerShell. Appendix A of `TARGET.md` is a record, not a fallback in waiting | the operator | 2026-10-18 |
 | MCP is a first-class surface, with the CLI as the floor. This answers `<v3>/V3_INSTRUCTION_ARCHITECTURE.md` §9.3's open question: the organization's MCP policy is enabled, so `dbchange serve --mcp` can be built | the operator | 2026-10-18 |
-| Team laptops run LocalDB 16.x (SQL Server 2022). That meets a Sql160 project (law S4). The corporate network has no Docker, so LocalDB is the local server there, and a configured instance serves CI and the sandbox. v3's latest `io/LocalServer` already turns to LocalDB only when nothing else is chosen | the operator | 2026-10-19 |
+| Team laptops run LocalDB 16.x (SQL Server 2022). That meets a Sql160 project (law S4). The estate's network has no Docker, so LocalDB is the local server there, and a configured instance serves CI and the sandbox. v3's latest `io/LocalServer` already turns to LocalDB only when nothing else is chosen | the operator | 2026-10-19 |
 | Access: developers read Dev; dev leads read QA and UAT, so a lead's review extends the proof; nobody reads Prod. Prod is proved with `--assume Prod=worst` until a VIEW DEFINITION-only login exists. A data-reader-only login is refused by Extract and Script | the operator | 2026-10-18 |
 | Two principals keep the tool, one on the team and one on the supporting team. They are deliberately not named in any repository. Break-glass is the on-team principal plus a dev lead | the operator | 2026-10-18 |
 | The Twin stays in service until parity (G3) and one release cycle side by side (G4). `ARCHITECTURE.md` §10 has the gates | this spec | 2026-10-18 |

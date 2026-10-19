@@ -526,7 +526,7 @@ case is updated with the receipt.
 2. Is `sys.partitions.rows` exact at zero vs non-zero on a quiet database, under a VIEW
    DEFINITION-only login, on SQL Server 2019 and 2022?
 3. Do the generated statement shapes in §4 hold on DacFx 162.x as well as 170.x?
-4. Does a classic `.sqlproj` build with only VS 2022's MSBuild on a corporate laptop, and how long
+4. Does a classic `.sqlproj` build with only VS 2022's MSBuild on a team laptop, and how long
    does it take for the real estate?
 5. Does `sqlcmd` from the VS install exist, or is go-sqlcmd needed?
 6. How long does LocalDB take to CREATE, RESTORE and DROP for a ~300-table schema? (This sets the

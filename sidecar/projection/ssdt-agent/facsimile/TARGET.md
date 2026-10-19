@@ -21,8 +21,8 @@ CLI-first, and the same executable also runs as a stdio MCP server (`facsimile m
 They were conflated earlier; they are independent. MCP is never the floor, because GitHub's "MCP
 servers in Copilot" policy is off by default for Business and Enterprise.
 
-**Why C# now, when PowerShell was chosen first.** PowerShell was chosen for corporate-friction
-reasons: no build, no binary, nothing for AppLocker to block. It was not chosen as the better
+**Why C# now, when PowerShell was chosen first.** PowerShell was chosen to avoid friction on
+locked-down machines: no build, no binary, nothing for AppLocker to block. It was not chosen as the better
 engineering. Specifying the core then showed what it really has to do:
 - read a delta together with the environment's column catalog;
 - match batches token by token;
@@ -54,7 +54,7 @@ extended laptop check (`../../../../TWIN_SUCCESSION.md` Appendix C):
 | Fact | How it is read | If it fails |
 |---|---|---|
 | A .NET 8 or later runtime and SDK is present, or installable without admin | `dotnet --list-sdks`, `dotnet --list-runtimes` | Appendix A, the PowerShell realization |
-| Code integrity does not block unsigned assemblies run by the Microsoft-signed `dotnet` host | `WDAC user mode` is 0 or 1 | ask IT to sign internal tools, or Appendix A |
+| Code integrity does not block unsigned assemblies run by the Microsoft-signed `dotnet` host | `WDAC user mode` is 0 or 1 | ask whoever manages the machines to sign internal tools, or Appendix A |
 | A NuGet feed is reachable (an Azure Artifacts feed with an upstream to nuget.org, or nuget.org) | `dotnet nuget list source`, plus one restore | Appendix A |
 
 AppLocker's default exe rules allow `dotnet.exe`, because it lives under Program Files. The tool's
