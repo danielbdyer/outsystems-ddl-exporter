@@ -77,7 +77,7 @@ public sealed class DiffTests(ScratchRepository repository) : IClassFixture<Scra
     /// admin identity, who sees the login. What the test asserts is that the answer names the login and that no property in it is
     /// named after a member of <see cref="Ssdt.Secrets"/>: DacFx makes up a new Login.Password on each read, since SQL Server keeps
     /// only a hash of the one the login was made with, and Ssdt.ReadModel leaves that property out. The answer is also searched for a
-    /// password setting (<see cref="PlantedValue.PasswordSetting"/>): on the container the fixture's identity signs in as sa with a
+    /// password setting (<see cref="PlantedValue.PasswordSetting"/>): on SQL Server Express on Linux the fixture's identity signs in as sa with a
     /// password, the env:uat connection file holds that connection string with its Password=, and the search fails if dbchange read
     /// printed it.
     /// </summary>

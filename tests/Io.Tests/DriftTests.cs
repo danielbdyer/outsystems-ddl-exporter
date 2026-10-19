@@ -339,7 +339,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         Assert.True(readExit == 0, read);
         // the session saw the run: dbchange's own first statement
         Assert.Contains(sent, s => s.Text.Contains("HAS_PERMS_BY_NAME", StringComparison.Ordinal));
-        // The container's SQL Server shows DacFx's catalog batch masked (*encrypt---); the Windows runner's LocalDB shows it as written
+        // SQL Server Express on Linux shows DacFx's catalog batch masked (*encrypt---); the Windows runner's LocalDB shows it as written
         // but cut off, and Writes reads it token by token. A masked text is admitted only as DacFx's sp_executesql, one per read at most:
         // the two checks and the read.
         var masked = sent.Where(s => ReadOnlyLoginTrace.Masked(s.Text)).ToList();
