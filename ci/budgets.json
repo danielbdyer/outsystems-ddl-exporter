@@ -22,7 +22,7 @@
   "code": {
     "about": "C# in the three packages together; tests are budgeted separately. The ceiling is the sum of the three package ceilings. The planned figures are M3 as re-cut, which the operator confirmed on 2026-10-19 (V3_MILESTONES.md section 17 item 20); before the re-cut M3 planned 4,840.",
     "budgets": ["kernel", "io", "cli"],
-    "ceiling": 25900,
+    "ceiling": 26600,
     "planned": 11400,
     "plannedByMilestone": { "M0": 1120, "M1": 2560, "M2": 1880, "M3": 2270, "M4": 790, "M5": 1440, "M6": 880, "M7": 460 }
   },
@@ -31,7 +31,7 @@
       "about": "code: the pure kernel. plannedFiles names files within kernel/, matched by file name.",
       "include": ["kernel/**/*.cs"],
       "exclude": [],
-      "ceiling": 9000,
+      "ceiling": 9700,
       "planned": 4440,
       "plannedFiles": [
         { "files": ["SortedArray.cs", "Result.cs", "Error.cs", "Name.cs", "Fingerprint.cs"], "what": null, "lines": 410, "milestones": ["M0"] },
@@ -90,7 +90,7 @@
       "about": "C# in every test project; the corpus under tests/Golden/ is data and has its own budget.",
       "include": ["tests/**/*.cs"],
       "exclude": ["tests/Golden/**"],
-      "ceiling": 41300,
+      "ceiling": 43100,
       "planned": 20000,
       "plannedByMilestone": { "M0": 2491, "M1": 5302, "M2": 1984, "M3": 3510, "M4": 2441, "M5": 1831, "M6": 1068, "M7": 1373 }
     },

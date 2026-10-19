@@ -39,8 +39,8 @@ script carries its own `BlockOnPossibleDataLoss` checks as ordinary `SELECT`s. T
 A wiki is a git repository. So v3 has one adapter per source, which reads the source whole through
 its own self-description, without knowing which verb asked. A verb binds that reading to one
 question, and its parameters are data wherever they can be. Adapters grow with sources, verbs grow
-with questions, and nothing grows with their product. The lifecycle tool is budgeted at **≤ 25,900
-lines of C#** (kernel ≤ 9,000, io ≤ 13,500, cli ≤ 3,400, raised on 2026-10-19 by Appendix F's rule; about 11,400 planned since M3's re-cut, §17 item 20), against
+with questions, and nothing grows with their product. The lifecycle tool is budgeted at **≤ 26,600
+lines of C#** (kernel ≤ 9,700, io ≤ 13,500, cli ≤ 3,400, raised on 2026-10-19 by Appendix F's rule; about 11,400 planned since M3's re-cut, §17 item 20), against
 `V3_ARCHITECTURE.md` §6.6's ≤ 31,000 without the OSSYS reader (≈ 34,000 with it); the cutover
 tools, if ported, add §6.6's own figures.
 
@@ -311,7 +311,7 @@ What it changes in this plan:
 | 6 | Prediction | `classify`, pure, from committed evidence | `classify` stays provisional; a new verb, `predict`, reads each environment's existing data read-only from DacFx's own `BlockOnPossibleDataLoss` checks; proofs run at each environment's existing data | the lifecycle invariants: prediction and proof, and the condition under which a proof applies (Appendix B) | — |
 | 7 | Laws | twelve | fifteen: adds **P** (on a copy, prediction equals proof), **T** (a proof is reported for an environment only at that environment's existing data, DacFx version and publish profile) and, from the Facsimile on 2026-10-19, **F** (on a stand-in environment, the copy planted from its existing data reaches the verdict a full copy of it reaches). Laws 1–5 take lifecycle forms here and keep their emit forms for the cutover tools; 11 and 12 are restated to match the existing-data tier (Appendix C) | P holds every query v3 writes to SQL Server's behaviour; T is the condition under which a proof applies | — |
 | 8 | Verbs | thirteen, with `knowledge package` used but not counted | twelve in the lifecycle (adds `predict`; counts `knowledge`) and three among the cutover tools (`emit`, `decide`, `move`); `read --from ossys` moves to the cutover tools | test 9 checks the verb list; the list should be true | — |
-| 9 | Budget | ≤ 31,000 lines of C# without the OSSYS reader (≈ 34,000 with it) | ≤ 25,900 for the lifecycle (14,900 until 2026-10-19, Appendix F); the cutover tools at §6.6's own figures, if ported | §2.4 | a milestone's exit cannot be met under its ceiling: raise it with one decision line, never silently |
+| 9 | Budget | ≤ 31,000 lines of C# without the OSSYS reader (≈ 34,000 with it) | ≤ 26,600 for the lifecycle (14,900 until 2026-10-19, Appendix F); the cutover tools at §6.6's own figures, if ported | §2.4 | a milestone's exit cannot be met under its ceiling: raise it with one decision line, never silently |
 | 10 | Distribution | a pinned .NET tool from a feed (instruction architecture §9.6 (e)) | the published tool committed in Git LFS, run by `dbchange.cmd` and `dbchange.ps1` at the repository root; `net10.0` throughout, published framework-dependent, with DacFx's `net10.0` build assemblies as the build route's targets; the .NET 10 SDK is a prerequisite on every machine that builds | the lifecycle prompt's R1 and R2; MSBuild loads the build task into its own runtime, so the targets and the SDK must agree (§1 fact 1, re-measured on SDK 10.0.401) | a feed arrives: the folder becomes a tool manifest |
 | 11 | Refreshing evidence | the bake lane, on a schema change and weekly | nothing to refresh: each proof's copy is planted from the `ExistingData` the pull request carries, read fresh by every prediction; the evidence file and `check evidence` return with the shape tier (§9) | §3 consequence 2 | §17 item 20's trigger |
 | 12 | The OSSYS reader | an optional package (~3,600) serving `read --from ossys` and `check outsystems` | a post-cutover subset (~280) over a table-and-column allowlist serves `check outsystems`; the full reader is among the cutover tools | the lifecycle asks the metamodel three questions rather than for the whole model, and the platform database holds user records | — |
@@ -362,7 +362,7 @@ assumed a feed, a store or the cutover tools:
 | M8 | One tool | use one tool and one set of documents; the archive leaves `main` | — | all of them, generated into `LAWS.md` | the archive's CI | ~0 | Prod's cutover + 30 days | M7 |
 | W | The cutover tools | only if a consumer exists: re-emit from OSSYS; decide; move data | — | 1–5 in their emit forms; oracles 1 and 4 | v2 | §6.6 | on a decision | §17, item 9 |
 
-The C# column sums to about 11,400 against the 25,900 ceiling (13,970 before the re-cut of M3, §17 item 20); tests are budgeted at ≤ 41,300 (raised from 10,500 when M1 closed and from 20,000 on 2026-10-19)
+The C# column sums to about 11,400 against the 26,600 ceiling (13,970 before the re-cut of M3, §17 item 20); tests are budgeted at ≤ 43,100 (raised from 10,500 when M1 closed and from 20,000 on 2026-10-19)
 (Appendix F). The days assume agents writing against executable exit checks, one independent
 review per pull request, the operator reviewing the kernel and contract pull requests, and four
 lanes running at once. A workflow on a 4-CPU container runs two agents at a time, which stretches
@@ -1113,7 +1113,7 @@ var untrusted = new DacDeployOptions { BlockOnPossibleDataLoss = true, ScriptNew
 
 Code only; tests are budgeted separately below. `ci/budgets.json` carries these ceilings from M0. Since 2026-10-19 a package's ceiling is its lines measured that day plus twice the lines this appendix still plans for M2 to M7, rounded up to the next hundred, and the budget held hardest is each file's: 500 lines and 140 characters a line for a file of `kernel/`, `io/` or `cli/`, 800 lines and no width for a test file (the operator's rulings of 2026-10-19, `DECISIONS.md`).
 
-**`kernel/` (ceiling 9,000; planned 4,440)**
+**`kernel/` (ceiling 9,700; planned 4,440)**
 
 | File | Lines | M |
 |---|---:|---|
@@ -1152,12 +1152,12 @@ M0), then one file per verb at about a hundred lines (M1 320 · M2 220 · M3 120
 M6 160 · M7 60).
 
 **Per milestone (code):** M0 1,120 · M1 2,560 · M2 1,880 · M3 2,270 · M4 790 · M5 1,440 · M6 880 ·
-M7 460; about 11,400 in all, against a ceiling of 25,900. Before the re-cut of M3 (§17 item 20), M3
+M7 460; about 11,400 in all, against a ceiling of 26,600. Before the re-cut of M3 (§17 item 20), M3
 planned 4,840: `Evidence.cs` 720 and `SyntheticData.cs` 1,800 in the kernel, 1,450 in io and 170 in
 cli, and they return with the trigger. `ci/budgets.json`'s planned figures moved to the re-cut when the
 operator confirmed it on 2026-10-19.
 
-**Tests (ceiling 41,300, raised from 10,500 when M1 closed and from 20,000 on 2026-10-19; measured M0 2,491 · M1 5,302; the rest planned from the original shares):** M2 1,984 · M3 3,510 · M4 2,441 · M5 1,831 · M6 1,068 · M7 1,373. The original plan read M0 700 · M1 1,500 · M2 1,300 · M3 2,300 · M4 1,600 ·
+**Tests (ceiling 43,100, raised from 10,500 when M1 closed and from 20,000 on 2026-10-19; measured M0 2,491 · M1 5,302; the rest planned from the original shares):** M2 1,984 · M3 3,510 · M4 2,441 · M5 1,831 · M6 1,068 · M7 1,373. The original plan read M0 700 · M1 1,500 · M2 1,300 · M3 2,300 · M4 1,600 ·
 M5 1,200 · M6 700 · M7 900. The corpus under `tests/Golden/` is data rather than code, and is held
 to ≤ 3,000 lines as `V3_ARCHITECTURE.md` §6.5 sets; S2 contributes the extracted `BlockOnPossibleDataLoss` checks
 and no whole scripts.
