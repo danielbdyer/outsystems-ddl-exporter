@@ -29,7 +29,7 @@ does not prove · §7 keeping it true.
 | M0 Foundation | built (#704) | exits 1, 3 and 4 by tests declaring `Exit` M0.1, M0.3 and M0.4 (`LAWS.md`) | exit 2 (the archived solutions' counts) is recorded in #704; no test repeats it |
 | M1 Read | built (#704) | exits 2 to 8 by tests declaring `Exit` M1.2 to M1.8 | exit 1: the laptop check against Dev (spikes S1 and S3), the operator's, with the commands in `NEXT.md` |
 | M2 Predict | started 2026-10-19 on the operator's go, with WP 2.1's first slice | — | no person; spike S2 ran on both DacFx releases, so WP 2.2 can start |
-| M3 Synthetic copy | not started; its re-cut confirmed by the operator on 2026-10-19 (§17 item 20 of `V3_MILESTONES.md`) | — | no person; WPs 3.1 and 3.4 first, then WP 3.8 and WP 3.5 |
+| M3 Synthetic copy | started: WP 3.1 (#705); its re-cut confirmed by the operator on 2026-10-19 (§17 item 20 of `V3_MILESTONES.md`) | — | no person; WP 3.4, then WP 3.8 and WP 3.5 |
 | M4 to M7 | not started | — | their predecessors (`V3_MILESTONES.md` §5) |
 
 **CI on `2a87f39` is green in all eleven checks** across six workflow runs:

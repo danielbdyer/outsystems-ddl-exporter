@@ -144,7 +144,8 @@ public static class Classify
     /// The classification of <paramref name="change"/>, from <paramref name="before"/> to <paramref name="after"/>. Its entries are the
     /// elements created, dropped and renamed and the elements altered, refactorlog entries aside; an element stands in the entry of a
     /// created or dropped element it is keyed under or stands on (a column in its table's, a key in its table's, a default in its
-    /// column's), and so does an alteration that only adds or removes elements the change creates or drops under the altered element,
+    /// column's), a created history table stands in the entry of the created or altered table whose TemporalSystemVersioningHistoryTable
+    /// gains it, and so does an alteration that only adds or removes elements the change creates or drops under the altered element,
     /// the other targets in their order (a table's Columns when a column is created), or that moves the element onto one the change
     /// creates (a key whose table is dropped and created under another name); columns put in another order, or an index whose key gains
     /// a column, is an altered entry. First the renames made by typing are paired and refused: a dropped and a created column of one type
@@ -158,8 +159,8 @@ public static class Classify
         SortedArray<Pattern> patterns, Inputs inputs)
     {
         var (was, now) = (Keyed(before), Keyed(after));
-        var created = Rooted(change.Created);
-        var dropped = Rooted(change.Dropped);
+        var created = Rooted(change.Created, Versioned(change));
+        var dropped = Rooted(change.Dropped, []);
         var entries = created.Where(c => c.Key == c.Value).Select(c => new ChangeClassification.Entry(ChangeKind.Created, c.Key))
             .Concat(dropped.Where(d => d.Key == d.Value).Select(d => new ChangeClassification.Entry(ChangeKind.Dropped, d.Key)))
             .Concat(change.Renamed.Select(r => new ChangeClassification.Entry(ChangeKind.Renamed, r.After)))
@@ -299,10 +300,33 @@ public static class Classify
             "Write the check in the OR form SQL Server stores, each value compared with = and joined by OR."));
 
     /// <summary>
-    /// Each element of a change's created or dropped list, refactorlog entries aside, with the root of its entry: itself, or the root of
-    /// the listed element it is keyed under or stands on.
+    /// Each history table the change creates, with the table it keeps the history of: the created or altered table whose
+    /// TemporalSystemVersioningHistoryTable gains it. v2's temporal-convert creates the paired history table as a step of the conversion,
+    /// so the history table stands in the versioned table's entry, whether the change declares it or DacFx generates it.
     /// </summary>
-    private static Dictionary<ElementKey, ElementKey> Rooted(SortedArray<Element> listed)
+    private static Dictionary<ElementKey, ElementKey> Versioned(Change change)
+    {
+        const string History = "TemporalSystemVersioningHistoryTable";
+        var made = change.Created.Select(e => e.Key).ToHashSet();
+        var gained = change.Created.SelectMany(e => e.Relationships.Where(r => r.Name == History)
+                .SelectMany(r => r.Targets).Select(t => (History: t.Key, Table: e.Key)))
+            .Concat(change.Altered.SelectMany(a => a.Relationships.Where(r => r.Name == History)
+                .SelectMany(r => r.After.Where(t => !r.Before.Any(b => b.Key == t.Key))).Select(t => (History: t.Key, Table: a.Key))));
+        var versioned = new Dictionary<ElementKey, ElementKey>();
+        foreach (var (history, table) in gained.Where(g => made.Contains(g.History) && g.History != g.Table))
+        {
+            versioned.TryAdd(history, table);
+        }
+
+        return versioned;
+    }
+
+    /// <summary>
+    /// Each element of a change's created or dropped list, refactorlog entries aside, with the root of its entry: itself, or the root of
+    /// the listed element it is keyed under or stands on, or for a history table, the table it keeps the history of
+    /// (<paramref name="versioned"/>), which the change creates or alters.
+    /// </summary>
+    private static Dictionary<ElementKey, ElementKey> Rooted(SortedArray<Element> listed, Dictionary<ElementKey, ElementKey> versioned)
     {
         var set = listed.Where(e => e.Key.Type != Element.RefactorLogOperation).ToDictionary(e => e.Key);
         var roots = new Dictionary<ElementKey, ElementKey>();
@@ -315,8 +339,9 @@ public static class Classify
 
             var up = key.Parent is { } parent && set.ContainsKey(parent) ? parent
                 : set[key].Relationships.Where(r => On.Contains(r.Name)).SelectMany(r => r.Targets).Select(t => t.Key)
-                    .FirstOrDefault(t => t != key && set.ContainsKey(t));
-            return roots[key] = up is not null && seen.Add(up) ? Root(up, seen) : key;
+                    .FirstOrDefault(t => t != key && set.ContainsKey(t))
+                ?? versioned.GetValueOrDefault(key);
+            return roots[key] = up is null || !seen.Add(up) ? key : set.ContainsKey(up) ? Root(up, seen) : up;
         }
 
         foreach (var key in set.Keys)
