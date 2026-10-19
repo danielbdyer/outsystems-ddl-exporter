@@ -18,11 +18,10 @@ namespace DbChange.Io;
 /// <summary>
 /// Can this machine do the work, read-only (V3_ARCHITECTURE.md §8.12): the .NET SDK in the band global.json names and the .NET 10 runtime;
 /// git at 2.24 or later (rev-parse --end-of-options); the committed tool folder and its DacFx against the SSDT repository's toolchain
-/// ledger; the build route; the local server dbchange would use, in LocalServer's order (DBCHANGE_SQL, the SQL Server
-/// ~/.dbchange/sql.env names, LocalDB); and Git LFS. Each item
-/// missing carries its remedy. Every program runs through io/Command for at most <see cref="Command.ProbeTimeout"/>, and a program that
-/// does not answer in time is named as such, never as absent. The machine is read once (<see cref="Machine.Here"/>) and given to
-/// <see cref="Examine"/>, so a test describes a machine instead of setting variables.
+/// ledger; the build route; the local server dbchange would use, in LocalServer's order (DBCHANGE_SQL, the SQL Server ~/.dbchange/sql.env
+/// names, LocalDB); and Git LFS. Each item missing carries its remedy. Every program runs through io/Command for at most
+/// <see cref="Command.ProbeTimeout"/>, and a program that does not answer in time is named as such, never as absent. The machine is
+/// read once (<see cref="Machine.Here"/>) and given to <see cref="Examine"/>, so a test describes a machine instead of setting variables.
 /// </summary>
 public static class Doctor
 {

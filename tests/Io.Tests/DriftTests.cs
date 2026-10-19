@@ -201,9 +201,8 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     /// R1 and DECISIONS.md, 2026-09-25: a drift's provenance holds the fingerprint of the target's schema, its elements as the copy
     /// extracts, and of the deploy report, the change the claim is about; neither is the package's. It names the committed DacFx and the
     /// copy's server, its product version, edition and compatibility level as SQL Server reports them, and lacks only the existing data;
-    /// the stamp says
-    /// UNPINNED while the ledger's row does, and until S7 lands the Octopus step's profile, a note says the profile is not verified against
-    /// it (§17 item 15).
+    /// the stamp says UNPINNED while the ledger's row does, and until S7 lands the Octopus step's profile, a note says the profile is not
+    /// verified against it (§17 item 15).
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]

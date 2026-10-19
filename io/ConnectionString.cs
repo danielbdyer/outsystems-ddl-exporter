@@ -13,8 +13,7 @@ namespace DbChange.Io;
 /// the local server's with the copy's database. A text SqlClient reads nothing from is connection.malformed, its text withheld,
 /// since it can hold a password. For TLS, dbchange adds no keyword to a named environment's connection: its reference's own Encrypt,
 /// TrustServerCertificate and HostNameInCertificate reach the server as written, and SqlClient's defaults stand where it names none.
-/// The connection to the SQL Server ~/.dbchange/sql.env names alone trusts the server's certificate, which SQL Server generated for
-/// itself.
+/// The connection to the SQL Server ~/.dbchange/sql.env names alone trusts the server's certificate, which SQL Server generated.
 /// </summary>
 internal static class ConnectionString
 {
