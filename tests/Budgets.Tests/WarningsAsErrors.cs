@@ -17,12 +17,14 @@ public sealed class WarningsAsErrors
     public void Every_v3_project_builds_with_warnings_and_the_culture_rules_as_errors()
     {
         var props = Repository.Xml("Directory.Build.props");
-        string[] overriding = ["TreatWarningsAsErrors", "MSBuildTreatWarningsAsErrors", "WarningsAsErrors", "WarningsNotAsErrors", "NoWarn"];
+        string[] overriding =
+            ["TreatWarningsAsErrors", "MSBuildTreatWarningsAsErrors", "WarningsAsErrors", "WarningsNotAsErrors", "NoWarn"];
 
         Assert.Equal("true", props.Descendants("TreatWarningsAsErrors").Single().Value);
         var errors = props.Descendants("WarningsAsErrors").Single().Value.Split(';');
         Assert.All((string[])["CA1304", "CA1305", "CA1307", "CA1309"], rule => Assert.Contains(rule, errors));
         Assert.Empty(Repository.MsBuildFiles.Where(f => f != "Directory.Build.props")
-            .SelectMany(f => Repository.Xml(f).Descendants().Where(e => overriding.Contains(e.Name.LocalName)).Select(e => f + " sets " + e.Name.LocalName)));
+            .SelectMany(f => Repository.Xml(f).Descendants().Where(e => overriding.Contains(e.Name.LocalName))
+                .Select(e => f + " sets " + e.Name.LocalName)));
     }
 }

@@ -23,9 +23,10 @@ public sealed class Errors
     /// <summary>Words that lead a description or a hedge, never a move: an article, a pronoun, an auxiliary, a condition.</summary>
     private static readonly HashSet<string> NoMove = new(StringComparer.OrdinalIgnoreCase)
     {
-        "a", "an", "the", "this", "that", "these", "those", "it", "its", "i", "we", "you", "your", "our", "my", "they", "their", "there", "here",
-        "please", "can", "could", "should", "would", "must", "may", "might", "will", "shall", "is", "are", "was", "were", "be", "been", "do", "does",
-        "did", "has", "have", "had", "not", "no", "nothing", "none", "cannot", "unable", "error", "failed", "if", "when", "because", "since", "maybe", "perhaps",
+        "a", "an", "the", "this", "that", "these", "those", "it", "its", "i", "we", "you", "your", "our", "my", "they", "their",
+        "there", "here", "please", "can", "could", "should", "would", "must", "may", "might", "will", "shall", "is", "are", "was",
+        "were", "be", "been", "do", "does", "did", "has", "have", "had", "not", "no", "nothing", "none", "cannot", "unable", "error",
+        "failed", "if", "when", "because", "since", "maybe", "perhaps",
     };
 
     private static readonly Regex RunsDbChange = new(@"\b[Rr]un dbchange (\S+)", RegexOptions.CultureInvariant);
@@ -63,13 +64,16 @@ public sealed class Errors
         Assert.Contains("environments.literal-connection", written);
         Assert.Contains("arguments.unknown-check", written);   // the cli's own, in cli/Check.cs
         Assert.Contains("element.", written);   // the start of a composed code: element.property-name, element.relationship-name
-        Assert.DoesNotContain(written, code => code.EndsWith('.') ? !driven.Any(d => d.StartsWith(code, StringComparison.Ordinal)) : !driven.Contains(code));
-        Assert.DoesNotContain(driven, code => !written.Contains(code) && !written.Any(start => start.EndsWith('.') && code.StartsWith(start, StringComparison.Ordinal)));
+        Assert.DoesNotContain(written, code => code.EndsWith('.') ? !driven.Any(d => d.StartsWith(code, StringComparison.Ordinal))
+            : !driven.Contains(code));
+        Assert.DoesNotContain(driven, code => !written.Contains(code)
+            && !written.Any(start => start.EndsWith('.') && code.StartsWith(start, StringComparison.Ordinal)));
     }
 
     /// <summary>
-    /// S27 of the pre-M2 review: each remedy the doctor gives, on a bare machine and on one whose Docker does not answer or answers past its
-    /// timeout, is one move in the register, as an error's is; the doctor's remedies are no error's, so the drivers above never read them.
+    /// S27 of the pre-M2 review: each remedy the doctor gives, on a bare machine and on one whose Docker does not answer or answers past
+    /// its timeout, is one move in the register, as an error's is; the doctor's remedies are no error's, so the drivers above never read
+    /// them.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -83,23 +87,31 @@ public sealed class Errors
         Runner run = machine switch
         {
             "nothing installed" => (c, _) => new Ran.NotFound(c.Program, "not installed"),
-            "Docker not answering" => (c, _) => c.Program == "docker" ? new Ran.Exited(1, "", "Cannot connect to the Docker daemon") : new Ran.NotFound(c.Program, "not installed"),
+            "Docker not answering" => (c, _) => c.Program == "docker" ? new Ran.Exited(1, "", "Cannot connect to the Docker daemon")
+                : new Ran.NotFound(c.Program, "not installed"),
             _ => (c, _) => c.Program == "docker" ? new Ran.TimedOut(c.Timeout, "", "") : new Ran.NotFound(c.Program, "not installed"),
         };
 
-        var remedies = Doctor.Examine(new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null, bare.Under("no-sql.env"), Environment.Version), run)
+        var remedies = Doctor.Examine(
+            new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null, bare.Under("no-sql.env"),
+            Environment.Version), run)
             .Where(p => p.Remedy is not null).Select(p => (p.Item.Name, Remedy: p.Remedy!)).ToList();
 
         Assert.NotEmpty(remedies);
-        Assert.Empty(remedies.Where(r => Flaw(r.Remedy) is not null).Select(r => r.Name + ": the remedy " + Flaw(r.Remedy) + ": " + r.Remedy));
+        Assert.Empty(remedies.Where(r => Flaw(r.Remedy) is not null)
+            .Select(r => r.Name + ": the remedy " + Flaw(r.Remedy) + ": " + r.Remedy));
         Assert.Empty(remedies.SelectMany(r => Prose.Findings(r.Remedy).Select(f => r.Name + ": " + f)));
     }
 
-    /// <summary>The scan reads a code from a construction that names the type and from a target-typed one (finding D6), and reads no code from a string that is none.</summary>
+    /// <summary>
+    /// The scan reads a code from a construction that names the type and from a target-typed one (finding D6), and reads no code from a
+    /// string that is none.
+    /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("return new Error(\"environments.missing\", \"No environments file.\", \"Commit it.\");", "environments.missing")]
-    [InlineData("private static Error Malformed(string at) => new(\"environments.malformed\", at, \"Write it.\");", "environments.malformed")]
+    [InlineData("private static Error Malformed(string at) => new(\"environments.malformed\", at, \"Write it.\");",
+        "environments.malformed")]
     [InlineData("new Error(ErrorCode.Text(category) + \".\", m, r)", null)]
     [InlineData("new(\"dbchange.doctor/1\", outcome, 0, message, [])", null)]
     [InlineData("new(\"done\", [0], \"the message is the tool's version\")", null)]

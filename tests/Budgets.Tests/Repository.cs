@@ -21,7 +21,8 @@ internal static class Repository
 
     /// <summary>The v3 MSBuild files: every project outside archive/, and the Directory.* files at the root.</summary>
     public static IEnumerable<string> MsBuildFiles => Files.Where(f => !f.StartsWith("archive/", StringComparison.Ordinal)
-        && (f.EndsWith(".csproj", StringComparison.Ordinal) || (!f.Contains('/', StringComparison.Ordinal) && f.StartsWith("Directory.", StringComparison.Ordinal))));
+        && (f.EndsWith(".csproj", StringComparison.Ordinal)
+            || (!f.Contains('/', StringComparison.Ordinal) && f.StartsWith("Directory.", StringComparison.Ordinal))));
 
     private static readonly Lazy<IReadOnlyList<string>> FileList = new(ListFiles);
 
@@ -47,8 +48,11 @@ internal static class Repository
         return bytes.Count(b => b == (byte)'\n') + (bytes.Length > 0 && bytes[^1] != (byte)'\n' ? 1 : 0);
     }
 
-    /// <summary>A glob as a regular expression over a relative path: ** any run of segments, * any run within one, ? one character.</summary>
-    public static Regex Glob(string glob) => new("^" + Regex.Replace(Regex.Escape(glob), @"\\\*\\\*/|\\\*\\\*|\\\*|\\\?", m => m.Value switch
+    /// <summary>
+    /// A glob as a regular expression over a relative path: ** any run of segments, * any run within one, ? one character.
+    /// </summary>
+    public static Regex Glob(string glob) =>
+        new("^" + Regex.Replace(Regex.Escape(glob), @"\\\*\\\*/|\\\*\\\*|\\\*|\\\?", m => m.Value switch
     {
         @"\*\*/" => "(?:.*/)?",
         @"\*\*" => ".*",
@@ -66,15 +70,19 @@ internal static class Repository
         var values = Xml(msbuildFile).Descendants()
             .SelectMany(e => e.Attributes().Where(a => a.Name.LocalName is "Include" or "Update" or "Project").Select(a => a.Value)
                 .Concat(e.HasElements ? [] : [e.Value]))
-            .Select(v => v.Replace("$(MSBuildThisFileDirectory)", "", StringComparison.Ordinal).Replace("$(MSBuildProjectDirectory)", "", StringComparison.Ordinal))
+            .Select(v => v.Replace("$(MSBuildThisFileDirectory)", "", StringComparison.Ordinal)
+                .Replace("$(MSBuildProjectDirectory)", "", StringComparison.Ordinal))
             .SelectMany(v => v.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            .Where(v => !v.Contains("$(", StringComparison.Ordinal) && (v.Contains('/', StringComparison.Ordinal) || v.Contains('\\', StringComparison.Ordinal) || v.Contains('.', StringComparison.Ordinal)));
+            .Where(v => !v.Contains("$(", StringComparison.Ordinal)
+                && (v.Contains('/', StringComparison.Ordinal) || v.Contains('\\', StringComparison.Ordinal)
+                || v.Contains('.', StringComparison.Ordinal)));
         return values.Select(v => Path.GetRelativePath(Root, Path.GetFullPath(Path.Combine(directory, v))).Replace('\\', '/'));
     }
 
     private static IReadOnlyList<string> ListFiles()
     {
-        var output = new Command("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], TimeSpan.FromMinutes(10)) { Directory = Root }.Run() switch
+        var output = new Command("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            TimeSpan.FromMinutes(10)) { Directory = Root }.Run() switch
         {
             Ran.Exited { Code: 0 } listed => listed.Output,
             var git => throw new InvalidOperationException("git ls-files failed in " + Root + ": " + git),

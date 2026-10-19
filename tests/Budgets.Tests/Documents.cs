@@ -7,10 +7,14 @@ using System.Text.RegularExpressions;
 
 namespace DbChange.Budgets.Tests;
 
-/// <summary>The documents as ci/docs.manifest.json lists them, the sets each document law reads, the rows of VALUES.md, and each milestone's exits and whether it is complete.</summary>
+/// <summary>
+/// The documents as ci/docs.manifest.json lists them, the sets each document law reads, the rows of VALUES.md, and each milestone's exits
+/// and whether it is complete.
+/// </summary>
 internal static class Documents
 {
-    public sealed record Row(string Path, string Kind, string Owner, string[] Reader, string[] Moment, int? Budget, string? Generator, string? Becomes);
+    public sealed record Row(string Path, string Kind, string Owner, string[] Reader, string[] Moment, int? Budget, string? Generator,
+        string? Becomes);
 
     public static IReadOnlyList<Row> Rows { get; } = JsonNode.Parse(Repository.Read("ci/docs.manifest.json"))!["documents"]!.AsArray()
         .Select(r => new Row(
@@ -32,7 +36,9 @@ internal static class Documents
         ["V3_ARCHITECTURE.md", "V3_INSTRUCTION_ARCHITECTURE.md", "LIFECYCLE_BACKPORT_PROMPT.md", "V3_MILESTONES.md", "V3_BUILD_PROMPT.md",
          "V3_BLUEPRINT_PROMPT.md", "V3_PARITY.md"];
 
-    /// <summary>M8, one tool: the root design documents leave for archive/design/ and the cutover tools' "not held yet" ends as it starts.</summary>
+    /// <summary>
+    /// M8, one tool: the root design documents leave for archive/design/ and the cutover tools' "not held yet" ends as it starts.
+    /// </summary>
     public const int OneTool = 8;
 
     private static readonly Regex ValueRow = new(@"^\| ([A-Z]\d+) \|", RegexOptions.CultureInvariant);
@@ -40,16 +46,21 @@ internal static class Documents
     private static readonly Regex MilestoneHeading = new(@"^## \d+\. M(\d)\b", RegexOptions.CultureInvariant);
     private static readonly Regex NumberedExit = new(@"^(\d+)\.\s", RegexOptions.CultureInvariant);
 
-    /// <summary>A NEXT.md line naming an exit a person runs: M&lt;n&gt; exit &lt;k&gt; beside a backticked command starting dbchange.</summary>
+    /// <summary>
+    /// A NEXT.md line naming an exit a person runs: M&lt;n&gt; exit &lt;k&gt; beside a backticked command starting dbchange.
+    /// </summary>
     private static readonly Regex RunByAPerson = new(@"\bM(\d) exit (\d+)\b", RegexOptions.CultureInvariant);
     private static readonly Regex DbChangeCommand = new(@"`dbchange [^`]*`", RegexOptions.CultureInvariant);
 
     /// <summary>The rows of VALUES.md, S1 to G9, in the file's order.</summary>
-    public static IReadOnlyList<string> Values { get; } = Repository.Lines("VALUES.md").Select(l => ValueRow.Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value).ToList();
+    public static IReadOnlyList<string> Values { get; } =
+        Repository.Lines("VALUES.md").Select(l => ValueRow.Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value).ToList();
 
     /// <summary>The work packages of V3_MILESTONES.md, as (milestone, number).</summary>
-    public static IReadOnlySet<(int Milestone, int Number)> WorkPackages { get; } = Repository.Lines("V3_MILESTONES.md").Select(l => WorkPackageRow.Match(l)).Where(m => m.Success)
-        .Select(m => (int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture))).ToHashSet();
+    public static IReadOnlySet<(int Milestone, int Number)> WorkPackages { get; } =
+        Repository.Lines("V3_MILESTONES.md").Select(l => WorkPackageRow.Match(l)).Where(m => m.Success)
+        .Select(m => (int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture),
+            int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture))).ToHashSet();
 
     /// <summary>
     /// Each milestone's exits as V3_MILESTONES.md numbers them: the numbered list after <c>**Exit.**</c> in the section headed
@@ -102,17 +113,22 @@ internal static class Documents
     public static IEnumerable<string> EveryExit => Exits.OrderBy(e => e.Key).SelectMany(e => e.Value.Select(k => Exit(e.Key, k)));
 
     /// <summary>The exits some test declares with [Trait("Exit", …)].</summary>
-    public static IReadOnlySet<string> DeclaredExits { get; } = TestTraits.All.SelectMany(t => t.Values("Exit")).ToHashSet(StringComparer.Ordinal);
+    public static IReadOnlySet<string> DeclaredExits { get; } =
+        TestTraits.All.SelectMany(t => t.Values("Exit")).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>
-    /// Whether M&lt;n&gt; is complete (DECISIONS.md, 2026-09-25): its section lists exits, and each has a test declaring
-    /// [Trait("Exit", "M&lt;n&gt;.&lt;k&gt;")], or a line of NEXT.md names it as M&lt;n&gt; exit &lt;k&gt; beside the backticked dbchange command a person runs.
+    /// Whether M&lt;n&gt; is complete (DECISIONS.md, 2026-09-25): its section lists exits, and each has a test declaring [Trait("Exit",
+    /// "M&lt;n&gt;.&lt;k&gt;")], or a line of NEXT.md names it as M&lt;n&gt; exit &lt;k&gt; beside the backticked dbchange command a person
+    /// runs.
     /// </summary>
     public static bool Complete(int n) => Complete(n, Exits, DeclaredExits, Repository.Lines("NEXT.md"));
 
-    internal static bool Complete(int n, IReadOnlyDictionary<int, IReadOnlyList<int>> exits, IReadOnlySet<string> declared, IEnumerable<string> next) =>
+    internal static bool Complete(int n, IReadOnlyDictionary<int, IReadOnlyList<int>> exits, IReadOnlySet<string> declared,
+        IEnumerable<string> next) =>
         exits.TryGetValue(n, out var list) && list.All(k => declared.Contains(Exit(n, k)) || next.Any(line => DbChangeCommand.IsMatch(line)
-            && RunByAPerson.Matches(line).Any(m => m.Groups[1].Value == n.ToString(CultureInfo.InvariantCulture) && m.Groups[2].Value == k.ToString(CultureInfo.InvariantCulture))));
+            && RunByAPerson.Matches(line)
+                .Any(m => m.Groups[1].Value == n.ToString(CultureInfo.InvariantCulture)
+                && m.Groups[2].Value == k.ToString(CultureInfo.InvariantCulture))));
 
     /// <summary>Whether M&lt;n&gt; has started: every milestone before it is complete.</summary>
     public static bool Started(int n) => Started(n, Complete);
@@ -124,7 +140,8 @@ internal static class Documents
 
     /// <summary>Every hand-written markdown row, less the root design documents until M8 starts: what NoRestatedCounts reads.</summary>
     public static IEnumerable<string> HandWritten => Rows
-        .Where(r => r.Kind == "hand" && r.Path.EndsWith(".md", StringComparison.Ordinal) && !(!Started(OneTool) && RootDesign.Contains(r.Path)))
+        .Where(r => r.Kind == "hand" && r.Path.EndsWith(".md", StringComparison.Ordinal)
+            && !(!Started(OneTool) && RootDesign.Contains(r.Path)))
         .Select(r => r.Path);
 
     /// <summary>

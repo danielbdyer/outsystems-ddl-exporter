@@ -47,7 +47,8 @@ public sealed class PackagesAllowlist
 
         Assert.Empty(unlocked);
         Assert.Contains(properties, e => e.Name.LocalName == "RestorePackagesWithLockFile" && e.Value == "true");
-        Assert.Contains(properties, e => e.Name.LocalName == "RestoreLockedMode" && e.Value == "true" && ((string?)e.Attribute("Condition") ?? "").Contains("$(CI)", StringComparison.Ordinal));
+        Assert.Contains(properties, e => e.Name.LocalName == "RestoreLockedMode" && e.Value == "true"
+            && ((string?)e.Attribute("Condition") ?? "").Contains("$(CI)", StringComparison.Ordinal));
     }
 
     private static string[] Named(string msbuildFile, params string[] items) => Repository.Xml(msbuildFile).Descendants()

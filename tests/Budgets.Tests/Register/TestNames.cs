@@ -24,7 +24,8 @@ public sealed class TestNames
     [Trait("Category", "fast")]
     [Trait("Value", "L1")]
     public void Every_text_the_help_prints_is_in_the_register() =>
-        Assert.Empty(Cli.Contract.Verbs.SelectMany(v => ((string[])[v.Summary, .. (v.Outcomes ?? []).Select(o => o.Meaning)]).Select(text => (v.Name, Text: text)))
+        Assert.Empty(Cli.Contract.Verbs.SelectMany(v =>
+            ((string[])[v.Summary, .. (v.Outcomes ?? []).Select(o => o.Meaning)]).Select(text => (v.Name, Text: text)))
             .Concat(Cli.Contract.Exits.SelectMany(e => new[] { (e.Name, Text: e.Meaning), (e.Name, Text: e.Remedy) }))
             .SelectMany(t => Prose.Findings(t.Text).Select(f => t.Name + ": " + f)));
 }

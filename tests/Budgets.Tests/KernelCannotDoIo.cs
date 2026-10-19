@@ -39,7 +39,13 @@ public sealed class KernelCannotDoIo
         Type[] asynchronous = [typeof(Task), typeof(Task<>), typeof(ValueTask), typeof(ValueTask<>), typeof(IAsyncEnumerable<>)];
         var found = Kernel.GetExportedTypes()
             .SelectMany(t => t.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-            .Select(m => (Member: m, Type: m switch { MethodInfo x => x.ReturnType, PropertyInfo x => x.PropertyType, FieldInfo x => x.FieldType, _ => typeof(void) }))
+            .Select(m => (Member: m, Type: m switch
+            {
+                MethodInfo x => x.ReturnType,
+                PropertyInfo x => x.PropertyType,
+                FieldInfo x => x.FieldType,
+                _ => typeof(void),
+            }))
             .Where(m => asynchronous.Contains(m.Type.IsGenericType ? m.Type.GetGenericTypeDefinition() : m.Type))
             .Select(m => m.Member.DeclaringType + "." + m.Member.Name);
 

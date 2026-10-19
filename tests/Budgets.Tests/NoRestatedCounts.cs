@@ -17,7 +17,8 @@ public sealed class NoRestatedCounts
     // A number, in digits or in words from two up and not after "no" (as in "no two files"), then at most two
     // words that are not articles or prepositions, then a thing the build counts.
     private static readonly Regex Count = new(
-        @"(?<!\bno\s+)\b(?:\d[\d,]*|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|hundred|dozen)"
+        @"(?<!\bno\s+)\b(?:\d[\d,]*|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|"
+            + @"eighteen|nineteen|twenty|thirty|forty|fifty|hundred|dozen)"
         + @"\s+(?:(?!(?:the|a|an|its|their|this|each|every|of|in|on|per|for|to)\b)[\w'-]+\s+){0,2}?"
         + @"(?:verbs?|laws?|operations?|samples?|packages?|hooks?|files?|lines?)\b",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
@@ -33,7 +34,9 @@ public sealed class NoRestatedCounts
     public void A_hand_written_document_restates_no_count_the_build_computes(string document) =>
         Assert.Empty(Documents.Blocks(document)
             .Where(b => !Dated.IsMatch(b.Text))
-            .SelectMany(b => Count.Matches(b.Text).Select(m => document + ":" + b.Line.ToString(CultureInfo.InvariantCulture) + ": '" + m.Value + "' restates a count; name the generated file that carries it, or drop the number")));
+            .SelectMany(b => Count.Matches(b.Text)
+                .Select(m => document + ":" + b.Line.ToString(CultureInfo.InvariantCulture) + ": '" + m.Value
+                + "' restates a count; name the generated file that carries it, or drop the number")));
 
     [Theory]
     [Trait("Category", "fast")]

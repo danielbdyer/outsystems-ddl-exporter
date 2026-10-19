@@ -37,7 +37,8 @@ public sealed class ParityResolves(ITestOutputHelper output)
     [Trait("Category", "fast")]
     public void Every_row_of_the_parity_ledger_names_where_v2_proves_it_and_where_v3_holds_it()
     {
-        var rows = Repository.Lines(Ledger).Where(l => Row.IsMatch(l)).Select(l => l.Trim('|').Split('|').Select(c => c.Trim()).ToArray()).ToList();
+        var rows = Repository.Lines(Ledger).Where(l => Row.IsMatch(l)).Select(l => l.Trim('|').Split('|').Select(c => c.Trim()).ToArray())
+            .ToList();
         var states = rows.Select(r => (Id: r[0], State: State(r[^1]))).ToList();
         output.WriteLine(Ledger + ": " + string.Join(", ", states.GroupBy(s => s.State).OrderBy(g => g.Key, StringComparer.Ordinal)
             .Select(g => g.Key + " " + g.Count().ToString(CultureInfo.InvariantCulture))));
@@ -45,7 +46,8 @@ public sealed class ParityResolves(ITestOutputHelper output)
         Assert.NotEmpty(rows);
         Assert.All(rows, r => Assert.Equal(5, r.Length));
         Assert.Equal(rows.Count, rows.Select(r => r[0]).Distinct(StringComparer.Ordinal).Count());
-        Assert.Empty(rows.SelectMany(r => UnresolvedProof(r[2]).Concat(Clause.Split(r[^1]).SelectMany(c => Unresolved(c, Documents.Complete)))
+        Assert.Empty(rows.SelectMany(r =>
+            UnresolvedProof(r[2]).Concat(Clause.Split(r[^1]).SelectMany(c => Unresolved(c, Documents.Complete)))
             .Select(p => Ledger + " " + r[0] + ": " + p)));
     }
 
@@ -68,7 +70,8 @@ public sealed class ParityResolves(ITestOutputHelper output)
     [InlineData("emit's bytes — not held yet: the cutover tools", true)]
     [InlineData("retired: no verdict depends on it, `archive/v2/TWIN_SUCCESSION.md`", true)]
     [InlineData("retired: no verdict depends on it", false)]
-    public void A_clause_resolves_when_it_names_a_test_a_law_a_value_or_an_exit_that_exists_or_the_work_package_still_to_come(string clause, bool resolves) =>
+    public void A_clause_resolves_when_it_names_a_test_a_law_a_value_or_an_exit_that_exists_or_the_work_package_still_to_come(string clause,
+        bool resolves) =>
         Assert.Equal(resolves, !Clause.Split(clause).SelectMany(c => Unresolved(c, _ => false)).Any());
 
     [Theory]
@@ -104,7 +107,8 @@ public sealed class ParityResolves(ITestOutputHelper output)
 
         foreach (var name in names)
         {
-            var (path, line) = Line.Match(name) is { Success: true } m ? (m.Groups[1].Value, int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture)) : (name, 0);
+            var (path, line) = Line.Match(name) is { Success: true } m
+                ? (m.Groups[1].Value, int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture)) : (name, 0);
             if (!Repository.Contains(path))
             {
                 yield return "`" + path + "` names no file or directory";
@@ -116,7 +120,10 @@ public sealed class ParityResolves(ITestOutputHelper output)
         }
     }
 
-    /// <summary>What a clause of the v3 cell fails to resolve, as the reason, under <paramref name="complete"/> saying which milestones are; nothing when it resolves.</summary>
+    /// <summary>
+    /// What a clause of the v3 cell fails to resolve, as the reason, under <paramref name="complete"/> saying which milestones are; nothing
+    /// when it resolves.
+    /// </summary>
     private static IEnumerable<string> Unresolved(string clause, Func<int, bool> complete)
     {
         var names = Name.Matches(clause).Select(m => m.Groups[1].Value).ToList();
@@ -133,11 +140,13 @@ public sealed class ParityResolves(ITestOutputHelper output)
         if (NotHeldYet.Match(clause) is { Success: true } later)
         {
             var (accepted, what) = later.Groups[1].Success
-                ? (Documents.WorkPackages.Contains((Number(later, 1), Number(later, 2))) && !complete(Number(later, 1)), "WP " + later.Groups[1].Value + "." + later.Groups[2].Value)
+                ? (Documents.WorkPackages.Contains((Number(later, 1), Number(later, 2))) && !complete(Number(later, 1)),
+                    "WP " + later.Groups[1].Value + "." + later.Groups[2].Value)
                 : (!Documents.Started(Documents.OneTool, complete), "the cutover tools");
             if (!accepted)
             {
-                yield return "'" + clause + "' waits on " + what + ", which the plan does not list or whose milestone is complete; name the test that holds it";
+                yield return "'" + clause + "' waits on " + what
+                    + ", which the plan does not list or whose milestone is complete; name the test that holds it";
             }
 
             foreach (var built in names.Where(n => IsTestName(n) && Tests(n).Any()))
@@ -167,14 +176,17 @@ public sealed class ParityResolves(ITestOutputHelper output)
         }
     }
 
-    /// <summary>Whether a test declares the trait: a law by its first word (2′, P), a value by its row, an exit by its milestone and number.</summary>
+    /// <summary>
+    /// Whether a test declares the trait: a law by its first word (2′, P), a value by its row, an exit by its milestone and number.
+    /// </summary>
     private static bool Declared(string trait, string id) => TestTraits.All.Any(t => t.Values(trait)
         .Any(v => trait == "Law" ? v.Split(' ')[0] == id : v == id));
 
     /// <summary>Whether a backticked name picks out a test, a file or directory, or a verb this build has.</summary>
     private static bool Resolves(string name) =>
         IsTestName(name) ? Tests(name).Any()
-        : name.StartsWith("dbchange ", StringComparison.Ordinal) ? Contract.Verbs.Any(v => v.Name == name["dbchange ".Length..].Split(' ')[0] && v.Built)
+        : name.StartsWith("dbchange ", StringComparison.Ordinal)
+            ? Contract.Verbs.Any(v => v.Name == name["dbchange ".Length..].Split(' ')[0] && v.Built)
         : Repository.Contains(name);
 
     /// <summary>A project and a quoted English name or a class (<c>Io.Tests: DriftTests</c>), or a bare class name.</summary>
@@ -186,7 +198,8 @@ public sealed class ParityResolves(ITestOutputHelper output)
         var test = Test.Match(name);
         return test.Success
             ? TestTraits.All.Where(t => t.Project == test.Groups[1].Value
-                && (test.Groups[2].Success ? t.Words == TestTraits.Words(test.Groups[2].Value) : ("." + t.Class).EndsWith("." + test.Groups[3].Value, StringComparison.Ordinal)))
+                && (test.Groups[2].Success ? t.Words == TestTraits.Words(test.Groups[2].Value)
+                    : ("." + t.Class).EndsWith("." + test.Groups[3].Value, StringComparison.Ordinal)))
             : TestTraits.All.Where(t => t.Class.EndsWith("." + name, StringComparison.Ordinal));
     }
 
