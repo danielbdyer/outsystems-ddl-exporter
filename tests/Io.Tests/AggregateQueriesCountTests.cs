@@ -187,6 +187,30 @@ public sealed class AggregateQueriesCountTests : IDisposable
     }
 
     /// <summary>
+    /// Check reads a string SQL Server converts with no CONVERT written through TRY_CONVERT (io/AggregateQueries.Types.cs), so a planted
+    /// string that does not convert is counted as violating and no query raises: compared with a number, set between two, listed beside
+    /// them, added to one, uppercased, or coalesced with one. A NULL passes each check, save where COALESCE makes it 0.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task Check_counts_a_string_SQL_Server_converts_with_no_CONVERT_written_through_TRY_CONVERT_and_raises_nothing()
+    {
+        (string Expression, long Violating)[] checks = [("[Ref]>(0)", 1), ("[Ref] BETWEEN (1) AND (9)", 2), ("[Ref] IN ((1),(2))", 3),
+            ("([Ref]+(1))>(0)", 1), ("UPPER([Ref])>(0)", 1), ("COALESCE([Ref],(0))>(0)", 2), ("[Ref] NOT IN ((5))", 2)];
+        var environment = Model.Of("Z.Id int NOT NULL", "Z.Ref varchar(20) NULL Latin1_General_CI_AS");
+        var head = checks.Select((c, at) => (c.Expression, at))
+            .Aggregate(environment, (model, c) => model.Check("CK_Z_" + c.at, "Z", c.Expression, ["Ref"]));
+
+        var (_, counts, log) = await Counted(new Case(environment, head),
+            "INSERT dbo.Z (Id, Ref) VALUES (1, 'abc'), (2, '5'), (3, '12'), (4, NULL);");
+
+        Assert.Equal(checks.Select(c => (c.Expression, 4L, c.Violating)), checks.Select(c => counts.Counted
+            .Single(n => n.Precondition.Kind is PreconditionKind.Check k && k.Expression == c.Expression))
+            .Select(n => (((PreconditionKind.Check)n.Precondition.Kind).Expression, n.Rows, n.Violating)));
+        Assert.DoesNotContain(Entries(log), e => e.Outcome.StartsWith("failed", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// TableEmpty: the table's rows, read by the table's query, and the same rows read from sys.partitions. A login holding VIEW DEFINITION
     /// alone (§17 item 21) is refused the table's rows (Msg 229) and reads sys.partitions; a table sys.partitions does not show is never
     /// read as empty.
@@ -234,10 +258,12 @@ public sealed class AggregateQueriesCountTests : IDisposable
     }
 
     /// <summary>
-    /// §18, a value escaping in an error: a check that compares a varchar column with a number makes SQL Server convert it, and Msg 245
-    /// quotes the planted value. Against an environment classified real the table's query fails, each precondition is counted again by a
-    /// query of its own, and the check is reported by its number alone; the retype beside it, read through TRY_CONVERT, counts the same
-    /// value as not convertible and raises nothing. The value appears in no count, reason or line of the run's log.
+    /// §18, a value escaping in an error: SQL Server writes a string that does not convert into Msg 245, as the check [Ref]&gt;(0) run as
+    /// written shows of the planted value. The builders' queries read that value through TRY_CONVERT wherever it converts, a retype, an
+    /// explicit CONVERT or a comparison with a number, so it is counted, as not convertible or as violating, and raises nothing. A query
+    /// does fail where a check's arithmetic overflows (Msg 8115, which quotes no value): against an environment classified real the
+    /// table's query fails, each precondition is counted again by a query of its own, and the check is reported by its number alone. No
+    /// query of the run fails with any other number, and the value appears in no count, reason or line of the run's log.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
@@ -246,11 +272,12 @@ public sealed class AggregateQueriesCountTests : IDisposable
     {
         var planted = PlantedValue.Unique();
         var environment = Model.Of("W.Id int NOT NULL", "W.Ref varchar(40) NULL Latin1_General_CI_AS",
-            "W.Code varchar(40) NULL Latin1_General_CI_AS");
-        var change = new Case(environment, environment.With("W.Code int NULL").Check("CK_W_Ref", "W", "[Ref]>(0)", ["Ref"]));
+            "W.Code varchar(40) NULL Latin1_General_CI_AS", "W.Qty int NULL");
+        var change = new Case(environment, environment.With("W.Code int NULL").Check("CK_W_Ref", "W", "[Ref]>(0)", ["Ref"])
+            .Check("CK_W_RefConverted", "W", "CONVERT([int],[Ref])<(100)", ["Ref"]).Check("CK_W_Qty", "W", "[Qty]*(1000000)>(0)", ["Qty"]));
         using var copy = DisposableCopy.Create(root, await SqlServerFixture.ServerAsync());
         await SqlServerFixture.ExecuteAsync(copy.Copy.Connection, Tables(environment)
-            + "INSERT dbo.W (Id, Ref, Code) VALUES (1, @name, @name), (2, '5', '7');", planted.Text);
+            + "INSERT dbo.W (Id, Ref, Code, Qty) VALUES (1, @name, @name, 5000), (2, '5', '7', 1);", planted.Text);
         Assert.Contains(planted.Text, (await Assert.ThrowsAsync<SqlException>(() => SqlServerFixture.ScalarAsync(copy.Copy.Connection,
             "SELECT SUM(CASE WHEN NOT (Ref > 0) THEN 1 ELSE 0 END) FROM dbo.W;"))).Message, StringComparison.Ordinal);
         var uat = Resolved("uat", copy.Copy.Connection);
@@ -260,11 +287,75 @@ public sealed class AggregateQueriesCountTests : IDisposable
         var counts = Value(AggregateQueries.Count(uat, queries.Tables.Single(), log));
 
         Assert.Equal("rows 2, violating 1, not-convertible 1, empty-string 0", Line(counts, Kind(queries, "Fits", "Code")));
-        var check = Assert.Single(counts.Unanswered);
-        Assert.Equal((Kind(queries, "Check", "Ref"), "SQL Server raised Msg 245; message withheld"), (check.Precondition, check.Why));
-        Assert.Contains("failed, Msg 245", File.ReadAllText(log.Path), StringComparison.Ordinal);
+        Assert.Equal(["rows 2, violating 1", "rows 2, violating 1"], queries.Tables.Single().Preconditions
+            .Where(p => p.Kind is PreconditionKind.Check && p.Columns[0].Base == "Ref").Select(p => Line(counts, p)));
+        var overflow = Assert.Single(counts.Unanswered);
+        Assert.Equal((Kind(queries, "Check", "Qty"), "SQL Server raised Msg 8115; message withheld"), (overflow.Precondition, overflow.Why));
+        Assert.Equal(["failed, Msg 8115", "failed, Msg 8115"],
+            Entries(File.ReadAllText(log.Path)).Select(e => e.Outcome).Where(o => o.StartsWith("failed", StringComparison.Ordinal)));
         planted.AbsentFrom(string.Join('\n', counts.Counted.Concat<object>(counts.Classes).Concat(counts.Unanswered)
             .Concat(queries.Notes.Select(n => n.Message))) + File.ReadAllText(log.Path));
+    }
+
+    /// <summary>
+    /// Fits into a string or binary type counts as violating exactly the rows ALTER COLUMN refuses, measured beside the count on the copy:
+    /// each column holds one value too long for its new type and one that fits, or NULL, and each retype runs as ALTER COLUMN after the
+    /// count. A string, a binary value, bigint, decimal, money, float, uniqueidentifier, and int into nvarchar fail (Msg 2628, 8115, 234,
+    /// 232 or 8170) and are over length; int into varchar ('*'), a date and time type cut short, and int into varbinary past 0xFFFF apply,
+    /// a lossy round trip; trailing spaces alone, which ALTER COLUMN trims, are over bytes.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task Fits_into_a_string_or_binary_type_counts_as_violating_exactly_the_rows_ALTER_COLUMN_refuses()
+    {
+        (string Column, string Before, string After, string TooLong, string Fits, string Counted, string Altered)[] cases =
+        [
+            ("I2v", "int", "varchar(2)", "123456", "12", "violating 0, lossy-round-trip 1", "applies"),
+            ("I2n", "int", "nvarchar(2)", "123456", "12", "violating 1, over-length 1", "fails, Msg 8115"),
+            ("B2v", "bigint", "varchar(2)", "123456789012", "12", "violating 1, over-length 1", "fails, Msg 8115"),
+            ("D2v", "decimal(9,2)", "varchar(4)", "1234567.89", "1.25", "violating 1, over-length 1", "fails, Msg 8115"),
+            ("M2c", "money", "char(4)", "12345.6789", "1.2345", "violating 1, over-length 1", "fails, Msg 234"),
+            ("F2v", "float", "varchar(3)", "123456.789", "1.5", "violating 1, over-length 1", "fails, Msg 232"),
+            ("Dt2v", "date", "varchar(5)", "'2020-01-01'", "NULL", "violating 0, lossy-round-trip 1", "applies"),
+            ("T2n", "time(3)", "nvarchar(3)", "'10:00:00.123'", "NULL", "violating 0, lossy-round-trip 1", "applies"),
+            ("O2v", "datetimeoffset(7)", "varchar(5)", "'2020-01-01T10:00:00+01:00'", "NULL", "violating 0, lossy-round-trip 1", "applies"),
+            ("G2v", "uniqueidentifier", "varchar(10)", "'6F9619FF-8B86-D011-B42D-00C04FC964FF'", "NULL", "violating 1, over-length 1",
+                "fails, Msg 8170"),
+            ("I2b", "int", "varbinary(2)", "123456", "12", "violating 0, lossy-round-trip 1", "applies"),
+            ("Vb2b", "varbinary(10)", "varbinary(2)", "0x0102030405", "0x0102", "violating 1, over-length 1", "fails, Msg 2628"),
+            ("Vb2v", "varbinary(10)", "varchar(1)", "0x412020", "0x41", "violating 1, over-length 1", "fails, Msg 2628"),
+            ("S2s", "nvarchar(50)", "nvarchar(10)", "N'abcdefghijklm'", "N'abc                    '",
+                "violating 1, over-length 1, over-bytes 1", "fails, Msg 2628"),
+            ("C2c", "char(20)", "char(5)", "'abcdefgh'", "'abc'", "violating 1, over-length 1, over-bytes 1", "fails, Msg 2628"),
+        ];
+        var environment = Model.Of(["Y.Id int NOT NULL", .. cases.Select(c => "Y." + c.Column + " " + c.Before + " NULL")]);
+        var change = new Case(environment, Model.Of(["Y.Id int NOT NULL", .. cases.Select(c => "Y." + c.Column + " " + c.After + " NULL")]));
+        using var copy = DisposableCopy.Create(root, await SqlServerFixture.ServerAsync());
+        await SqlServerFixture.ExecuteAsync(copy.Copy.Connection, Tables(environment) + "INSERT dbo.Y (Id, "
+            + string.Join(", ", cases.Select(c => c.Column)) + ") VALUES (1, " + string.Join(", ", cases.Select(c => c.TooLong)) + "), (2, "
+            + string.Join(", ", cases.Select(c => c.Fits)) + ");");
+        var queries = change.Queries();
+
+        var counts = Value(AggregateQueries.Count(copy.Copy, queries.Tables.Single(), SqlServer.QueryLog.Start(root)));
+        var altered = new List<string>();
+        foreach (var c in cases)
+        {
+            try
+            {
+                await SqlServerFixture.ExecuteAsync(copy.Copy.Connection, "ALTER TABLE dbo.Y ALTER COLUMN [" + c.Column + "] " + c.After + " NULL;");
+                altered.Add("applies");
+            }
+            catch (SqlException e)
+            {
+                altered.Add("fails, Msg " + e.Number);
+            }
+        }
+
+        Assert.Empty(queries.NotPredictable);
+        Assert.Equal(cases.Select(c => (c.Column, "rows 2, " + c.Counted, c.Altered)),
+            cases.Select((c, at) => (c.Column, Line(counts, Kind(queries, "Fits", c.Column)), altered[at])));
+        Assert.All(cases.Select((c, at) => (counts.Counted.Single(n => n.Precondition == Kind(queries, "Fits", c.Column)), altered[at])),
+            pair => Assert.Equal(pair.Item2 != "applies", pair.Item1.Violating > 0));
     }
 
     /// <summary>Seven retypes on one table: a shorter string, a string to int and to decimal, a decimal to smallint, int to bit, a date and

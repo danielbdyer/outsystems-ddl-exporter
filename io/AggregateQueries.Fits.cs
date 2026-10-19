@@ -10,19 +10,23 @@ namespace DbChange.Io;
 
 /// <summary>
 /// Fits (decision 2.9): the rows of a column whose type the change alters on which ALTER COLUMN fails, the violating rows, and beside
-/// them the rows of each value class, each an item of its own (the Facsimile's ARCHITECTURE.md §4). Into a string type with a length:
-/// over length, the value converted to the type's max form longer than the new length in bytes once its trailing spaces are gone, which
-/// ALTER COLUMN refuses; and over bytes, longer only with them, which ALTER COLUMN trims without an error (measured on SQL Server 2022,
-/// 16.0.4305.5). Into a binary type with a length: over length, the value longer than the new length. Into any other type the violating
-/// rows are the non-null values TRY_CONVERT gives NULL, and the classes are: not convertible; an empty string, which the integer types,
-/// bit, money, float, real and the date and time types read without an error, as 0 or 1900-01-01 00:00, and decimal and uniqueidentifier
-/// refuse; overflow, a value of the same kind out of the new type's range; and a lossy round trip where one value's predicate shows it:
-/// a number into bit other than 0 or 1, the time of a date and time into date, its date into time, and an offset other than +00:00 that
-/// a datetimeoffset loses. The classes share no row; over bytes, an empty string a type reads and a lossy round trip convert without an
-/// error, so they are counted as classes and never as violating. What no count shows prints a line: characters substituted with '?'
-/// into a character type whose code page can lack them, and values rounded where the fractional digits the type holds fall. A pair of
-/// types SQL Server converts neither way, or a type no count reads (xml, sql_variant, hierarchyid, a spatial or CLR type, text or image
-/// as the new type), reads not predictable read-only.
+/// them the rows of each value class, each an item of its own (the Facsimile's ARCHITECTURE.md §4). Into a string or binary type with a
+/// length, a value too long for it, as measured value by value on SQL Server 2022 (16.0.4305.5): from a string, longer than the new length
+/// in bytes once its trailing spaces are gone, which ALTER COLUMN refuses (Msg 2628), and over bytes, longer only with them, which it
+/// trims without an error; from a binary type, longer than the new length (Msg 2628); from a number or uniqueidentifier, its string form
+/// longer (Msg 8115, 234, 292, 232 or 8170). Those are over length and violating. ALTER COLUMN writes the others without an error, a lossy
+/// round trip and never violating: tinyint, smallint or int into char or varchar as '*', a date and time type into a string cut at the
+/// new length, an integer into a binary type with its high bytes dropped, which loses a value outside 0 to 256^n - 1, and decimal, money,
+/// float or uniqueidentifier into a binary type shorter than its own bytes. Into any other type the violating rows are the non-null values
+/// TRY_CONVERT gives NULL, and the classes are: not convertible; an empty string, which the integer types, bit, money, float, real and the
+/// date and time types read without an error, as 0 or 1900-01-01 00:00, and decimal and uniqueidentifier refuse; overflow, a value of the
+/// same kind out of the new type's range; and a lossy round trip where one value's predicate shows it: a number into bit other than 0 or 1,
+/// the time of a date and time into date, its date into time, and an offset other than +00:00 that a datetimeoffset loses. The classes
+/// share no row; over bytes, an empty string a type reads and a lossy round trip convert without an error, so they are counted as classes
+/// and never as violating. What no count shows prints a line: characters substituted with '?' into a character type whose code page can
+/// lack them, and values rounded where the fractional digits the type holds fall. A pair of types SQL Server converts neither way, a type
+/// no count reads (xml, sql_variant, hierarchyid, a spatial or CLR type, text or image as the new type), and a binary(n) narrowed, every
+/// value of which holds n bytes whose zeros past the new length ALTER COLUMN drops without an error, read not predictable read-only.
 /// </summary>
 public static partial class AggregateQueries
 {
@@ -65,51 +69,96 @@ public static partial class AggregateQueries
             return Asked.Not("dbchange counts no conversion from " + Written(before) + " to " + Written(after));
         }
 
+        if (before.Type.Base.ToLowerInvariant() == "binary" && to is Family.Character or Family.Binary && !after.IsMax
+            && before.Length > Capacity(after))
+        {
+            return Asked.Not("every value of " + Written(before) + " holds " + Digits(before.Length) + " bytes, and ALTER COLUMN drops"
+                + " its zero bytes past the new length without an error, which no query the allowlist admits tells from other bytes");
+        }
+
         var subject = precondition.Table + "." + precondition.Columns[0];
         notes.AddRange(Lines(subject, before, after, from, to, context));
         var items = Misfits(name, before, after, from, to, target, context).ToList();
+        var violating = items.Any(i => i.Class is null);
         return new Part(precondition, [.. items.Select(i => ((ScalarExpression)Sum(i.When), i.Class))], [],
             [.. items.Where(i => i.Class is not null).Select(i => i.Class!.Value)],
-            (_, values) => values.Count == 0 ? (0L, Array.Empty<long>()) : (values[0], values.Skip(1).ToArray()));
+            (_, values) => violating ? (values[0], values.Skip(1).ToArray()) : (0L, values.ToArray()));
     }
 
     /// <summary>
     /// The predicates a retype from <paramref name="before"/> to <paramref name="after"/> counts over the column <paramref name="name"/>
-    /// of the table aliased t: first, with no class, the rows on which ALTER COLUMN fails, the violating rows; then each value class and
-    /// the predicate that holds for its rows alone. Nothing fails into a max type, and no class is counted there.
+    /// of the table aliased t: first, with no class, the rows on which ALTER COLUMN fails, the violating rows, where it can fail on any;
+    /// then each value class and the predicate that holds for its rows alone. Nothing fails into a max type, and no class is counted there.
     /// </summary>
     private static IEnumerable<(Class? Class, BooleanExpression When)> Misfits(string name, ColumnType before, ColumnType after,
-        Family from, Family to, DataTypeReference target, Context context)
-    {
-        ScalarExpression Value() => ColumnRef("t", name);
-        var bases = (Before: before.Type.Base.ToLowerInvariant(), After: after.Type.Base.ToLowerInvariant());
-        if (to is Family.Character or Family.Binary)
-        {
-            if (after.IsMax)
-            {
-                yield break;
-            }
+        Family from, Family to, DataTypeReference target, Context context) =>
+        to is Family.Character or Family.Binary ? after.IsMax ? [] : TooLong(name, before, after, from, to, context)
+        : Unconverted(name, before, after, from, to, target);
 
-            var unicode = bases.After is "nchar" or "nvarchar" or "sysname";
-            var length = bases.After == "sysname" && after.Length == 0 ? 128 : after.Length;
-            var bytes = Number(to == Family.Character && unicode ? 2 * length : length);
-            ScalarExpression Converted() => TryConvert(to == Family.Binary ? "varbinary(max)" : unicode ? "nvarchar(max)" : "varchar(max)",
-                from is Family.Character or Family.Text && to == Family.Character && context.Collation(before) != context.Collation(after)
-                    ? ColumnRef("t", name, context.Collation(after)) : Value());
-            var longer = to == Family.Binary
-                ? Compare(Call("DATALENGTH", Converted()), BooleanComparisonType.GreaterThan, bytes)
-                : Compare(Call("DATALENGTH", Call("RTRIM", Converted())), BooleanComparisonType.GreaterThan, bytes);
-            yield return (null, longer);
-            yield return (Class.OverLength, longer);
-            if (to == Family.Character)
+    /// <summary>
+    /// A retype into a string or binary type with a length: the rows too long for it, violating and over length where ALTER COLUMN
+    /// refuses them, a lossy round trip where it writes them without an error; and, from a string, over bytes.
+    /// </summary>
+    private static IEnumerable<(Class? Class, BooleanExpression When)> TooLong(string name, ColumnType before, ColumnType after,
+        Family from, Family to, Context context)
+    {
+        var bytes = Number(Capacity(after));
+        BooleanExpression Over(ScalarExpression length) => Compare(length, BooleanComparisonType.GreaterThan, bytes);
+        if (from is Family.Binary or Family.Image)
+        {
+            // A binary value's own bytes, a trailing 0x20 among them: ALTER COLUMN keeps 0x412020 out of varchar(1) (Msg 2628).
+            yield return (null, Over(Call("DATALENGTH", ColumnRef("t", name))));
+            yield return (Class.OverLength, Over(Call("DATALENGTH", ColumnRef("t", name))));
+            yield break;
+        }
+
+        if (to == Family.Binary && from is Family.Integer or Family.Bit)
+        {
+            // An integer keeps its low bytes, so a value from 0 to 256^n - 1 comes back as it was.
+            if (after.Length < before.Type.Base.ToLowerInvariant() switch { "bigint" => 8, "int" => 4, "smallint" => 2, _ => 1 })
             {
-                yield return (Class.OverBytes, All([Compare(Call("DATALENGTH", Converted()), BooleanComparisonType.GreaterThan, bytes),
-                    Compare(Call("DATALENGTH", Call("RTRIM", Converted())), BooleanComparisonType.LessThanOrEqualTo, bytes)]));
+                yield return (Class.LossyRoundTrip, Any([Compare(ColumnRef("t", name), BooleanComparisonType.LessThan, Number(0)),
+                    Compare(ColumnRef("t", name), BooleanComparisonType.GreaterThan, Number((1L << (int)(8 * after.Length)) - 1))]));
             }
 
             yield break;
         }
 
+        var strings = from is Family.Character or Family.Text;
+        var form = to == Family.Binary ? "varbinary(max)" : Unicode(after) ? "nvarchar(max)" : "varchar(max)";
+        ScalarExpression Converted() => TryConvert(form, ColumnRef("t", name,
+            strings && to == Family.Character && context.Collation(before) != context.Collation(after) ? context.Collation(after) : null));
+        if (strings && to == Family.Character)
+        {
+            yield return (null, Over(Call("DATALENGTH", Call("RTRIM", Converted()))));
+            yield return (Class.OverLength, Over(Call("DATALENGTH", Call("RTRIM", Converted()))));
+            yield return (Class.OverBytes, All([Over(Call("DATALENGTH", Converted())),
+                Compare(Call("DATALENGTH", Call("RTRIM", Converted())), BooleanComparisonType.LessThanOrEqualTo, bytes)]));
+            yield break;
+        }
+
+        // A string or a date and time type into a binary type ALTER COLUMN refuses whatever the rows hold (Msg 257, measured on an empty
+        // table); such a retype counts its rows too long as violating, and whether DacFx alters or rebuilds the table is not checked.
+        var lossy = to == Family.Binary ? from is Family.Decimal or Family.Approximate or Family.Guid
+            : from is Family.Date or Family.Time or Family.DateTime or Family.DateTime2
+                || (from == Family.Integer && !Unicode(after) && before.Type.Base.ToLowerInvariant() != "bigint");
+        yield return lossy ? (Class.LossyRoundTrip, Over(Call("DATALENGTH", Converted()))) : (null, Over(Call("DATALENGTH", Converted())));
+        if (!lossy)
+        {
+            yield return (Class.OverLength, Over(Call("DATALENGTH", Converted())));
+        }
+    }
+
+    /// <summary>The bytes a string or binary type with a length holds: its length, twice it for a Unicode type, sysname's 256.</summary>
+    private static long Capacity(ColumnType type) =>
+        (type.Type.Base.ToLowerInvariant() == "sysname" && type.Length == 0 ? 128 : type.Length) * (Unicode(type) ? 2 : 1);
+
+    /// <summary>A retype into any other type: the non-null values TRY_CONVERT gives NULL, violating, and the value classes.</summary>
+    private static IEnumerable<(Class? Class, BooleanExpression When)> Unconverted(string name, ColumnType before, ColumnType after,
+        Family from, Family to, DataTypeReference target)
+    {
+        ScalarExpression Value() => ColumnRef("t", name);
+        var bases = (Before: before.Type.Base.ToLowerInvariant(), After: after.Type.Base.ToLowerInvariant());
         BooleanExpression Fails() =>
             All([Is(Value(), isNull: false), Is(new TryConvertCall { DataType = target, Parameter = Value() }, isNull: true)]);
         yield return (null, Fails());
@@ -200,7 +249,10 @@ public static partial class AggregateQueries
         }
     }
 
-    private static Family FamilyOf(ColumnType type) => type.IsAlias ? Family.Other : type.Type.Base.ToLowerInvariant() switch
+    private static Family FamilyOf(ColumnType type) => type.IsAlias ? Family.Other : FamilyOf(type.Type.Base.ToLowerInvariant());
+
+    /// <summary>A system type's kind, by its name in lower case.</summary>
+    private static Family FamilyOf(string name) => name switch
     {
         "char" or "varchar" or "nchar" or "nvarchar" or "sysname" => Family.Character,
         "text" or "ntext" => Family.Text,

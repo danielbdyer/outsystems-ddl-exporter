@@ -76,6 +76,10 @@ INNER JOIN sys.schemas AS s ON s.schema_id = o.schema_id WHERE s.name = N'dbo' A
 SELECT SUM(rows) FROM dbo.Customer;
 === refuse: SUM of sys.partitions' rows beside a table outside the catalog
 SELECT SUM(p.rows) FROM sys.partitions AS p INNER JOIN dbo.Customer AS c ON c.Id = p.partition_number;
+=== refuse: SUM of sys.partitions' rows filtered by IN over a table outside the catalog
+SELECT SUM(p.rows) FROM sys.partitions AS p WHERE p.object_id IN (SELECT c.Id FROM dbo.Customer AS c);
+=== refuse: SUM of sys.partitions' rows filtered by EXISTS over a table outside the catalog
+SELECT SUM(p.rows) FROM sys.partitions AS p WHERE EXISTS (SELECT 1 FROM dbo.Customer AS c WHERE c.Email LIKE N'a%');
 === refuse: SUM of a column of sys.partitions other than rows
 SELECT SUM(p.partition_number) FROM sys.partitions AS p;
 === refuse: SUM of the rows column of a catalog view other than sys.partitions

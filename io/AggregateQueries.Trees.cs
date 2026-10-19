@@ -8,17 +8,18 @@ using ColumnKind = Microsoft.SqlServer.TransactSql.ScriptDom.ColumnType;
 namespace DbChange.Io;
 
 /// <summary>
-/// The ScriptDom trees the builders write: every name in brackets, every literal typed, and nothing read back from text but the model's
-/// own, a check's expression, an index's filter, a default and a type.
+/// The ScriptDom trees the builders write: every name in brackets, every literal typed, a COLLATE's name only as Collation.Of admitted
+/// it (letters, digits and underscores), since the generator writes that name as it stands, and nothing read back from text but the
+/// model's own, a check's expression, an index's filter, a default and a type.
 /// </summary>
 public static partial class AggregateQueries
 {
     private static Identifier Id(string value) => new() { Value = value, QuoteType = QuoteType.SquareBracket };
 
-    private static ColumnReferenceExpression ColumnRef(string? qualifier, string name, string? collation = null)
+    private static ColumnReferenceExpression ColumnRef(string? qualifier, string name, Collation? collation = null)
     {
         var column = new ColumnReferenceExpression { ColumnType = ColumnKind.Regular, MultiPartIdentifier = new MultiPartIdentifier(),
-            Collation = collation is null ? null : new Identifier { Value = collation } };
+            Collation = collation is { } admitted ? new Identifier { Value = admitted.Name } : null };
         foreach (var part in qualifier is null ? [name] : new[] { qualifier, name })
         {
             column.MultiPartIdentifier.Identifiers.Add(Id(part));

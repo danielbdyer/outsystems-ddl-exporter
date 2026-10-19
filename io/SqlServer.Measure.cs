@@ -17,8 +17,8 @@ public static partial class SqlServer
     /// </summary>
     public sealed class AggregateQuery
     {
-        private AggregateQuery(TSqlStatement statement, string site, Session? session) =>
-            (Statement, Site, Tables, Session) = (TSql.Text(statement), site, TSql.TablesNamed(statement), session);
+        private AggregateQuery(string text, TSqlStatement statement, string site, Session? session) =>
+            (Statement, Site, Tables, Session) = (text, site, TSql.TablesNamed(statement), session);
 
         public string Statement { get; }
 
@@ -34,14 +34,19 @@ public static partial class SqlServer
         public Session? Session { get; }
 
         internal static Result<AggregateQuery> Of(string text, string site) =>
-            Allowlist.Admitted(text).Map(statement => new AggregateQuery(statement, site, null));
+            Allowlist.Admitted(text).Map(statement => new AggregateQuery(TSql.Text(statement), statement, site, null));
 
         /// <summary>
         /// An aggregate query built as a ScriptDom tree, checked as the tree, and run as the text ScriptDom writes it back as, under the
-        /// session given.
+        /// session given. That text is read again and checked as one statement before it is kept, since the generator writes some nodes
+        /// as their value with no quoting (an unquoted identifier, a COLLATE's name), so the text is what runs only once it passes too.
         /// </summary>
         internal static Result<AggregateQuery> Of(TSqlStatement tree, string site, Session? session = null) =>
-            Allowlist.Admitted(tree, site).Map(statement => new AggregateQuery(statement, site, session));
+            Allowlist.Admitted(tree, site).Map(admitted => TSql.Text(admitted)).Bind(text => Allowlist.Admitted(text).Match(
+                statement => Result.Ok(new AggregateQuery(text, statement, site, session)),
+                refused => Result.Fail<AggregateQuery>(new Error("aggregate-query.refused",
+                    "The query " + site + ", as ScriptDom writes it, is refused when read again: " + refused.Message,
+                    "Report the site to dbchange's maintainers: a builder made a tree whose text is not the query it checked."))));
 
         public override string ToString() => Site + ": " + Statement;
     }

@@ -61,7 +61,7 @@
         { "files": ["SqlServer.cs"], "what": "targets, the registry-bound Copy, model, plan, Measure, allowlist, withheld messages", "lines": 700, "milestones": ["M1"] },
         { "files": ["LocalServer.cs"], "what": "minimal: create, register, drop", "lines": 60, "milestones": ["M1"] },
         { "files": ["Profiles.cs", "Git.cs", "Doctor.cs"], "what": "Profiles.cs: options only; SQLCMD sensitivity", "lines": 440, "milestones": ["M1"] },
-        { "files": ["AggregateQueries.cs", "Predict.cs"], "what": "and the BlockOnPossibleDataLoss reader, the machine block's parser", "lines": 690, "milestones": ["M2"] },
+        { "files": ["AggregateQueries.cs", "AggregateQueries.Check.cs", "AggregateQueries.Fits.cs", "AggregateQueries.Keys.cs", "AggregateQueries.Trees.cs", "AggregateQueries.Types.cs", "Predict.cs"], "what": "AggregateQueries.cs with its partial files; and the BlockOnPossibleDataLoss reader, the machine block's parser", "lines": 690, "milestones": ["M2"] },
         { "files": ["LocalServer.cs", "SyntheticCopy.cs", "Profile.cs"], "what": "LocalServer.cs completed; the copy build's eight steps; a column's value-free shape and row tiers", "lines": 950, "milestones": ["M3"] },
         { "files": ["Prove.cs", "RefactorLog.cs"], "what": null, "lines": 550, "milestones": ["M4"] },
         { "files": ["Gate.cs", "Vendor.cs", "Json.cs"], "what": "Json.cs additions", "lines": 670, "milestones": ["M5"] },

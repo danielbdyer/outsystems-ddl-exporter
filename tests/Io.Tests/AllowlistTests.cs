@@ -57,6 +57,8 @@ public sealed class AllowlistTests
             "a derived table's column as a length's boundary", "a correlated EXISTS boundary", "written as an equality of their difference",
             "a value computed in a derived table's select list", "a value computed in the select list of IN's subquery",
             "SUM of a column named rows of a table outside the catalog", "SUM of sys.partitions' rows beside a table outside the catalog",
+            "SUM of sys.partitions' rows filtered by IN over a table outside the catalog",
+            "SUM of sys.partitions' rows filtered by EXISTS over a table outside the catalog",
             "SUM of a column of sys.partitions other than rows", "SUM of the rows column of a catalog view other than sys.partitions"];
         string[] admitted = ["COUNT of every row", "COUNT_BIG of every row", "COUNT of DISTINCT", "COUNT_BIG of DISTINCT", "SUM of CASE",
             "MIN over LEN", "MAX over LEN",
@@ -137,6 +139,33 @@ public sealed class AllowlistTests
 
         Assert.Equal(read.Statement, built.Statement);
         Assert.Equal("The query dbo.Customer.Email Fits is refused at its FunctionCall: MAX over a bare column.", refused.Message);
+    }
+
+    /// <summary>
+    /// The generator writes an unquoted identifier as its value stands, so a tree the allowlist admits can be written as text that is
+    /// another query: a COLLATE whose name closes the query and starts a DELETE. AggregateQuery.Of reads the text again before it keeps
+    /// it, and refuses the tree, naming the site and quoting none of the text.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Value", "P2")]
+    public void A_tree_the_allowlist_admits_whose_text_is_another_query_is_refused_when_its_text_is_read_again()
+    {
+        var email = ColumnOf("Email");
+        email.Collation = new Identifier { Value = "Latin1_General_CI_AS IS NULL THEN 1 ELSE 0 END) FROM dbo.Customer; DELETE FROM dbo.Customer; --" };
+        var nulls = Call("SUM", new SearchedCaseExpression
+        {
+            WhenClauses = { new SearchedWhenClause { WhenExpression = new BooleanIsNullExpression { Expression = email },
+                ThenExpression = new IntegerLiteral { Value = "1" } } },
+            ElseExpression = new IntegerLiteral { Value = "0" },
+        });
+
+        var refused = Expect.Failed(SqlServer.AggregateQuery.Of(Built(nulls), "dbo.Customer.Email NotNull"), "aggregate-query.refused");
+
+        Assert.Contains("DELETE FROM dbo.Customer", TSql.Text(Built(nulls)), StringComparison.Ordinal);
+        Assert.StartsWith("The query dbo.Customer.Email NotNull, as ScriptDom writes it, is refused when read again: ", refused.Message,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("DELETE", refused.Message, StringComparison.Ordinal);
     }
 
     /// <summary>An object's name as ScriptDom reads it: its parts unquoted, a doubled bracket read as one, and no name past four

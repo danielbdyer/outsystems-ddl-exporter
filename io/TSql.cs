@@ -52,11 +52,17 @@ internal static class TSql
     /// Each object a tree reads by name in a FROM or a JOIN, once, its parts quoted as QUOTENAME quotes them, in the order the tree first
     /// names them.
     /// </summary>
-    internal static IReadOnlyList<string> TablesNamed(TSqlFragment fragment)
+    internal static IReadOnlyList<string> TablesNamed(TSqlFragment fragment) =>
+        [.. TableReferences(fragment).Select(node => string.Join('.',
+                node.SchemaObject.Identifiers.Select(i => "[" + i.Value.Replace("]", "]]", StringComparison.Ordinal) + "]")))
+            .Distinct(StringComparer.Ordinal)];
+
+    /// <summary>Each table a tree names in a FROM or a JOIN, a subquery's included, in the order the tree names them.</summary>
+    internal static IReadOnlyList<NamedTableReference> TableReferences(TSqlFragment fragment)
     {
         var named = new Named();
         fragment.Accept(named);
-        return [.. named.Found.Distinct(StringComparer.Ordinal)];
+        return named.Found;
     }
 
     /// <summary>
@@ -67,10 +73,8 @@ internal static class TSql
 
     private sealed class Named : TSqlFragmentVisitor
     {
-        public List<string> Found { get; } = [];
+        public List<NamedTableReference> Found { get; } = [];
 
-        public override void Visit(NamedTableReference node) =>
-            Found.Add(string.Join('.',
-                node.SchemaObject.Identifiers.Select(i => "[" + i.Value.Replace("]", "]]", StringComparison.Ordinal) + "]")));
+        public override void Visit(NamedTableReference node) => Found.Add(node);
     }
 }

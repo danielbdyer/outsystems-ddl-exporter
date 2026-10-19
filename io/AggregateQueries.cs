@@ -17,11 +17,13 @@ namespace DbChange.Io;
 /// class (AggregateQueries.Fits.cs); ForeignKey, the orphans, and Unique, the rows of each collation class of duplicate (Keys.cs); Check,
 /// the rows that make the check false (Check.cs). All of one table's preconditions are items of one SELECT over the table aliased t, a key
 /// or a foreign key joining a grouped derived table that matches each row once, so one statement reads the table (decision 2.9). Every
-/// query passes AggregateQuery.Of and runs under the session given, and no builder writes CONVERT, CAST or PARSE, only TRY_CONVERT and
-/// TRY_CAST, so none raises an error that quotes a value (§18); a table's query that fails all the same is run again a precondition at a
-/// time, and each that fails is reported by its precondition and SQL Server's number, the message withheld for a named environment. A
-/// precondition no query the allowlist admits can count reads not predictable read-only, with why. A column the change creates reads, where
-/// its name would stand, the value the coordinate rules give every existing row, its default or NULL (kernel/Coordinates.cs).
+/// query passes AggregateQuery.Of, its text read again, and runs under the session given; no builder writes CONVERT, CAST or PARSE, only
+/// TRY_CONVERT and TRY_CAST, and a check's string that SQL Server would convert with no CONVERT written is read through TRY_CONVERT too
+/// (Check.cs, Types.cs), so none raises an error that quotes a value (§18). A table's query that fails all the same, on an overflow, is
+/// run again a precondition at a time, and each that fails is reported by its precondition and SQL Server's number, the message withheld
+/// for a named environment. A precondition no query the allowlist admits can count reads not predictable read-only, with why, as does one
+/// whose columns name a collation Collation.Of refuses, since a query writes a COLLATE's name as it stands. A column the change creates
+/// reads, where its name would stand, the value the coordinate rules give every existing row, its default or NULL (kernel/Coordinates.cs).
 /// </summary>
 public static partial class AggregateQueries
 {
@@ -278,16 +280,20 @@ public static partial class AggregateQueries
     private static Counts Unanswering(TableQuery query, string why) =>
         new([], [], SortedArray.Of(query.Preconditions.Select(p => new Unanswered(p, why))));
 
-    /// <summary>The part each kind's builder asks of its table's query.</summary>
-    private static Asked Ask(Coordinates.Counted counted, Context context, List<Finding> notes) => counted.Precondition.Kind.Match(
-        () => Part.Rows(counted.Precondition),
-        () => context.Column(counted, counted.Precondition.Table, counted.Precondition.Columns[0]) is { } column
-            && Operand(column, "t") is { } value
-            ? Part.Violating(counted.Precondition, Is(value, isNull: true)) : Asked.Not(Unplaced(counted.Precondition.Columns[0])),
-        fits => Fits(counted, fits, context, notes),
-        key => ForeignKey(counted, key, context),
-        unique => Unique(counted, unique, context),
-        check => Check(counted, check, context));
+    /// <summary>The part each kind's builder asks of its table's query; none for a precondition whose columns name a collation
+    /// Collation.Of refuses, which no query writes.</summary>
+    private static Asked Ask(Coordinates.Counted counted, Context context, List<Finding> notes) =>
+        context.Refused(counted) is ({ } where, { } name)
+            ? Asked.Not("the model gives " + where + " the collation '" + name + "', which is no SQL Server collation name")
+            : counted.Precondition.Kind.Match(
+                () => Part.Rows(counted.Precondition),
+                () => context.Column(counted, counted.Precondition.Table, counted.Precondition.Columns[0]) is { } column
+                    && Operand(column, "t") is { } value
+                    ? Part.Violating(counted.Precondition, Is(value, isNull: true)) : Asked.Not(Unplaced(counted.Precondition.Columns[0])),
+                fits => Fits(counted, fits, context, notes),
+                key => ForeignKey(counted, key, context),
+                unique => Unique(counted, unique, context),
+                check => Check(counted, check, context));
 
     /// <summary>The table a counted precondition reads, as the environment names it.</summary>
     private static Name TableOf(Coordinates.Counted counted) =>
@@ -331,8 +337,37 @@ public static partial class AggregateQueries
         public ColumnType? Stored(ColumnType type, bool inHead) =>
             type.Stored(inHead ? after : environment) is Result<ColumnType>.Ok stored ? stored.Value : null;
 
-        /// <summary>The collation a type's values compare under: its own, or the database's.</summary>
-        public string Collation(ColumnType? type) => type?.Collation ?? database.Name;
+        /// <summary>The collation a type's values compare under: its own, or the database's. Ask has read every collation a precondition's
+        /// columns name through <see cref="Refused"/>, so each is one Collation.Of admits.</summary>
+        public Kernel.Collation Collation(ColumnType? type) => type?.Collation is not { } name ? database
+            : Kernel.Collation.Of(name) is Result<Kernel.Collation>.Ok admitted ? admitted.Value
+            : throw new UnreachableException("Ask counts no precondition whose columns name a collation Collation.Of refuses.");
+
+        /// <summary>
+        /// The first collation a precondition's columns name, in either model, or its own types do, that Collation.Of refuses, since a
+        /// query writes a COLLATE's name as it stands: the column's path, or the precondition, and the name; null when there is none.
+        /// </summary>
+        public (string Where, string Name)? Refused(Coordinates.Counted counted)
+        {
+            IEnumerable<(string Where, ColumnType? Type)> Named()
+            {
+                foreach (var place in counted.Places.Where(p => p.After.Type == "Column"))
+                {
+                    yield return (place.After.Path, Stored(after, place.After));
+                    yield return (place.After.Path, place.Environment is { } held ? Stored(environment, held) : null);
+                }
+
+                if (counted.Precondition.Kind is PreconditionKind.Fits fits)
+                {
+                    yield return (counted.Precondition.ToString(), fits.Before);
+                    yield return (counted.Precondition.ToString(), fits.After);
+                }
+            }
+
+            return Named().FirstOrDefault(n => n.Type?.Collation is { } name
+                    && Kernel.Collation.Of(name) is Result<Kernel.Collation>.Failed) is ({ } where, { Collation: { } refused })
+                ? (where, refused) : null;
+        }
 
         private static ColumnType? Stored(IReadOnlyDictionary<ElementKey, Element> model, ElementKey key) =>
             model.GetValueOrDefault(key) is { } column && ColumnType.Of(column).Bind(t => t.Stored(model)) is Result<ColumnType>.Ok type

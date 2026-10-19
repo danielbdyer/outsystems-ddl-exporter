@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
-using CsCheck;
 using DbChange.Kernel;
 using DbChange.Kernel.Tests;
 using DbChange.Tests;
@@ -151,7 +150,8 @@ public sealed class AggregateQueriesTests
     /// <summary>
     /// QST-17 to QST-34: the value classes a retype counts, each its own item, and the lines its site prints for the losses no count shows:
     /// substituted characters into a character type whose code page can lack a character the value holds, and rounded values where the
-    /// fractional digits the type holds fall.
+    /// fractional digits the type holds fall. A number too long for a string (QST-32) is over length, and only a string's trailing spaces
+    /// are over bytes.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -170,7 +170,7 @@ public sealed class AggregateQueriesTests
     [InlineData("QST-29", "OrderLine.LineNumber", "overflow", "")]
     [InlineData("QST-30", "Account.Name", "over-length over-bytes", "fits.substituted-characters")]
     [InlineData("QST-31", "Order.PlacedOn", "overflow lossy-round-trip", "fits.rounded-values")]
-    [InlineData("QST-32", "OrderLine.LineNumber", "over-length over-bytes", "")]
+    [InlineData("QST-32", "OrderLine.LineNumber", "over-length", "")]
     [InlineData("QST-33", "T.Code", "over-length over-bytes", "")]
     [InlineData("QST-34", "T.Ref", "over-length over-bytes", "fits.substituted-characters")]
     [InlineData("QST-76", "T.Code", "over-length over-bytes", "")]
@@ -311,9 +311,11 @@ public sealed class AggregateQueriesTests
     }
 
     /// <summary>
-    /// QST-106 and its variants: a check that converts is counted through the TRY_ form of each CONVERT or CAST, with the rows on which the
-    /// conversion fails, wherever SQL Server converts on every row; under OR, CASE or COALESCE SQL Server may skip a conversion, PARSE has
-    /// no TRY_ form the allowlist admits, and the allowlist refuses two columns set against each other, so those read not predictable
+    /// QST-106 and its variants: a check that converts is counted through the TRY_ form of each CONVERT or CAST, and of each conversion of
+    /// the varchar column Ref that SQL Server makes with no CONVERT written where Ref meets a number, with the rows on which the conversion
+    /// fails, wherever SQL Server converts on every row; under OR, CASE or COALESCE SQL Server may skip a conversion, PARSE has no TRY_ form
+    /// the allowlist admits, SQL Server converts Ref to two types where BETWEEN's bounds differ in type, NULLIF would answer the converted
+    /// value, ABS converts a string to float, and the allowlist refuses two columns set against each other, so those read not predictable
     /// read-only, with the reason.
     /// </summary>
     [Theory]
@@ -322,11 +324,23 @@ public sealed class AggregateQueriesTests
     [InlineData("CAST([Ref] AS [int])>(0) AND [Other]>(1)", "")]
     [InlineData("ISNULL(CONVERT([int],[Ref]),(1))>(0)", "")]
     [InlineData("NOT (CONVERT([int],[Ref])<=(0) OR [Other] IS NULL)", "")]
+    [InlineData("[Ref]>(0)", "")]
+    [InlineData("[Ref] BETWEEN (1) AND (9)", "")]
+    [InlineData("[Ref] NOT IN ((1),(2))", "")]
+    [InlineData("([Ref]+(1))>(0)", "")]
+    [InlineData("UPPER([Ref])>(0)", "")]
+    [InlineData("COALESCE([Ref],(0))>(0)", "")]
     [InlineData("CONVERT([int],[Ref])>(0) OR [Other] IS NULL", "may skip a conversion")]
     [InlineData("NOT (CONVERT([int],[Ref])<=(0) AND [Other] IS NOT NULL)", "may skip a conversion")]
     [InlineData("COALESCE([Other],CONVERT([int],[Ref]))>(0)", "may skip a conversion")]
+    [InlineData("[Ref]>(0) OR [Other] IS NULL", "may skip a conversion")]
+    [InlineData("ISNULL([Other],[Ref])>(0)", "may skip a conversion")]
+    [InlineData("[Ref] BETWEEN (1) AND (2.5)", "more than one type")]
+    [InlineData("NULLIF([Ref],(0)) IS NULL", "NULLIF")]
+    [InlineData("ABS([Ref])>(0)", "ABS")]
     [InlineData("PARSE([Ref] AS int)>(0)", "PARSE")]
     [InlineData("[Other]>[Id]", "the allowlist refuses")]
+    [InlineData("[Ref]=[Other]", "the allowlist refuses")]
     public void A_check_that_converts_is_counted_through_its_TRY_form_or_reads_not_predictable_read_only(string expression, string why)
     {
         var reads = new[] { "Ref", "Other", "Id" }.Where(c => expression.Contains("[" + c + "]", StringComparison.Ordinal)).ToArray();
@@ -348,10 +362,68 @@ public sealed class AggregateQueriesTests
     }
 
     /// <summary>
-    /// The safety the work package states word for word (§18, a value escaping in an error): over every pair of the types a Fits
-    /// precondition can join, with a key, a foreign key and a check over the column, every query the builders make is one the allowlist
-    /// admits as text, and none calls CONVERT, CAST or PARSE, only their TRY_ forms; every precondition is counted by a query or read not
-    /// predictable read-only.
+    /// The conversions SQL Server makes with no CONVERT written, each read as TRY_CONVERT to the type SQL Server 2022 plans
+    /// CONVERT_IMPLICIT to (Types.cs): the varchar column Ref to int beside 0, to numeric(2,1) beside 1.5 and to numeric(10,0) beside
+    /// 3000000000; and a string literal to the type of the column it meets, a tinyint's own, decimal(5,2)'s own, and time(3) and
+    /// datetime2(3) at scale 7. Each conversion's failures are counted beside the false rows.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("[Ref]>(0)", "NOT (TRY_CONVERT (INT, [t].[Ref]) > (0)) OR ([t].[Ref] IS NOT NULL AND TRY_CONVERT (INT, [t].[Ref]) IS NULL)")]
+    [InlineData("[Ref]>(1.5)", "TRY_CONVERT (NUMERIC (2, 1), [t].[Ref]) > (1.5)")]
+    [InlineData("[Ref]<(3000000000)", "TRY_CONVERT (NUMERIC (10, 0), [t].[Ref]) < (3000000000)")]
+    [InlineData("[Small]>'5'", "[t].[Small] > TRY_CONVERT (TINYINT, '5')")]
+    [InlineData("[Amount]>='1.5'", "[t].[Amount] >= TRY_CONVERT (DECIMAL (5, 2), '1.5')")]
+    [InlineData("[Starts]<'10:00'", "[t].[Starts] < TRY_CONVERT (TIME (7), '10:00')")]
+    [InlineData("[Placed]>'20200101'", "[t].[Placed] > TRY_CONVERT (DATETIME2 (7), '20200101')")]
+    public void A_string_SQL_Server_converts_with_no_CONVERT_written_is_read_as_TRY_CONVERT_to_the_type_it_converts_to(
+        string expression, string read)
+    {
+        var typed = T.With("T.Small tinyint NULL", "T.Amount decimal(5,2) NULL", "T.Starts time(3) NULL", "T.Placed datetime2(3) NULL");
+        var reads = new[] { "Ref", "Small", "Amount", "Starts", "Placed" }
+            .Where(c => expression.Contains("[" + c + "]", StringComparison.Ordinal)).ToArray();
+
+        var queries = new Case(typed, typed.Check("CK_T_Probe", "T", expression, reads)).Queries();
+
+        Assert.Empty(queries.NotPredictable);
+        Assert.Contains(read, Regex.Replace(Assert.Single(queries.Tables).Query.Statement, @"\s+", " "), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A collation is written into a query as its name stands, unquoted, so one Collation.Of refuses is written by no query: model text
+    /// that names, for the column a Fits retype, a key and a check read, a collation closing the query and starting a DELETE leaves every
+    /// precondition over the column not predictable read-only, naming the collation, whether the change's model or the environment's
+    /// carries it, and no query holds the DELETE.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [Trait("Value", "P2")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_collation_that_is_no_SQL_Server_collation_name_is_written_into_no_query_and_its_preconditions_read_not_predictable_read_only(bool inHead)
+    {
+        const string Planted = "Latin1_General_CS_AS)) > (10) THEN 1 ELSE 0 END) FROM [dbo].[X] AS [t]; DELETE FROM [dbo].[X]; --";
+        Model Collated(Model model) => model with { Columns = [.. model.Columns.Select(c => c.Table == "X" && c.Name == "c"
+            ? c with { Type = c.Type with { Collation = Planted } } : c)] };
+        var environment = Pg.With("X.Id int NOT NULL", "X.c varchar(20) NULL Latin1_General_CI_AS");
+        var head = Pg.With("X.Id int NOT NULL", "X.c varchar(10) NULL Latin1_General_CI_AS").UniqueIndex("UX_X_c", "X", "c")
+            .Check("CK_X_c", "X", "[c]<>'x'", ["c"]);
+
+        var queries = (inHead ? new Case(environment, Collated(head)) : new Case(Collated(environment), head)).Queries();
+
+        Assert.DoesNotContain(queries.Tables, t => t.Alone.Prepend(t).Any(q => q.Query.Statement.Contains("DELETE", StringComparison.Ordinal)));
+        Assert.DoesNotContain(queries.Tables.SelectMany(t => t.Preconditions), p => p.Columns.Any(c => c.Base == "c"));
+        Assert.Equal(["Check", "Fits", "Unique"], queries.NotPredictable.Select(u => u.Precondition.ToString().Split(' ')[0]).Order());
+        Assert.All(queries.NotPredictable, u => Assert.Contains("the collation '" + Planted + "', which is no SQL Server collation name",
+            u.Why, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The safety the work package states word for word (§18, a value escaping in an error): for every pair of the types below a Fits
+    /// precondition can join, each with a key, a foreign key and each check below over the column, every query the builders make, a
+    /// table's and each of its preconditions' alone, is one the allowlist admits when read again as text, and none calls CONVERT, CAST or
+    /// PARSE, only their TRY_ forms; every precondition is counted by a query or read not predictable read-only. Every case is built, 31
+    /// types by 31 by 7 checks.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -363,26 +435,37 @@ public sealed class AggregateQueriesTests
             "time(3)", "datetime", "smalldatetime", "datetime2(7)", "datetime2(0)", "datetimeoffset(7)", "uniqueidentifier", "varbinary(16)",
             "binary(8)", "varbinary(max)", "xml", "sql_variant"];
         string[] checks = ["[c] IS NOT NULL", "CONVERT([int],[c])>(0)", "CAST([c] AS [date])<>'20000101' OR [d]>(0)", "PARSE([c] AS int)>(0)",
-            "LEN([c])>(2)", "[c]>[d]"];
+            "LEN([c])>(2)", "[c]>[d]", "[c]>(0)"];
         var forbidden = new Regex(@"(?<![A-Za-z_])(CONVERT|CAST|PARSE)\s*\(", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
-        Gen.Select(Gen.Int[0, types.Length - 1], Gen.Int[0, types.Length - 1], Gen.Int[0, checks.Length - 1], Gen.Int[0, 7])
-            .Sample((before, after, check, rules) =>
+        // A collation is written after the nullability, as Model reads a column.
+        static string Nullable(string type) => type.Split(' ') is [var name, var collation] ? name + " NULL " + collation : type + " NULL";
+        string? Unsafe(string before, string after, string check)
+        {
+            var environment = Pg.With("X.Id int NOT NULL", "X.c " + Nullable(before), "X.d int NULL");
+            var head = Pg.With("X.Id int NOT NULL", "X.c " + Nullable(after), "X.d int NULL").PrimaryKey("PK_X_Id", "X", "Id")
+                .UniqueIndex("UX_X_c", "X", "c").ForeignKey("FK_X_Product", "X", ["d"], "Product", ["Id"]).Check("CK_X_c", "X", check, ["c", "d"]);
+            var drawn = new Case(environment, head, ["X"]);
+            var counted = drawn.Counted;
+            if (AggregateQueries.Of(counted, head.Elements, environment.Elements, Database, SqlServer.Session.Assumed)
+                .Failed(out var queries, out var error))
             {
-                // A collation is written after the nullability, as Model reads a column.
-                string Nullable(string type) => type.Split(' ') is [var name, var collation] ? name + " NULL " + collation : type + " NULL";
-                var environment = Pg.With("X.Id int NOT NULL", "X.c " + Nullable(types[before]), "X.d int NULL");
-                var head = Pg.With("X.Id int NOT NULL", "X.c " + Nullable(types[after]), "X.d int NULL")
-                    .PrimaryKey("PK_X_Id", "X", "Id");
-                head = (rules & 1) == 0 ? head : head.UniqueIndex("UX_X_c", "X", "c");
-                head = (rules & 2) == 0 ? head : head.ForeignKey("FK_X_Product", "X", ["d"], "Product", ["Id"]);
-                head = (rules & 4) == 0 ? head : head.Check("CK_X_c", "X", checks[check], ["c", "d"]);
-                var drawn = new Case(environment, head, ["X"]);
-                var queries = drawn.Queries();
-                return queries.Tables.All(t => AggregateQuery(t.Query.Statement) && !forbidden.IsMatch(t.Query.Statement))
-                    && queries.Tables.SelectMany(t => t.Preconditions).Concat(queries.NotPredictable.Select(u => u.Precondition))
-                        .Order().SequenceEqual(drawn.Counted.Select(c => c.Precondition).Order());
-            }, iter: 400, print: drawn => types[drawn.Item1] + " → " + types[drawn.Item2] + ", " + checks[drawn.Item3] + ", " + drawn.Item4);
+                return "the builders failed: " + error.Message;
+            }
+
+            var statements = queries.Tables.SelectMany(t => t.Alone.Prepend(t)).Select(t => t.Query.Statement).ToList();
+            return statements.FirstOrDefault(s => !AggregateQuery(s)) is { } refused ? "refused when read again: " + refused
+                : statements.FirstOrDefault(forbidden.IsMatch) is { } converting ? "converts: " + converting
+                : !queries.Tables.SelectMany(t => t.Preconditions).Concat(queries.NotPredictable.Select(u => u.Precondition)).Order()
+                    .SequenceEqual(counted.Select(c => c.Precondition).Order()) ? "a precondition is neither counted nor unanswered"
+                : null;
+        }
+
+        var cases = (from before in types from after in types from check in checks select (before, after, check)).ToList();
+        var failures = cases.AsParallel().Select(c => (c, Why: Unsafe(c.before, c.after, c.check))).Where(f => f.Why is not null)
+            .Select(f => f.c.before + " → " + f.c.after + ", " + f.c.check + ": " + f.Why).Order(StringComparer.Ordinal).ToList();
+
+        Assert.True(failures.Count == 0, failures.Count + " of " + cases.Count + " cases:\n" + string.Join('\n', failures.Take(5)));
     }
 
     /// <summary>

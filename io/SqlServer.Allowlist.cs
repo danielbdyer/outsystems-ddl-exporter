@@ -158,10 +158,10 @@ public static partial class SqlServer
         }
 
         /// <summary>
-        /// SUM of the rows column of sys.partitions, in a query whose every table is a catalog view of the sys schema: the row count SQL
-        /// Server keeps for each partition, which a login holding VIEW DEFINITION alone reads (§17 item 21), so TableEmpty is read without
-        /// a row of the table (WP 2.3). The one form that sums a column; a column of any other table, or sys.partitions beside a table
-        /// outside the sys schema, is SUM over a bare column.
+        /// SUM of the rows column of sys.partitions, in a query whose every table, those of its subqueries included, is a catalog view of
+        /// the sys schema named in two parts: the row count SQL Server keeps for each partition, which a login holding VIEW DEFINITION
+        /// alone reads (§17 item 21), so TableEmpty is read without a row of the table (WP 2.3). The one form that sums a column; a
+        /// column of any other table, or sys.partitions beside or filtered by a table outside the sys schema, is SUM over a bare column.
         /// </summary>
         private static bool PartitionRows(ScalarExpression x, QuerySpecification q) =>
             x is ParenthesisExpression p ? PartitionRows(p.Expression, q)
@@ -172,14 +172,15 @@ public static partial class SqlServer
             && column.MultiPartIdentifier.Identifiers is { Count: 1 or 2 } parts
             && string.Equals(parts[^1].Value, "rows", StringComparison.OrdinalIgnoreCase)
             && q.FromClause is { } from && Catalog(from.TableReferences) is { Count: > 0 } tables
-            && tables.All(t => t.SchemaObject is { ServerIdentifier: null, DatabaseIdentifier: null, SchemaIdentifier.Value: var schema }
+            && TSql.TableReferences(q).All(t =>
+                t.SchemaObject is { ServerIdentifier: null, DatabaseIdentifier: null, SchemaIdentifier.Value: var schema }
                 && string.Equals(schema, "sys", StringComparison.OrdinalIgnoreCase))
             && tables.Any(t => string.Equals(t.SchemaObject.BaseIdentifier.Value, "partitions", StringComparison.OrdinalIgnoreCase)
                 && (parts.Count == 1 ? tables.Count == 1
                     : string.Equals(parts[0].Value, t.Alias?.Value ?? t.SchemaObject.BaseIdentifier.Value,
                         StringComparison.OrdinalIgnoreCase)));
 
-        /// <summary>The tables a FROM clause names, through its joins; null when it holds anything but named tables.</summary>
+        /// <summary>The tables a FROM clause names, through its joins; null when it holds anything but named tables and joins.</summary>
         private static List<NamedTableReference>? Catalog(IEnumerable<TableReference> references)
         {
             var named = new List<NamedTableReference>();

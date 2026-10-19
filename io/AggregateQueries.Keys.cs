@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using DbChange.Kernel;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
@@ -61,8 +62,8 @@ public static partial class AggregateQueries
 
         // The parent's keys grouped, each compared under the parent column's collation after the change where both columns hold strings.
         var alias = context.Alias("p");
-        var collations = referenced.Select((r, i) => Character(r!) && Character(children[i]!) ? context.Collation(r!.After) : null)
-            .ToList();
+        var collations = referenced
+            .Select((r, i) => Character(r!) && Character(children[i]!) ? context.Collation(r!.After) : (Collation?)null).ToList();
         var keys = referenced.Select((r, i) => (ScalarExpression)ColumnRef(null, r!.Name!, collations[i])).ToList();
         var grouped = Derived(Query(keys.Select((k, i) => (k, (string?)("k" + (i + 1)))), Named(parent.Name, null), null, keys), alias);
         var on = All(values.Select((v, i) => (BooleanExpression)Compare(ColumnRef(alias, "k" + (i + 1)), BooleanComparisonType.Equals,
@@ -161,9 +162,9 @@ public static partial class AggregateQueries
 
             grouped = Derived(Collated(table, keys, strings, inner, context), alias);
             duplicate = Any([Exceeds(At("v"), 1), Exceeds(At("e"), 0), Exceeds(At("b"), 0)]);
-            (bool Case, bool Accent, string Key) Insensitive(Column k, int i) =>
-                strings[i] && Kernel.Collation.Of(context.Collation(k.After)) is Result<Kernel.Collation>.Ok { Value: var c }
-                    ? (!c.IsCaseSensitive, !c.IsAccentSensitive, Key(i)) : (false, false, Key(i));
+            (bool Case, bool Accent, string Key) Insensitive(Column k, int i) => strings[i]
+                ? (!context.Collation(k.After).IsCaseSensitive, !context.Collation(k.After).IsAccentSensitive, Key(i))
+                : (false, false, Key(i));
             var sensitivity = keys.Select(Insensitive).ToList();
             classes.Add((Class.Exact, Exceeds(At("e"), 0)));
             if (sensitivity.Any(s => s.Case))
@@ -226,14 +227,13 @@ public static partial class AggregateQueries
         var counts = new List<(ScalarExpression, string?)>();
         foreach (var (k, i) in keys.Select((k, i) => (k, i)).Where(k => strings[k.i]))
         {
-            var collation = context.Collation(k.After);
-            if (Kernel.Collation.Of(collation) is Result<Kernel.Collation>.Ok { Value: var c }
-                && !(c.IsCaseSensitive && c.IsAccentSensitive))
+            var c = context.Collation(k.After);
+            if (!(c.IsCaseSensitive && c.IsAccentSensitive))
             {
                 var name = (c.IsCaseSensitive ? "a" : "c") + (i + 1);
-                counts.Add((Distinct("l1", Key(i), Sensitive(collation, toCase: true, toAccent: true)), name));
+                counts.Add((Distinct("l1", Key(i), Sensitive(c, toCase: true, toAccent: true)), name));
                 counts.AddRange(!c.IsCaseSensitive && !c.IsAccentSensitive
-                    ? [(Distinct("l1", Key(i), Sensitive(collation, toCase: false, toAccent: true)), "a" + (i + 1))] : []);
+                    ? [(Distinct("l1", Key(i), Sensitive(c, toCase: false, toAccent: true)), "a" + (i + 1))] : []);
             }
         }
 
@@ -243,7 +243,7 @@ public static partial class AggregateQueries
     }
 
     /// <summary>COUNT_BIG(DISTINCT the column under the collation given): its values the collation reads as distinct.</summary>
-    private static FunctionCall Distinct(string qualifier, string column, string collation)
+    private static FunctionCall Distinct(string qualifier, string column, Collation collation)
     {
         var count = Call("COUNT_BIG", ColumnRef(qualifier, column, collation));
         count.UniqueRowFilter = UniqueRowFilter.Distinct;
@@ -252,34 +252,40 @@ public static partial class AggregateQueries
 
     /// <summary>A collation's form sensitive to case, to accents, or to both, its other tokens kept: Latin1_General_CI_AI to
     /// Latin1_General_CS_AS or Latin1_General_CI_AS.</summary>
-    private static string Sensitive(string collation, bool toCase, bool toAccent) => string.Join('_', collation.Split('_')
-        .Select(t => t == "CI" && toCase ? "CS" : t == "AI" && toAccent ? "AS" : t));
+    private static Collation Sensitive(Collation collation, bool toCase, bool toAccent) =>
+        Admitted(string.Join('_', collation.Name.Split('_').Select(t => t == "CI" && toCase ? "CS" : t == "AI" && toAccent ? "AS" : t)))
+        ?? throw new UnreachableException("A collation Collation.Of admitted keeps its tokens with CI or AI replaced.");
 
     /// <summary>
     /// The binary collation of a string column's code page, under which the bytes compare: Latin1_General_BIN2 for a Unicode column or one
     /// of SQL_Latin1_General_CP1; a SQL collation's own binary form for code pages 437 and 850; a Windows collation's binary form, its
     /// version and UTF8 kept; and none for another SQL collation's code page.
     /// </summary>
-    private static string? Bin2(string collation, bool unicode)
+    private static Collation? Bin2(Collation collation, bool unicode)
     {
-        if (unicode || collation.StartsWith("SQL_Latin1_General_CP1_", StringComparison.Ordinal))
+        var name = collation.Name;
+        if (unicode || name.StartsWith("SQL_Latin1_General_CP1_", StringComparison.Ordinal))
         {
-            return "Latin1_General_BIN2";
+            return Admitted("Latin1_General_BIN2");
         }
 
         foreach (var page in (string[])["CP437", "CP850"])
         {
-            if (collation.StartsWith("SQL_Latin1_General_" + page + "_", StringComparison.Ordinal))
+            if (name.StartsWith("SQL_Latin1_General_" + page + "_", StringComparison.Ordinal))
             {
-                return "SQL_Latin1_General_" + page + "_BIN2";
+                return Admitted("SQL_Latin1_General_" + page + "_BIN2");
             }
         }
 
-        var tokens = collation.Split('_');
-        return collation.StartsWith("SQL_", StringComparison.Ordinal) ? null
-            : string.Join('_', tokens.TakeWhile(t => t is not ("CI" or "CS" or "BIN" or "BIN2"))) + "_BIN2"
-                + (tokens.Contains("UTF8") ? "_UTF8" : "");
+        var tokens = name.Split('_');
+        return name.StartsWith("SQL_", StringComparison.Ordinal) ? null
+            : Admitted(string.Join('_', tokens.TakeWhile(t => t is not ("CI" or "CS" or "BIN" or "BIN2"))) + "_BIN2"
+                + (tokens.Contains("UTF8") ? "_UTF8" : ""));
     }
+
+    /// <summary>A collation name dbchange derives from one Collation.Of admitted, as Collation.Of admits it; null where it does
+    /// not.</summary>
+    private static Collation? Admitted(string name) => Collation.Of(name) is Result<Collation>.Ok admitted ? admitted.Value : null;
 
     /// <summary>Whether a key's two NULLs can be a duplicate: a key column allows NULL and the filter, where one stands, holds no
     /// &lt;column&gt; IS NOT NULL of its own for each column that does.</summary>
