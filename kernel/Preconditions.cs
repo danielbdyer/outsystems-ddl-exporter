@@ -233,14 +233,21 @@ public static class Preconditions
     }
 
     /// <summary>
-    /// Baseline drift: the operations of an environment's plan that the change itself does not make, by the object each names. An
-    /// operation is the change's when its object is, under <paramref name="collation"/>, one the change creates, drops, renames or
-    /// alters, or holds one, as DacFx's report names a column's alteration by its table's. A Refresh, UnbindSchemabinding or
-    /// RebindSchemabinding is DacFx's consequence of another operation and is left out.
+    /// Baseline drift: the operations of an environment's plan that the change, from a model to <paramref name="after"/>, the package's,
+    /// does not make, by the object each names. An operation is the change's when its object is, under <paramref name="collation"/>,
+    /// one the change creates, drops, renames or alters, or holds one, as DacFx's report names a column's alteration by its table's. So
+    /// are the operations DacFx 170.5.96 adds around the change's own, as measured package to package: a Refresh, UnbindSchemabinding or
+    /// RebindSchemabinding of a module over a changed object; a Drop and a Create of one object the after model holds that reads a column
+    /// the change alters, or a computed column over one, since DacFx drops an index, a statistic, a key, a foreign key, a check or a
+    /// default before an ALTER COLUMN of a column it reads and creates it after; and a Drop or a Create of an object the after model holds
+    /// on a table the change's own TableRebuild creates again, or over a column of one. A Create alone of an object over an altered column
+    /// is drift: the environment lacks that object, and the plan creates it whatever the change does.
     /// </summary>
-    public static SortedArray<PlanOperation> BaselineDrift(DeployReport plan, Change change, Collation collation)
+    public static SortedArray<PlanOperation> BaselineDrift(DeployReport plan, SortedArray<Element> after, Change change,
+        Collation collation)
     {
-        var made = new HashSet<ElementKey>(ElementKey.Comparer(collation));
+        var comparer = ElementKey.Comparer(collation);
+        var made = new HashSet<ElementKey>(comparer);
         foreach (var key in change.Created.Concat(change.Dropped).Select(e => e.Key)
             .Concat(change.Renamed.Concat(change.CaseOnlyRenamed).SelectMany(r => new[] { r.Before, r.After }))
             .Concat(change.Altered.SelectMany(a => new[] { a.Key, change.KeyBefore(a.Key) })))
@@ -250,8 +257,43 @@ public static class Preconditions
             }
         }
 
-        return SortedArray.Of(plan.Operations.Where(o => !o.Kind.IsConsequence && !made.Contains(o.Key)));
+        var held = new Dictionary<ElementKey, Element>(comparer);
+        foreach (var e in after)
+        {
+            held.TryAdd(e.Key, e);
+        }
+
+        // The columns DacFx alters: each the change alters, then each computed column over one, which DacFx drops and adds again.
+        var altered = new HashSet<ElementKey>(change.Altered.Select(a => a.Key).Where(k => k.Type == "Column"), comparer);
+        while (after.FirstOrDefault(e => e.Key.Type == "Column" && !altered.Contains(e.Key)
+            && Targets(e, "ExpressionDependencies").Any(altered.Contains)) is { } computed)
+        {
+            altered.Add(computed.Key);
+        }
+
+        HashSet<ElementKey> Named(Func<PlanOperationKind, bool> kind) =>
+            plan.Operations.Where(o => kind(o.Kind)).Select(o => o.Key).ToHashSet(comparer);
+        var rebuilt = Named(k => k is PlanOperationKind.TableRebuild);
+        rebuilt.IntersectWith(made);
+        var (dropped, created) = (Named(k => k is PlanOperationKind.Drop), Named(k => k is PlanOperationKind.Create));
+        bool Recreated(PlanOperation o) => o.Kind is PlanOperationKind.Drop or PlanOperationKind.Create
+            && held.TryGetValue(o.Key, out var e)
+            && ((dropped.Contains(o.Key) && created.Contains(o.Key) && ColumnsRead(e).Any(altered.Contains))
+                || ColumnsRead(e).Select(c => c.Parent).Concat(Hosts(e)).Any(t => t is not null && rebuilt.Contains(t)));
+        return SortedArray.Of(plan.Operations.Where(o => !o.Kind.IsConsequence && !made.Contains(o.Key) && !Recreated(o)));
     }
+
+    /// <summary>The columns an object reads, so that DacFx drops it before an ALTER COLUMN of one and creates it after: an index's or a
+    /// statistic's, a key's or a foreign key's Columns, an index's IncludedColumns and its filter's BodyDependencies, a foreign key's
+    /// ForeignColumns, a check's or a computed column's ExpressionDependencies, and a default's TargetColumn.</summary>
+    private static IEnumerable<ElementKey> ColumnsRead(Element e) =>
+        ((string[])["Columns", "IncludedColumns", "ForeignColumns", "ExpressionDependencies", "BodyDependencies", "TargetColumn"])
+        .SelectMany(name => Targets(e, name));
+
+    /// <summary>The table an object is on: a key's, a check's or a default's Host, an index's IndexedObject, a statistic's
+    /// OnObject.</summary>
+    private static IEnumerable<ElementKey?> Hosts(Element e) => e.Relationships
+        .Where(r => r.Name is "Host" or "IndexedObject" or "OnObject").SelectMany(r => r.Targets).Select(t => (ElementKey?)t.Key);
 
     /// <summary>The properties of a column that, with its DataType relationship, make up its type (decision 2.9).</summary>
     private static readonly string[] Facets = ["Length", "IsMax", "Precision", "Scale", "Collation"];

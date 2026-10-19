@@ -91,22 +91,41 @@ public sealed class PreconditionsTests
     }
 
     /// <summary>
-    /// Baseline drift is the plan's operations on objects the change neither creates, drops, renames nor alters, nor holds one it does:
-    /// over generated edits, a plan altering each table the change touches and creating, dropping and renaming what it does, with
-    /// operations on tables no model holds beside them, reports those alone, and no Refresh, UnbindSchemabinding or
-    /// RebindSchemabinding; under a case-insensitive collation a table the change alters, named in other letter case, is the change's.
+    /// Baseline drift is the plan's operations on objects the change neither creates, drops, renames nor alters, nor holds one it does,
+    /// less those DacFx adds around the change's own: over generated edits, a plan altering each table the change touches and creating,
+    /// dropping and renaming what it does, with operations on tables no model holds beside them, reports those alone, and no Refresh,
+    /// UnbindSchemabinding or RebindSchemabinding; under a case-insensitive collation a table the change alters, named in other letter
+    /// case, is the change's. Each key, index, foreign key, check and default the change leaves as it was is dropped and created again,
+    /// created alone or dropped alone, or left out of the plan, and the change's table may be rebuilt: a Drop and a Create of one that
+    /// reads a column the change alters are the change's, as is any Drop or Create of one on a table the change rebuilds or over a
+    /// column of one; every other is drift, a Create alone of one over an altered column among them, since the environment lacks it.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Baseline_drift_is_the_operations_of_the_plan_on_objects_the_change_does_not_touch() =>
-        Gen.Select(PreconditionProperties.Edits, Gen.Int[0, 3], Gen.Int[0, 2]).Sample((e, strangers, consequences) =>
+        Gen.Select(PreconditionProperties.Edits, Gen.Int[0, 3], Gen.Int[0, 2], Gen.Int[0, 3].Array[16], Gen.Bool)
+            .Sample((e, strangers, consequences, fates, rebuild) =>
         {
             var change = e.Change;
             static ElementKey Top(ElementKey key) => key.Parent is { } parent ? Top(parent) : key;
             var made = change.Altered.Select(a => new PlanOperation(new PlanOperationKind.Alter(), Top(a.Key), []))
                 .Concat(change.Created.Select(c => new PlanOperation(new PlanOperationKind.Create(), c.Key, [])))
                 .Concat(change.Dropped.Select(d => new PlanOperation(new PlanOperationKind.Drop(), d.Key, [])))
-                .Concat(change.Renamed.Select(r => new PlanOperation(new PlanOperationKind.Rename(), r.After, [])));
+                .Concat(change.Renamed.Select(r => new PlanOperation(new PlanOperationKind.Rename(), r.After, []))).ToList();
+            var altered = change.Altered.Select(a => a.Key).Where(k => k.Type == "Column").ToHashSet();
+            var rebuilt = rebuild ? altered.Select(k => k.Parent!).Order().FirstOrDefault() : null;
+            made.AddRange(rebuilt is null ? [] : [new PlanOperation(new PlanOperationKind.TableRebuild(), rebuilt, [])]);
+            var (recreated, ruleDrift) = (new List<PlanOperation>(), new List<PlanOperation>());
+            foreach (var (rule, fate) in e.After.Rules.Select((r, i) => (Rule: Unchanged(r), Fate: fates[i % fates.Length]))
+                .Where(r => r.Rule is not null).Select(r => (r.Rule!.Value, r.Fate)))
+            {
+                var operations = (fate switch { 1 => ["Drop", "Create"], 2 => ["Create"], 3 => ["Drop"], _ => (string[])[] })
+                    .Select(kind => new PlanOperation(PlanOperationKind.Of(kind), rule.Key, [])).ToList();
+                var again = (fate == 1 && rule.Reads.Any(altered.Contains)) || (rebuilt is not null && rule.Tables.Contains(rebuilt));
+                recreated.AddRange(operations);
+                ruleDrift.AddRange(again ? [] : operations);
+            }
+
             var drift = Enumerable.Range(0, strangers).Select(i => new PlanOperation(
                 PlanOperationKind.Of(i % 2 == 0 ? "Alter" : "AddSystemVersioning"), Key("Table", "drift", "S" + i), [])).ToList();
             var refreshed = Enumerable.Range(0, consequences).Select(i =>
@@ -114,10 +133,24 @@ public sealed class PreconditionsTests
             var shouted = change.Altered.Select(a => Top(a.Key)).Where(k => k.Type == "Table").Take(1)
                 .Select(k => new PlanOperation(new PlanOperationKind.Alter(), Key("Table", k.Name.Schema!.ToUpperInvariant(),
                     k.Name.Base.ToUpperInvariant()), [])).ToList();
-            var plan = new DeployReport(SortedArray.Of(made.Concat(drift).Concat(refreshed).Concat(shouted)), []);
+            var plan = new DeployReport(SortedArray.Of(made.Concat(drift).Concat(refreshed).Concat(shouted).Concat(recreated)), []);
 
-            Assert.Equal(SortedArray.Of(drift), Preconditions.BaselineDrift(plan, change, CaseInsensitive));
-            Assert.Equal(SortedArray.Of(drift.Concat(shouted.Where(s => !made.Any(m => m.Key == s.Key)))),
-                Preconditions.BaselineDrift(plan, change, Collation.CaseSensitive));
+            Assert.Equal(SortedArray.Of(drift.Concat(ruleDrift)),
+                Preconditions.BaselineDrift(plan, e.AfterElements, change, CaseInsensitive));
+            Assert.Equal(SortedArray.Of(drift.Concat(ruleDrift).Concat(shouted.Where(s => !made.Any(m => m.Key == s.Key)))),
+                Preconditions.BaselineDrift(plan, e.AfterElements, change, Collation.CaseSensitive));
+
+            // A key, an index, a foreign key, a check or a default of the after model the change neither creates nor alters: its key,
+            // the columns it reads, and the tables it is on or reads a column of, as the test's model writes them; null for another.
+            (ElementKey Key, ElementKey[] Reads, ElementKey[] Tables)? Unchanged(Model.Rule r)
+            {
+                var host = Model.TableKey(r.Schema + "." + r.Table);
+                var key = r.Type == "Index" ? Key(host, "Index", r.Name) : Key(r.Type, r.Schema, r.Name);
+                var parent = r.Parent is { } p ? Model.TableKey(p.Schema + "." + p.Table) : null;
+                ElementKey[] reads = [.. r.Columns.Concat(r.Reads).Concat(r.Included).Select(c => Key(host, "Column", c)),
+                    .. parent is null ? [] : r.ParentColumns.Select(c => Key(parent, "Column", c))];
+                return change.Created.Any(c => c.Key == key) || change.Altered.Any(a => a.Key == key) ? null
+                    : (key, reads, parent is null ? [host] : [host, parent]);
+            }
         }, print: x => x.Item1.Edits);
 }
