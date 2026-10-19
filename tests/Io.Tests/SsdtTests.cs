@@ -11,6 +11,7 @@ using DbChange.Kernel;
 using DbChange.Tests;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
+using Table = Microsoft.SqlServer.Dac.Model.Table;
 
 namespace DbChange.Io.Tests;
 
