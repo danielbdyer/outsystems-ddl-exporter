@@ -45,7 +45,10 @@ difference in `STATE.md` and adapt only the requirements that depend on it.
 - **The substrate.** Where Docker is installed, it runs the SQL Server image, pinned by digest and
   matching the environments' SQL Server version, with change data capture; it is the substrate on
   laptops and hosted agents alike. On a machine without Docker, a local instance (LocalDB on
-  Windows) is the fallback, and it cannot prove CDC.
+  Windows) is the fallback, and it cannot prove CDC. A network with no Docker at all is common,
+  and there LocalDB is the substrate on every machine. A proof that touches a table CDC tracks then
+  runs on a full SQL Server, led by a person, because a server without CDC can publish clean what
+  a server with CDC refuses.
 - **Git is the only store.** Nothing may be fetched from a feed, a registry or a share, except the
   SQL Server image Docker pulls. The repository is the only distribution channel, and the git
   host's LFS is the only place a large file may live.
@@ -87,6 +90,12 @@ difference in `STATE.md` and adapt only the requirements that depend on it.
   environment has violations, none where it is empty);
   **shape** (distribution-faithful, thousands per table);
   **scale** (the environment's row tiers).
+  The branch tier needs no minter. When DacFx publishes, it asks the data only whether a table
+  has a row and whether a row breaks a rule, and SQL Server stops at the first row that answers
+  yes. So one synthetic row planted for each site where the environment answers yes, and none
+  where it answers no, takes the same branches, provided the copy keeps the environment's
+  constraint trust state and the base is never published onto it again after planting, which
+  would erase the planted rows.
 - **The record**: the pull-request body, in the repository's template for schema changes and its
   writing register.
 - **The gate**: the pipeline that rebuilds the Twin at branch volume from the committed inputs
@@ -204,8 +213,10 @@ the branch under Strict, and on a block publishes Permissive on the same copy to
 consequence; reads back constraint trust; computes before-and-after conservation hashes for any
 multi-phase step; publishes Strict again and asserts an empty script; asserts zero CDC capture
 rows where the table is tracked and the substrate supports CDC, and otherwise reports *not
-provable here*. The receipt is the copy's name, the script hash, the engine version and the
-timestamp.
+provable here*. A failed publish is not atomic under DacFx's default options: pre-deploy work,
+and constraint validation after the commit, can stay applied. So on a block the receipt records
+what the publish left applied, phase by phase, and never claims a rollback. The receipt is the
+copy's name, the script hash, the engine version and the timestamp.
 *Check:* the repository's proven change archetypes (schema changes with known outcomes) each
 produce the expected verdict with a receipt; the second-publish check passes for every archetype.
 
@@ -378,6 +389,8 @@ flow runs once per pull request.
   anywhere but a disposable copy; never publish to a named environment from tooling.
 - Never hold or write a credential.
 - Never classify a change from its SQL text.
+- Never let a validation pipeline publish the change into a new, empty database and call that a
+  proof: every tightening on a populated table passes there.
 - Never edit a generated file by hand; regenerate it.
 - Never delete or rewrite a finding; strike it with a date and the receipt that overturned it.
 - Never approve. The gate reports; a reviewer approves; nobody approves their own change.

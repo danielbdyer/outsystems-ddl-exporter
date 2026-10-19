@@ -19,8 +19,8 @@ stays in service until the facsimile reaches parity (G3) and has run beside it f
 (G4).
 
 Since 2026-10-19 this spec shares one branch with v3's tree. It sits here, beside the tree it
-succeeds, until WP 2.6 and WP 3.3 bring the catalog into `tests/Golden/` with its manifest rows,
-its citations and the lint's port (`../../../../V3_MILESTONES.md` §9).
+succeeds, until WP 2.6 brings the catalog into `tests/Cases/` with its manifest rows, its own
+budget, its citations and the lint's port (`../../../../V3_MILESTONES.md` §3.1 and §8).
 
 ## Read in this order
 

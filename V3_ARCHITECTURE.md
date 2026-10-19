@@ -1735,6 +1735,14 @@ CHECK CHECK`; refuse by constraint name on violation), write fingerprints to
 fingerprint-versioned `.bacpac` (and a container image where Docker exists); `restore`
 downloads it. Five laws, five tests (§13).
 
+*Amended 2026-10-19.* `V3_MILESTONES.md` already replaced the bake and the restore with a copy
+derived locally (its §4 row 5). It now re-cuts this verb around the Facsimile, the Twin's
+successor (`archive/v2/ssdt-agent/facsimile/`), pending the operator (its §17 item 20). A proof's
+copy is planted, one synthetic witness row for each precondition an environment answers yes, and
+none is generated from a distribution. The copy reproduces the environment's trust state rather
+than forcing every constraint trusted. The evidence verbs, the scenarios and the shape and scale
+tiers wait on a named trigger (its §9).
+
 ### 8.8 `dbchange check` — watching
 
 ```
@@ -1964,7 +1972,10 @@ with their windows and the tables they hold.
 
 ## 10. The synthetic copy and the three lanes
 
-The August review's four layers, as v3 builds them.
+The August review's four layers, as v3 builds them. *Amended 2026-10-19:* `V3_MILESTONES.md`
+supersedes §10.1. Nothing is baked or downloaded (its §4 row 5), and a proof's copy is planted at
+each environment's existing data by the Facsimile's planter (its §3.1 and §9). §10.3's gate
+follows its WP 5.2.
 
 ### 10.1 Layer 0 — the synthetic copy is downloaded rather than built
 
@@ -2037,7 +2048,10 @@ reads the rest), the verdict published as a build artifact. Exit 3 fails the che
 verdict attached*, so a blocked change must carry its two-release shape. Exit 0 passes.
 Anything else fails as a tooling failure, with its output. The template
 `pipelines/ssdt-agent-pr-validation.yml` is the model; v3's is the same steps with the scripts
-replaced by verbs.
+replaced by verbs. *Amended 2026-10-19:* that template is no model. It proves into a new, empty
+database, where every populated tightening passes (`archive/v2/TWIN_SUCCESSION.md` §8), so it is
+never instantiated, and v3's gate proves on copies planted at each environment's existing data
+(`V3_MILESTONES.md` WP 5.2 and WP 5.3).
 
 The PR gate also publishes `changelog.json` (§8.10) as a pipeline artifact on every green run, so
 the SSIS maintainers' per-sprint mapping has a machine-readable source that names renames by
@@ -2450,7 +2464,9 @@ what it moves and the default assumed, so no section waits on an answer.
 ### 16.1 Decisions only the operator can make
 
 One decision is already made and recorded rather than listed: the language is C#, with v2's F#
-as the specification (§6.6).
+as the specification (§6.6). The decisions that remain open, and those the operator has settled
+since this document was written, are kept in `V3_MILESTONES.md` §17. Its items 20 to 24 and its
+settled list of 2026-10-19 come from the Facsimile.
 
 1. **Pin the pipeline's DacFx and run the one `is_not_trusted` check.** A declarative foreign-key
    add read *untrusted* on DacFx 162.5.57 (the DacFx the Twin corpus runs in-process) and lands
@@ -2978,6 +2994,13 @@ that number decided the disposition: **KEEP** · **KEEP-SIMPLIFIED** · **FOLD-I
 | `RelaxationStore.fs`; `Shell.fs` | 296; 269 | the RELAX lane; run bracketing | DELETE | nothing |
 
 ### D.12 `Twin.*` (4,995 lines, 19 files)
+
+*Amended 2026-10-19.* The Facsimile's `ARCHITECTURE.md` §2 disposes of each Twin responsibility
+again, each with a parity or retirement case. Where it differs from this table and from D.6's σ
+row, it governs, pending the operator (`V3_MILESTONES.md` §17 item 20). The σ mint, the evidence
+tiers, the scenarios' weights and windows, and the bake retire. The post-generation trust gate is
+inverted: a copy reproduces the environment's trust state. Kept are `twin.json`'s closed
+configuration, its scenario pins (as declared witnesses), convergence and determinism.
 
 | Module | Lines | Consumers / evidence | Disposition | v3 |
 |---|---:|---|---|---|

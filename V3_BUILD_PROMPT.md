@@ -25,8 +25,8 @@ The plan is complete and has been reviewed adversarially: execute it, do not re-
 
 1. `NEXT.md`, if it exists. It is the live state and overrides anything below about where you are.
    It does not exist until M0 lands; until then you are at the start of M0.
-2. `V3_MILESTONES.md`: §0; §1 (the measured facts; do not re-derive them); §4 (what the plan
-   changes in the design documents); §5 (the milestones and the lanes table, which is the build
+2. `V3_MILESTONES.md`: §0; §1 (the measured facts; do not re-derive them); §3.1 (the
+   Facsimile, and what it changes); §4 (what the plan changes in the design documents); §5 (the milestones and the lanes table, which is the build
    order); the milestone you are on (its work packages and its exits); Appendix F (the budgets).
 3. For the work package at hand, and only for it: the sections of `V3_ARCHITECTURE.md` it cites
    (§6.6 for the C# encoding, §7 for the types in F# notation, §8 for the verbs, §13 for the
@@ -79,6 +79,13 @@ into your branch first and say so in your pull request.
   the run with the GitHub tools.
 - **The planning session's spike harness is gone.** Appendix B here and the plan's Appendix E
   rebuild it.
+- **The Facsimile (2026-10-19).** The Twin's successor is specified test-first at
+  `archive/v2/ssdt-agent/facsimile/`, and its `HANDOFF.md` is the letter to the session that
+  brings it into v3. The plan carries it (`V3_MILESTONES.md` §3.1, §4 rows 16 and 19 to 22, §8 to
+  §10), and M3 is re-cut around its planter, pending the operator (§17 item 20): until the operator
+  confirms or overturns the re-cut, build WPs 3.1, 3.4 and 3.5's first step, which both versions
+  share, and hold WPs 3.2, 3.3 and 3.8. Read the handoff before WP 2.1, WP 2.6, any WP of M3, and M4. The
+  operator's settled decisions are in §17; do not reopen them.
 
 ---
 
@@ -197,7 +204,9 @@ agent's `STATE.md` under *Waiting on a person* in `NEXT.md`, each with its comma
 - S5;
 - S6;
 - S7;
-- S8.
+- S8;
+- the plan's §17 items 21 and 22: a `VIEW DEFINITION`-only login for Prod, and whether a package
+  feed exists.
 
 The estate adopts v3 through the vendoring pull request, as the plan's §15 describes. Nothing from
 this repository reaches it any other way.

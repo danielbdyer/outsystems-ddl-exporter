@@ -5,8 +5,13 @@ lifecycle as `LIFECYCLE_BACKPORT_PROMPT.md` states it for git as the only store.
 specific than any of them. It proposes; the operator decides. It is the last design document: from
 M0 on, `NEXT.md` carries the live state, and this file is archived with the other three at M8.*
 
+*Amended 2026-10-19 to take in the Facsimile, the Twin's successor, specified test-first in pull
+request #706 and kept at `archive/v2/ssdt-agent/facsimile/` until WP 2.6 brings its case catalog
+into `tests/Cases/`. §3.1 states what it adds, and §4 rows 16 and 19 to 22, §8 to §10, §17
+and §18 carry it. One decision it needs is the operator's: §17 item 20.*
+
 **Contents.** §0 the plan in summary · §1 what was measured before writing · §2 the principle · §3
-the five inputs, prediction and proof, the existing data · §4 what this changes in the
+the five inputs, prediction and proof, the existing data (§3.1 the existing data, realized) · §4 what this changes in the
 architecture, and what it keeps · §5 the milestones at a glance · §6–§14 M0 to M8 and the cutover
 tools · §15 the SSDT repository's side · §16 how agents build it · §17 decisions and prerequisites · §18 risks ·
 §19 the first hour · A requirements map · B the lifecycle invariants, mapped · C the laws, mapped ·
@@ -20,7 +25,8 @@ D the instruction tests, mapped · E the spike code · F the budget by file.
 critical path is about thirteen working days with four agent lanes running at once, and about
 twenty where a workflow runs two agents at a time, as on a 4-CPU container. Day three lands one
 read-only command that says whether Dev matches the repository at a tag. Prediction lands on day
-five, the synthetic copy on day six (at the existing-data tier; the shape tier on day eight), proof on
+five, the synthetic copy on day six (at the existing-data tier, planted with one witness row per
+populated or violating precondition; the shape and scale tiers return only on a trigger, §9), proof on
 day nine, the gate on day eleven, and the after-deploy checks with the status page on day thirteen.
 `knowledge/` and the agent surfaces are rebuilt in a parallel lane that closes with the first Copilot
 trial. The cutover tools (`emit`, `decide`, `move`, and the full OSSYS reader) stay in v2, frozen
@@ -34,7 +40,7 @@ A wiki is a git repository. So v3 has one adapter per source, which reads the so
 its own self-description, without knowing which verb asked. A verb binds that reading to one
 question, and its parameters are data wherever they can be. Adapters grow with sources, verbs grow
 with questions, and nothing grows with their product. The lifecycle tool is budgeted at **≤ 14,900
-lines of C#** (kernel ≤ 6,800, io ≤ 6,400, cli ≤ 1,700; about 14,000 planned), against
+lines of C#** (kernel ≤ 6,800, io ≤ 6,400, cli ≤ 1,700; about 11,400 planned since M3's re-cut, §17 item 20), against
 `V3_ARCHITECTURE.md` §6.6's ≤ 31,000 without the OSSYS reader (≈ 34,000 with it); the cutover
 tools, if ported, add §6.6's own figures.
 
@@ -87,6 +93,16 @@ on a team laptop; a project that references `master.dacpac` (the tool folder mus
 system dacpacs); the SSDT repository's 300-table project for time; the same read-only calls against Dev
 under the developers' directory group; the publish profile the Octopus step applies; and
 the SQL Server version the environments run, which the pinned image must match.
+
+**Learned since (2026-10-15 to 19).** The Facsimile's sessions measured four more facts on SQL Server
+2022 with DacFx 170.5.96 (`archive/v2/TWIN_SUCCESSION.md` §0.1, §2 and §6b): the deploy script DacFx
+writes offline, against an extracted schema, equals the one it writes against the live database,
+the `BlockOnPossibleDataLoss` check included; a login holding `VIEW DEFINITION` alone extracts the
+schema, scripts the plan and reads `sys.partitions`, while a login holding `db_datareader` alone is
+refused by Extract and Script; a failed deploy is not atomic under the default options; and
+constraint validation (`WITH CHECK CHECK`) runs after the post-deploy script. The operator settled
+the machines: the team's laptops run LocalDB 16.x (SQL Server 2022), and the environments' network
+has no Docker (§4 row 16).
 
 ---
 
@@ -144,15 +160,15 @@ the SQL Server version the environments run, which the pinned image must match.
 | What changes? | `diff` | any two of those | the refactorlog | `Change.Between` | `dbchange.diff/1` |
 | What is it, provisionally? | `classify` | the diff and the committed evidence | the `recognize:` block in each `knowledge/ops/*.md`; `dbchange/ledgers/cdc-tracked.md` | `Classify.Of` | `dbchange.classify/1` |
 | What existing data does each environment present? | `predict` | the head package; each reachable environment's plan and data | `dbchange/environments.json` | `Preconditions.Of`, `ExistingData.Of`, `Outcome.Predict` | `dbchange.predict/1`, and a Markdown block carrying a machine block |
-| What does the data look like? | `profile` | an environment's data | its classification (what may be read) | `Evidence.Of` | `dbchange/evidence.shape.json`; row tiers for real environments |
-| A current synthetic copy | `synthetic-copy` | a ref, the evidence, the seed, optionally the existing data | the tier | `SyntheticData.Generate` | `dbchange.synthetic-copy/1` |
+| What shapes does a column an authored script reads hold? | `profile` | one column of an environment | its classification (what may be read) | — | a value-free shape; row tiers for real environments |
+| A current synthetic copy | `synthetic-copy` | a ref, optionally the existing data and the change's declared witnesses | — | `Witness.Plan` | `dbchange.synthetic-copy/1` |
 | What does DacFx do? | `prove` | a fresh copy per `ExistingData` value, restored from the synthetic copy | the pipeline's profile (Strict and Permissive differ in `BlockOnPossibleDataLoss` alone) | `Outcome.Prove`, `AppliesTo` | `dbchange.prove/1` |
 | The pull request description | `describe` | the provenance records | `knowledge/description.md` | `PullRequestDescription.Of` | the description |
 | Reproduce it | `gate` | git, the PR body, the ledgers | `dbchange/ledgers/in-flight.md` | the functions above | `dbchange.gate/1`, `changelog.json` |
 | Deployed means the environment matches the tag | `check drift` | the package at a tag; the environment's plan | the pipeline's profile | `in-sync` | `dbchange.check/1` |
+| Is the evidence still true? (with the shape tier, on §9's trigger) | `check evidence` | the committed evidence; the live existing data over its standing sites | — | `ExistingData` equality | `dbchange.check/1` |
 | Did the platform follow? | `check outsystems` | the metamodel; the package at a tag | the metamodel allowlist | `Platform.Compare` | `dbchange.check/1` |
 | One page | `check environments --page` | the checks above; `deployments.md` beside the page | `dbchange/environments.json` | `Page.Of` | a wiki page |
-| Is the evidence still true? | `check evidence` | the committed evidence; the live existing data over its standing sites | — | `ExistingData` equality | `dbchange.check/1` |
 | Is a table locked? | `check inflight` | the diff; the ledger | `dbchange/ledgers/in-flight.md` | `Locks.Collide` | `dbchange.check/1` |
 | Which tables does CDC capture? | `check cdc` | an environment's catalog | — | — | rows proposed for `dbchange/ledgers/cdc-tracked.md` |
 | The agent instructions | `knowledge package --check`, `knowledge vendor` | `knowledge/` | `knowledge/targets.json` | — | generated files; a vendoring pull request |
@@ -168,7 +184,7 @@ costs zero lines, because it is already in the element reader, the fingerprint, 
 drift check. An operation costs one knowledge file with a `recognize:` block. An environment costs
 one entry in `dbchange/environments.json`. An agent surface costs one row in `knowledge/targets.json`. The
 kernel stays pure because the element reader hands it plain `Element` records: the diff, the
-preconditions, the existing data, the classification, the generator's typed schema and the pull
+preconditions, the existing data, the classification, the planter's typed schema and the pull
 request description are all pure functions over them, and all property-testable without a database.
 
 ---
@@ -210,7 +226,7 @@ profile each stop the proof applying, and the pull request description names the
 ```
 author's laptop                            the pull request                 the gate (a hosted agent, the clone only)
 dbchange predict            ─► existing(dev)   ─┐
-lead's laptop                                 ├─► a machine block in the body ─► per distinct existing data: generate a fresh copy of it,
+lead's laptop                                 ├─► a machine block in the body ─► per distinct existing data: plant a fresh copy of it,
 dbchange predict --env qa,uat ─► existing(qa)   │                                   prove, compare with the author's provenance
                                existing(uat)  ┘                                 ─► the evidence table: per environment,
                                                                                    predicted · proven at its existing data · applies
@@ -221,18 +237,64 @@ dbchange predict --env qa,uat ─► existing(qa)   │                         
 2. **The synthetic copy rarely needs a person.** A schema change is absorbed because the synthetic
    copy is rebuilt from the repository at the ref. Data drift matters only when it changes a
    precondition's state (whether the table has rows, whether a row violates), and every prediction
-   re-reads those states for exactly the tables the change touches. `check evidence` compares the
-   committed evidence's `ExistingData` with the live one and asks for `dbchange profile` only when they differ. The seed is the ISO week of the head commit, so
-   the population changes weekly by itself, and the gate reproduces the author's rows exactly.
+   re-reads those states for exactly the tables the change touches. So there is no standing
+   population to refresh: the copy is planted for each proof from the `ExistingData` the pull
+   request carries, and the gate plants the author's rows exactly, because planting is
+   deterministic (WP 3.8).
 3. **A lead proves at UAT's existing data without UAT's rows.** `ExistingData` is a list of booleans
-   derived from counts, which the privacy closure admits; the copy generated from it holds only synthetic rows.
+   derived from counts, which the privacy closure admits; the copy planted from it holds only synthetic rows.
 4. **A retype's existing data comes only from a prediction.** Whether any value fails to convert
    is known only from the environment, counted read-only with the `TRY_` form of SQL Server's own
    conversion, so no error message (which would carry the value) is ever raised there. The
-   generator then produces one failing value (`SyntheticData.GenerateViolatingRow`), so the proof
+   planter then plants one failing value of each class the count found (WP 3.8), so the proof
    shows what SQL Server does with it. No committed file claims to know which values convert.
 5. **Neither prediction nor proof covers the gap between the read and the deploy.** The description
    says so in "Not checked"; `check drift` before the deploy bounds the gap, and after it closes it (M6).
+
+### 3.1 The existing data, realized (the Facsimile, 2026-10-19)
+
+When DacFx publishes, it asks an environment's data two kinds of question: *is there a row?* (the
+`BlockOnPossibleDataLoss` check) and *is there a row that breaks this rule?* (constraint
+validation, a unique index's build, a conversion). Both are existence questions, and SQL Server
+stops at the first row that answers yes. So a copy holding one synthetic row for every "yes", and
+none for a "no", gets the environment's verdict, and `ExistingData` is the list of those answers.
+The Facsimile (`archive/v2/ssdt-agent/facsimile/`) specifies, test-first, how to make that copy
+without reading a row: which questions a plan asks (its vocabulary), how one witness row is planted
+for each type and structure (its planter), how a publish is classified (its verdict and stop
+tables), and a case catalog that holds the three in place. Its invariants and cases are
+realization-neutral and move into v3 unchanged, case and law identifiers included. Its own choices
+of runtime, layout, exit codes, names and vocabulary give way to v3's wherever v3 has decided.
+
+| The Facsimile says | v3 says |
+|---|---|
+| question; answer; one environment's answers (`answers.<env>.json`) | `Precondition`; `PreconditionState`; `ExistingData`, in the pull request's machine block and `--existing-data <file>` |
+| `HasRows` | `TableEmpty`: the same site, read with the opposite polarity |
+| `NotNull`, `Fits`, `Unique` | the same names; the Facsimile adds `Fits`'s value classes and `Unique`'s collation classes (WP 2.3) |
+| `Orphan`; `CheckFalse` | `ForeignKey`; `Check` |
+| `KeyLength`, `Rebuild`, `Computed`, `Temporal`, `Scan`, `Authored`, `SeedDrift`, `Unknown` | none yet; each arrives in WP 2.1 with its cases |
+| witness row; planter | the existing-data tier of the synthetic copy (WP 3.8) |
+| `fx_` databases; `.facsimile/` | `dbchange_<host>_<pid>_<rand>`; `.dbchange/copies.json` and `.dbchange/cache/` |
+| `read`; `prove`; `up`, `status`, `down`; `shape`; `doctor`; `init` | the reading half of `predict`; `prove`; `synthetic-copy up`, `status`, `down`; `profile`, value-free; `doctor`; `dbchange/environments.json` |
+| exits 0, 1, 3, 4, 6, 7, 9; `interrupted`; `answers-invalid` | v3's frozen 0, 1, 3, 4, 6, 7, 9; 130; 2. Its 5, the agent's next step, has no v3 home (§17 item 23) |
+| `TARGET.md`: `net8.0`, two projects, an Artifacts feed | `net10.0`; `kernel`, `io`, `cli`; the committed tool folder. `TARGET.md` §6 (the non-functional requirements), §8 (the MCP surface) and §9 (the carried constraints) still apply |
+
+What it changes in this plan:
+
+1. **A proof needs only the existing-data tier, and that tier is planted, not generated** (WP 3.8;
+   pending the operator, §17 item 20). The shape and scale tiers, and the port of v2's generator,
+   return on a named trigger.
+2. **A proof's `ExistingData` is measured on the copy, never copied from its input.** After
+   planting, the copy is counted over its own plan's preconditions, and every answer, each "no"
+   included, must equal the environment's (the Facsimile's acceptance, F1). So a copy that misses a
+   precondition the environment's plan holds, baseline drift among them, fails `AppliesTo` by
+   construction rather than by a comparison someone remembered to write.
+3. **The copy's base stays the repository at the environment's deployed tag**, so nothing extracted
+   is committed (R4). The Facsimile's base, the environment's extracted schema, is the same
+   database exactly when the environment is in sync with that tag, and point 2 catches it when it
+   is not.
+4. **The Twin stays in service until parity**: every Twin responsibility kept or safely retired
+   (the Facsimile's gate G3, `cases/80-twin-parity.md`), then one release cycle side by side (G4).
+   M4's exit 8 holds G3.
 
 ---
 
@@ -246,18 +308,22 @@ dbchange predict --env qa,uat ─► existing(qa)   │                         
 | 4 | Building a package | `dotnet build` or MSBuild for proofs; v2's Twin's own `AddObjects` build | one build for everything: `dotnet build` with the committed DacFx targets | it carries the refactorlog and the pre- and post-deploy scripts (§1 facts 1, 8); the build's DacFx is the committed DacFx; no Visual Studio and no download | S1 finds the SSDT repository's project cannot build this way; then, and only then, Visual Studio's own MSBuild and SSDT targets, stamped with that DacFx version |
 | 5 | The synthetic copy | bake a `.bacpac` and an image, publish them as a pipeline artifact, restore | derived locally from committed inputs and cached by fingerprint; the design documents' `twin bake`, `twin restore` and `twin gc` do not exist, and the bake lane retires | git is the only store; determinism makes any artifact a cache | an artifact store arrives: a restore path is added and nothing else changes (lifecycle prompt §9) |
 | 6 | Prediction | `classify`, pure, from committed evidence | `classify` stays provisional; a new verb, `predict`, reads each environment's existing data read-only from DacFx's own `BlockOnPossibleDataLoss` checks; proofs run at each environment's existing data | the lifecycle invariants: prediction and proof, and the condition under which a proof applies (Appendix B) | — |
-| 7 | Laws | twelve | fourteen: adds **P** (on a copy, prediction equals proof) and **T** (a proof is reported for an environment only at that environment's existing data, DacFx version and publish profile). Laws 1–5 take lifecycle forms here and keep their emit forms for the cutover tools; 11 and 12 are restated to match the existing-data tier (Appendix C) | P holds every query v3 writes to SQL Server's behaviour; T is the condition under which a proof applies | — |
+| 7 | Laws | twelve | fifteen: adds **P** (on a copy, prediction equals proof), **T** (a proof is reported for an environment only at that environment's existing data, DacFx version and publish profile) and, from the Facsimile on 2026-10-19, **F** (on a stand-in environment, the copy planted from its existing data reaches the verdict a full copy of it reaches). Laws 1–5 take lifecycle forms here and keep their emit forms for the cutover tools; 11 and 12 are restated to match the existing-data tier (Appendix C) | P holds every query v3 writes to SQL Server's behaviour; T is the condition under which a proof applies | — |
 | 8 | Verbs | thirteen, with `knowledge package` used but not counted | twelve in the lifecycle (adds `predict`; counts `knowledge`) and three among the cutover tools (`emit`, `decide`, `move`); `read --from ossys` moves to the cutover tools | test 9 checks the verb list; the list should be true | — |
 | 9 | Budget | ≤ 31,000 lines of C# without the OSSYS reader (≈ 34,000 with it) | ≤ 14,900 for the lifecycle; the cutover tools at §6.6's own figures, if ported | §2.4 | a milestone's exit cannot be met under its ceiling: raise it with one decision line, never silently |
 | 10 | Distribution | a pinned .NET tool from a feed (instruction architecture §9.6 (e)) | the published tool committed in Git LFS, run by `dbchange.cmd` and `dbchange.ps1` at the repository root; `net10.0` throughout, published framework-dependent, with DacFx's `net10.0` build assemblies as the build route's targets; the .NET 10 SDK is a prerequisite on every machine that builds | the lifecycle prompt's R1 and R2; MSBuild loads the build task into its own runtime, so the targets and the SDK must agree (§1 fact 1, re-measured on SDK 10.0.401) | a feed arrives: the folder becomes a tool manifest |
-| 11 | Refreshing evidence | the bake lane, on a schema change and weekly | when the live existing data disagrees with the committed evidence's (`check evidence`, and every prediction) | §3 consequence 2 | — |
+| 11 | Refreshing evidence | the bake lane, on a schema change and weekly | nothing to refresh: each proof's copy is planted from the `ExistingData` the pull request carries, read fresh by every prediction; the evidence file and `check evidence` return with the shape tier (§9) | §3 consequence 2 | §17 item 20's trigger |
 | 12 | The OSSYS reader | an optional package (~3,600) serving `read --from ossys` and `check outsystems` | a post-cutover subset (~280) over a table-and-column allowlist serves `check outsystems`; the full reader is among the cutover tools | the lifecycle asks the metamodel three questions rather than for the whole model, and the platform database holds user records | — |
 | 13 | Where the synthetic copy's fingerprints live | R5: written into the database; values O6: a lock on `[twin].[__state]` | in the synthetic copy's database name (`dbchange_synthetic_<schema>_<evidence>_<seed>_<tier>[_<existing-data>]`), with a lock file under `.dbchange/` (`FileLock.Take`) | a state table would make the synthetic copy's schema differ from the repository's, and `check drift` could no longer check it exactly; the name carries the same fingerprints and `synthetic-copy status` verifies them | — |
 | 14 | The SSDT repository's configuration | `dbchange/environments.json` (the environments, the writable targets, the local server) and two mirrored profiles, `dbchange/profiles/{strict,permissive}.publish.xml` | `dbchange/environments.json` (renamed from `posture.json` by the operator, 2026-09-25) holds each environment (classification, reader groups, references, the profile's path, SQLCMD values, the metamodel's reference) and the local server preference; `dbchange/profiles/` holds the pipeline's one profile | §1 fact 10: a hand-kept Strict copy had already drifted from the pipeline's | — |
-| 15 | What exit 3 means | blocked: `BlockOnPossibleDataLoss` refused | blocked by the data: `blockedBy: block-on-possible-data-loss` (the check fires on row presence) or `blockedBy: constraint-violation` (SQL Server refused the change on existing rows, such as Msg 547 or Msg 2628); anything else is a tooling failure | the operation catalog already says a foreign key over orphans "blocks"; one code with a `blockedBy` keeps both honest | — |
-| 16 | The local server | LocalDB on every machine; Docker optional and never pulled (the lifecycle prompt) | Docker with the SQL Server image pinned by tag and digest (pulled when absent) wherever Docker is installed, including cloud sessions and the gate; LocalDB where it is not | §1 fact 12: the pull works and the container runs CDC, which LocalDB cannot; one SQL Server for laptops, cloud sessions and CI | a machine has no Docker: LocalDB, with CDC reported *not provable here* |
+| 15 | What exit 3 means | blocked: `BlockOnPossibleDataLoss` refused | blocked by the data: `blockedBy: block-on-possible-data-loss` (the check fires on row presence) or `blockedBy: constraint-violation` (SQL Server refused the change on existing rows, such as Msg 547 or Msg 2628), or, since 2026-10-19, `blockedBy: authored-script` (the change's own pre- or post-deploy script raised an error on existing rows; the Facsimile's `blocked authored`); anything else is a tooling failure | the operation catalog already says a foreign key over orphans "blocks"; one code with a `blockedBy` keeps both honest | — |
+| 16 | The local server | LocalDB on every machine; Docker optional and never pulled (the lifecycle prompt) | Docker with the SQL Server image pinned by tag and digest (pulled when absent) wherever Docker is installed: this repository's CI and cloud sessions. LocalDB 16.x where it is not, which is every machine in the environments' network: the operator settled on 2026-10-19 that the team's laptops run LocalDB 16.x and that the network has no Docker. A configured instance (`DBCHANGE_SQL`) anywhere | §1 fact 12 where Docker exists; LocalDB 16.x is SQL Server 2022 and meets a Sql160 project; `io/LocalServer` already chooses `DBCHANGE_SQL`, then the container, then LocalDB | Docker reaches the environments' network. Until then a proof there that touches a CDC-tracked table stops before it publishes, and is principal-led on a full SQL Server (WP 4.1; §17 item 10) |
 | 17 | The read-only principal's one `EXEC` | R14: never a write, DDL, `EXEC`, or a `SELECT` that returns row values | the read-only login may run the one `EXEC` that DacFx's own `Script` sends, `master.dbo.xp_instance_regread` of the DefaultData and DefaultLog registry values; M1 exit 8's Extended Events test admits exactly that call and refuses every other `EXEC` | `Script` cannot plan without it, and the two values reach only the script's `:setvar DefaultDataPath` and `DefaultLogPath`, never row data (the operator's ruling, 2026-09-25) | a DacFx release plans without the call, or S3 finds the developers' group cannot execute it |
 | 18 | The archive while v3 is built | X6: `archive/` denied to file reads and hidden from search | `archive/` stays readable until M8, because v2 is the specification a port reads; editing it is denied, and a root `.ignore` hides it from search | ports read v2's files by path (the operator's ruling, 2026-09-25) | M8 moves the archive off `main` |
+| 19 | The existing-data tier | the Twin's `up`, unchanged in behaviour: rows generated from the evidence (`SyntheticData.generate`, `V3_ARCHITECTURE.md` §8.7), which this plan until 2026-10-19 ported at three tiers | planted: one synthetic witness row per populated or violating precondition, in a copy of the schema, by the Facsimile's planter under WP 3.3's law for that tier, as WP 3.8; no generator, no evidence file and no seed on the critical path. **Pending the operator** (§17 item 20) | a verdict depends on whether a row exists and whether one breaks a rule, never on a distribution (`archive/v2/TWIN_SUCCESSION.md` §0.1; the Facsimile's F20); about 2,500 fewer lines and no byte-for-byte port | the operator overturns it, or a trigger fires: `planter-needs-row` frequent on the SSDT repository's real schema (the Facsimile's §11 question 7), or a question about scale. Then WP 3.3's port returns as first planned |
+| 20 | Where preconditions come from | the property read alone (WP 2.1, §1 facts 6 and 7) | the property read for the kinds it names, the operator's ruling 2.9 kept (`Fits` on any type change), plus the kinds only the plan's statements show (`KeyLength`, `Rebuild`, `Computed`, `Temporal`, `Scan`, `Authored`, `SeedDrift`), matched by the Facsimile's vocabulary, which is data; a statement that reads existing rows and matches no row is an unclassified change, routed to proof | §0's rule: DacFx's own plan states what ships, and the property read does not show which statements DacFx will run, such as a table rebuild that moves every row | — |
+| 21 | What a proof's `ExistingData` is | the `ExistingData` the proof was asked to realize | the `ExistingData` re-measured on the copy after planting, which must equal the environment's answer for answer (F1); and the copy's schema plan must be empty before head is published (F2) | §3.1 point 2: `AppliesTo` then cannot pass on a copy that misses a precondition | — |
+| 22 | Prod | greyed until measured; counted before its first release (§17 item 11) | nobody reads Prod (the operator, 2026-10-18). `prove --assume prod=worst` proves both answers per precondition, clean and violating, at Prod's deployed tag, stamps the result *assumed*, and names the count to run before promoting | the access the operator settled; the worst case is the honest answer for an unread environment | a `VIEW DEFINITION`-only login for Prod exists (§17 item 21) |
 
 Everything else in the design documents stands: the thesis (§5), the C# encoding and its toolchain
 (§6.6), the exit codes and the versioned JSON contract, the kernel's purity and the dependency laws,
@@ -287,7 +353,7 @@ assumed a feed, a store or the cutover tools:
 | M0 | Foundation | build and test an empty tool under its laws and budgets; read `AGENTS.md` | R24 (this repository's side) | the two dependency laws | four hooks (814 lines); root agent files | ~1,120 | day 1 | — |
 | M1 | Read | ask, read-only, whether Dev matches the repository at a tag; see what a branch changes, property by property | R12 (Dev half), R13 (stamp and window), R14 (principal, extended events), R15 (types), R16 | 2′, 3′, and "a named environment cannot be written" | the read side as a read path | ~2,560 | days 2–3 | M0 |
 | M2 | Predict | see, read-only, whether a change blocks or applies on each environment they can read, and why; a lead pastes QA and UAT | R7 (scan, first half), R11, R12 (drift line), R14 (allowlist), R16 | 9 (as a property) | the aggregate SQL in the skills | ~1,880 | days 4–5 | M1 |
-| M3 | Synthetic copy | build a current synthetic copy from the clone in one command, at the existing-data, shape or scale tier; refresh evidence in one command and one pull request | R3, R4, R5, R6 (population), R7, R8, R12 (the synthetic copy's half) | 11′, 12′ | `bake.mjs`, the Twin CLI, `twin.json`, scenarios | ~4,840 | days 2–8, lane T; `synthetic-copy up` at the existing-data tier by day 6 | M0 (the generator); M1 (`synthetic-copy up`) |
+| M3 | Synthetic copy | build a current synthetic copy from the clone in one command, at the existing-data tier: the repository's schema at a ref, its seeds, presence rows, and the witness rows of an `ExistingData` when one is given. The shape and scale tiers, and refreshing evidence, return on §17 item 20's trigger | R3, R4, R5 and R6 (at the existing-data tier), R7 (the scan), R8 (as the planter's determinism), R12 (the synthetic copy's half) | 11′, 12′ (their planted forms) | `bake.mjs`, the Twin CLI, `twin.json`, scenarios | ~2,300 | days 2–6, lane T | M0 (the planter's plan); M1 (`synthetic-copy up`) |
 | M4 | Prove | prove a change on a fresh copy at each environment's existing data, with its provenance, and see whether it applies to that environment | R6 (blocks at every tier), R9, R10, R13 (trust), R15, R25, R27 (tool side) | 6, 7, 8, 9, 10, P, T | `prove.mjs`; the `sqlpackage` install step | ~790 | days 7–9 | M2; WPs 3.1–3.5 |
 | M5 | Describe and gate | open a pull request whose description is generated and whose gate reproduces it from the clone in under ten minutes | R1, R2, R16 (whole chain), R17, R18, R19, R23 (the gate's cells), R24 (the SSDT repository's side), R26 (in part) | 1′ (description), 5′ | `inflight-check.mjs`; the placeholder pipeline; the ledger overwrite | ~1,440 | days 10–11; the description from day 6 | M4; WP 7.2's `description.md` |
 | M6 | After deploy | see per environment whether it is deployed, matching its tag, refreshed, republished and in sync, on one generated page | R7 (scan, whole chain), R20, R21, R22, R23 | 1′ (page) | — | ~880 | days 12–13 | M5 |
@@ -295,7 +361,7 @@ assumed a feed, a store or the cutover tools:
 | M8 | One tool | use one tool and one set of documents; the archive leaves `main` | — | all of them, generated into `LAWS.md` | the archive's CI | ~0 | Prod's cutover + 30 days | M7 |
 | W | The cutover tools | only if a consumer exists: re-emit from OSSYS; decide; move data | — | 1–5 in their emit forms; oracles 1 and 4 | v2 | §6.6 | on a decision | §17, item 9 |
 
-The C# column sums to about 13,970 against the 14,900 ceiling; tests are budgeted at ≤ 20,000 (raised from 10,500 when M1 closed)
+The C# column sums to about 11,400 against the 14,900 ceiling (13,970 before the re-cut of M3, §17 item 20); tests are budgeted at ≤ 20,000 (raised from 10,500 when M1 closed)
 (Appendix F). The days assume agents writing against executable exit checks, one independent
 review per pull request, the operator reviewing the kernel and contract pull requests, and four
 lanes running at once. A workflow on a 4-CPU container runs two agents at a time, which stretches
@@ -307,9 +373,9 @@ the calendar to about twenty working days.
 |---|---|---|---|---|---|---|---|
 | A · kernel | 0.2, 0.3 | 1.3, 1.5 | 2.1, 2.4 | 5.1 (the description, early) | 4.2 | 5.1 (locks, the banned-word check) | 6.2 |
 | B · io and SQL | 0.4, 0.7 | 1.1, 1.2, 1.4, 1.6, 1.7 | 2.2, 2.3, 2.5 | 3.4 | 4.1, 4.3, 4.5 | 5.2, 5.4 | 6.1, 6.3 |
-| T · the generator and the synthetic copy | 0.3 (with A) | 3.1, 3.2, 3.3 | 3.3 | 3.5 | 3.6, 3.7 | — | — |
+| T · the planter and the synthetic copy | 0.3 (with A) | 3.1, 3.8 | 3.8 | 3.5 | 3.6, 3.7 | — | — |
 | C · words, corpus, CI | 0.1, 0.5, 0.6 | 1.8, 7.1 | 2.6, 7.2 (`description.md` first) | 7.2 | 4.4 | 5.3, 7.3 | 6.4, 7.4 |
-| Lands | — | drift (day 3) | predict (day 5) | the synthetic copy at the existing-data tier | the shape tier (day 8), proof (day 9) | the gate (day 11) | the page, the trial (day 13) |
+| Lands | — | drift (day 3) | predict (day 5) | the synthetic copy at the existing-data tier | proof (day 9) | the gate (day 11) | the page, the trial (day 13) |
 
 **The stations, and the milestone that enables each.**
 
@@ -346,7 +412,7 @@ first; and a published tool folder that already builds a classic project.
 | 0.3 | A | **The first kernel types.** `SortedArray<T>` (element-wise equality, ordinal-sorted construction), `Result<T>` and `Error` (code, message, remedy), `Name`, `Fingerprint` (SHA-256 over canonical bytes), and §3's `Provenance` with `DacFxVersion` and `Server`. | CsCheck properties for `SortedArray`'s equality and order and for `Fingerprint`'s stability across processes pass |
 | 0.4 | B | **The contract.** A verb table that generates `--help --json` and the schemas under `cli/schemas/`; the envelope (`schema`, `dacfx`, `server`, `pin`, `provenance`, `outcome`, `message`, `blockedBy`, `findings`, `exit`); the frozen exit table (0, 1, 2, 3, 4, 5, 6, 7, 9, 130) with a test that it never shrinks; `io/Write.cs` (UTF-8 without a BOM, LF, atomic replace, an existing file's declared line ending preserved). `cli` sets `DACFX_TELEMETRY_OPTOUT=1` and `DOTNET_CLI_TELEMETRY_OPTOUT=1` in its own process before DacFx loads. | `dbchange --help --json` validates against its schema; the writer's tests pass on both CI operating systems |
 | 0.5 | C | **The words.** `README.md`, `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md` and the hooks), `VALUES.md` (the instruction architecture's §4 with §4 above's re-pointing; each `Where` names the test a milestone will add, written `pending M<n>` or `pending W` until then), `DECISIONS.md` (opened with this plan's decisions: C#; lifecycle first; `predict` added and `knowledge` counted; the cutover tools; git as the only store; `net10.0`; DacFx 170.5.96 until the pin; Docker as the local server), `NEXT.md`, `ci/docs.manifest.json`, `ci/budgets.json` (Appendix F), `ci/packages.allow`, `.claude/settings.json` (the permissions as §4 redrafts them) and the two hooks. Start: install the .NET 10 SDK `global.json` names when it is absent (`dotnet-install.sh`), build `cli` into `.dbchange/bin/` when stale, in remote sessions only start Docker and the shared SQL Server container, and run `dbchange doctor`. End: `dbchange synthetic-copy down --if-idle`. The Docker step is an exception to "no hook starts a daemon" and gets its decision line. | the fast tests in 0.6 pass over them; a fresh cloud session reaches `dbchange doctor` with the .NET 10 SDK and SQL Server up |
-| 0.6 | C | **The fast tests.** `Budgets`, `Manifest`, `NoSkips`, `PackagesAllowlist`, `Decisions`, `Citations` (this repository's documents), `Register.Prose` (on `VALUES.md` first), `NoRestatedCounts`, the two dependency laws, and the archive exclusion. The five root documents are manifest rows but are excluded from `Register.Prose`, `Vocabulary`, `NoRestatedCounts` and `Citations` until M8, because they must name v1's and v2's retired terms, their counts, and verbs not yet built. `ValuesResolve` accepts `pending M<n>` until that milestone's exit and `pending W` until M8, and fails after. | green in the fast lane, under five minutes |
+| 0.6 | C | **The fast tests.** `Budgets`, `Manifest`, `NoSkips`, `PackagesAllowlist`, `Decisions`, `Citations` (this repository's documents), `Register.Prose` (on `VALUES.md` first), `NoRestatedCounts`, the two dependency laws, and the archive exclusion. The root design documents are manifest rows but are excluded from `Register.Prose`, `Vocabulary`, `NoRestatedCounts` and `Citations` until M8, because they must name v1's and v2's retired terms, their counts, and verbs not yet built. `ValuesResolve` accepts `pending M<n>` until that milestone's exit and `pending W` until M8, and fails after. | green in the fast lane, under five minutes |
 | 0.7 | B | **The tool folder, the first fixture, CI.** `ci/publish.{ps1,sh}`: `dotnet publish cli` (`net10.0`, framework-dependent) into `dist/dbchange/`, then the `net10.0` `Microsoft.Data.Tools.Schema.SqlTasks.targets` from the DacFx package and the reference assemblies (§1 fact 1) beside it, size printed. `Io.Tests` share one SQL Server per run, with a registered database per test (`dbchange_<host>_<pid>_<rand>`) so concurrent agents never collide: a container from the pinned image (pulled when absent, SQL Server Agent enabled) on Ubuntu and in cloud sessions, LocalDB on Windows. `tests/Golden/classic-minimal/`: Appendix E's classic project. GitHub Actions, on both CI operating systems (Ubuntu with SQL Server in Docker; Windows with LocalDB): a fast lane, and a SQL lane running `Io.Tests` (the CDC tests on Ubuntu), one of whose jobs denies all outbound traffic except the SQL port once the image is present. | `dist/dbchange/dbchange --version` runs; the minimal classic project builds against `dist/dbchange/` on both operating systems; the outbound-deny job passes |
 
 **Day-one spikes, each run where its fact can be measured.**
@@ -354,13 +420,16 @@ first; and a published tool folder that already builds a classic project.
 | Spike | The question | Where it runs | The answer lands in | Blocks |
 |---|---|---|---|---|
 | S1 | Does §1's build run on `windows-latest` and on a team laptop, and does the SSDT repository's project reference `master.dacpac` (so the tool folder must carry the system dacpacs)? | this repository's CI; one laptop | `dbchange/ledgers/toolchain.md`; a decision line | WP 1.1 |
-| S2 | Which `BlockOnPossibleDataLoss` check forms does the pipeline's DacFx write for each sample change, and do they match the committed DacFx's? | this repository's CI, both DacFx releases | the extracted checks only, under `tests/Golden/data-loss-checks/` | WP 2.2 |
+| S2 | Which `BlockOnPossibleDataLoss` check forms does the pipeline's DacFx write for each sample change, and do they match the committed DacFx's? The same run answers whether the statement shapes the Facsimile's vocabulary matches hold on both releases (its §11 question 3) | this repository's CI, both DacFx releases | the extracted checks only, under `tests/Golden/data-loss-checks/`; the vocabulary's receipts | WP 2.2; WP 2.1's statement kinds |
 | S3 | Do `Script`, `LoadFromDatabase` and an aggregate query run against Dev as the developers' group, and how long does `LoadFromDatabase` take there? | a developer's laptop | `STATE.md`; `dbchange/ledgers/toolchain.md` | M1 exit 1 |
-| S4 | How long does a restore of a shape-tier synthetic copy take at the environments' size, in the container and in LocalDB? | this repository's CI; a laptop | a decision line | WP 3.4 |
+| S4 | How long do CREATE, RESTORE and DROP of a copy of the SSDT repository's schema take in LocalDB 16.x, and in the container? (The Facsimile's §11 question 6; it sets the base cache's design) | this repository's CI; a laptop | a decision line | WP 3.4 |
 | S5 | Which OutSystems 11 metamodel tables and columns hold consumer references and publish times? | Dev's platform database, read-only | `io/Ossys`'s allowlist and SQL | WP 6.1 |
-| S6 | Do the laptops and the hosted agents have the .NET 10 SDK and Docker? | the backport agent's `STATE.md` | §17 item 7 | building on the SSDT repository |
+| S6 | Do the laptops and the hosted agents have the .NET 10 SDK and Docker? Answered in part (the operator, 2026-10-19): the laptops run LocalDB 16.x and have no Docker. Open: the .NET 10 SDK on laptops (`dotnet --list-sdks`) and hosted agents, and Docker on hosted agents | the backport agent's `STATE.md` | §17 item 7 | building on the SSDT repository |
 | S7 | Which publish profile and which DacFx version does the Octopus step apply? | the Octopus project's settings, read by whoever owns the deployment step | `dbchange/profiles/pipeline.publish.xml` (options only); the toolchain row | M4 exit 4's meaning; §17 items 1 and 15 |
 | S8 | Which SQL Server version and compatibility level do Dev, QA and UAT run? | each environment, read-only (`SELECT @@VERSION`; `sys.databases.compatibility_level`) | the pinned image's tag and digest in the toolchain row | WP 3.4's pin; §17 item 19 |
+| S9 | Does a schema read (`LoadFromDatabase`, and Extract) keep a disabled foreign key and an untrusted (`WITH NOCHECK`) constraint as they are? (The Facsimile's §11 question 1; if not, trust state needs witnesses of its own) | this repository's CI, both DacFx releases | the case's receipt in the catalog | WP 3.5's trust step |
+| S10 | Does constraint validation run after the post-deploy script on DacFx 162.x, as on 170.5.96? (question 9; it decides whether a lookup seeded post-deploy satisfies a new foreign key) | this repository's CI, both releases | the case's receipt | WP 4.1's record by phase |
+| S11 | Do system-named constraints (`DF__…`) keep their names through a publish to a copy, so the head plan against the copy equals the plan against the environment? (question 10; the Facsimile's F5) | this repository's CI | the case's receipt | WP 3.5's identity step |
 
 **Exit.** M0 closes with M1 once the operator installs WP 0.5's settings and hooks (`DECISIONS.md`,
 2026-09-24). What shows each exit: 1, the `fast` jobs of `.github/workflows/dbchange.yml` on both
@@ -447,12 +516,12 @@ the pull request. Nothing is written, and no value leaves an environment.
 
 | WP | Lane | What | Done when |
 |---|---|---|---|
-| 2.1 | A | kernel `Preconditions` and `Outcome.Predict`. The precondition table is small and pure: `Nullable true → false` is NotNull; any change to a column's DataType relationship or to its Length, IsMax, Precision, Scale or Collation is Fits, the kernel judging no change a narrowing or a widening (decision 2.9), read into a typed `ColumnType` (the type name and those five facets, with no ordering between types) that io writes as TRY_CONVERT's target type and WP 3.1's `Schema` reuses; a new foreign key is ForeignKey; a new primary key, unique constraint or unique index is Unique; a new or changed check is Check; a `BlockOnPossibleDataLoss` site is TableEmpty. `ExistingData.Of(counts)`; `Outcome.Predict(existing, sites, preconditions)` gives `applies` or `blocks` and a shape: two releases when a TableEmpty site on a populated table blocks a tightening; otherwise the shape the operation's `recognize:` block names (drop column, drop table, table rebuild, add mandatory), or *prove it* when none does. Operations in the environment's plan that the change itself does not make are reported, by object, as *baseline drift*. | CsCheck properties pass, among them law 9 as a property: a populated table under `BlockOnPossibleDataLoss` predicts `blocks` however clean its rows |
+| 2.1 | A | kernel `Preconditions` and `Outcome.Predict`. The precondition table is small and pure: `Nullable true → false` is NotNull; any change to a column's DataType relationship or to its Length, IsMax, Precision, Scale or Collation is Fits, the kernel judging no change a narrowing or a widening (decision 2.9), read into a typed `ColumnType` (the type name and those five facets, with no ordering between types) that io writes as TRY_CONVERT's target type and WP 3.1's `Schema` reuses; a new foreign key is ForeignKey; a new primary key, unique constraint or unique index is Unique; a new or changed check is Check; a `BlockOnPossibleDataLoss` site is TableEmpty. `ExistingData.Of(counts)`; `Outcome.Predict(existing, sites, preconditions)` gives `applies` or `blocks` and a shape: two releases when a TableEmpty site on a populated table blocks a tightening; otherwise the shape the operation's `recognize:` block names (drop column, drop table, table rebuild, add mandatory), or *prove it* when none does. Operations in the environment's plan that the change itself does not make are reported, by object, as *baseline drift*. From the Facsimile (§4 row 20): the kinds only the plan's statements show (`KeyLength`, `Rebuild`, `Computed`, `Temporal`, `Scan`, `Authored`, `SeedDrift`), each matched on `io/TSql`'s typed statements by a vocabulary row, which is data, so io hands the kernel statements and the kernel references nothing but the BCL; an `Authored` or `Computed` state is declared by a person, never counted. And the coordinate rules: an object the change creates is answered from the change (a new table is empty; a new column holds its default, or NULL, in every existing row); one it renames or moves is counted under its old name; anything else is counted where it is, or the prediction refuses, naming the missing object. | CsCheck properties pass, among them law 9 as a property: a populated table under `BlockOnPossibleDataLoss` predicts `blocks` however clean its rows; every pure case of `cases/10-questions.md` for a kind WP 2.1 holds passes |
 | 2.2 | B | the `BlockOnPossibleDataLoss` reader in `io/SqlServer.Plan`: drop SQLCMD directive lines; substitute `$(var)` in memory from the environment's SQLCMD values; parse with `TSql160Parser`; collect each `IF EXISTS (…) RAISERROR` at state 127 (§1 fact 3) with its table and the statements it protects; re-generate the predicate and run it as `SELECT CASE WHEN EXISTS (<predicate>) THEN 1 ELSE 0 END` through `SqlServer.Measure`. | the reader finds exactly the `BlockOnPossibleDataLoss` checks S2 extracted, from both DacFx releases |
-| 2.3 | B | `io/AggregateQueries`: one ScriptDom builder per precondition kind, each asking SQL Server rather than re-deriving it, and none able to raise an error that carries a value. NotNull: rows where the column is null. Fits: rows whose value is not null and whose `TRY_CONVERT` to the new declared type is null; a string-to-date conversion depends on the session's language and `DATEFORMAT`, so the query session sets both to the Octopus login's defaults (asked of whoever owns the deployment step with S7), and a sample change with a dmy and an mdy date string pins the pair under law P. Where the new type is character or binary, also rows whose `DATALENGTH` of the converted value exceeds the new length in bytes, or of its `RTRIM` if a sample change under law P shows that `ALTER COLUMN` drops trailing spaces without an error. A Fits site whose type changes into a character type prints a line saying that substituted characters are not counted, and one whose Scale falls a line saying that rounded values, decimals or fractional seconds, are not counted: `TRY_CONVERT` and `ALTER COLUMN` both make those changes without an error. ForeignKey: child rows with every key column non-null and no parent. Unique: groups over the key with more than one row, under the constraint's own null semantics. Check: rows where `NOT (<CheckConstraint.Expression>)` holds, which counts false and not unknown, as SQL Server does; an expression that converts is rewritten to its `TRY_` form, or the site reads *not predictable read-only*. All of one table's claims, of every kind, are items of one SELECT, so each table is scanned once per environment. | every builder's output passes the allowlist; law P (M4) then holds each to the proof |
+| 2.3 | B | `io/AggregateQueries`: one ScriptDom builder per precondition kind, each asking SQL Server rather than re-deriving it, and none able to raise an error that carries a value. NotNull: rows where the column is null. Fits: rows whose value is not null and whose `TRY_CONVERT` to the new declared type is null; a string-to-date conversion depends on the session's language and `DATEFORMAT`, so the query session sets both to the Octopus login's defaults (asked of whoever owns the deployment step with S7), and a sample change with a dmy and an mdy date string pins the pair under law P. Where the new type is character or binary, also rows whose `DATALENGTH` of the converted value exceeds the new length in bytes, or of its `RTRIM` if a sample change under law P shows that `ALTER COLUMN` drops trailing spaces without an error. A Fits site whose type changes into a character type prints a line saying that substituted characters are not counted, and one whose Scale falls a line saying that rounded values, decimals or fractional seconds, are not counted: `TRY_CONVERT` and `ALTER COLUMN` both make those changes without an error. ForeignKey: child rows with every key column non-null and no parent. Unique: groups over the key with more than one row, under the constraint's own null semantics. Check: rows where `NOT (<CheckConstraint.Expression>)` holds, which counts false and not unknown, as SQL Server does; an expression that converts is rewritten to its `TRY_` form, or the site reads *not predictable read-only*. All of one table's claims, of every kind, are items of one SELECT, so each table is scanned once per environment. From the Facsimile: Fits counts each value class as its own item (over length, over bytes, not convertible, lossy round trip, empty string to a non-string type, overflow), and Unique counts duplicate groups per collation class (exact, case, accent, trailing space, two NULLs) under the collation the index will be built with, so the planter can plant one witness for each class present. TableEmpty may also be read from `sys.partitions`, which a `VIEW DEFINITION`-only login can read (§17 item 21): one more allowlist entry, with its negative case. | every builder's output passes the allowlist; law P (M4) then holds each to the proof |
 | 2.4 | A | kernel `Classify`: a matcher over the change set and the committed evidence, with patterns read from each operation file's `recognize:` block (until M7 moves them there, from `tests/Golden/patterns/`, seeded with the twelve most frequent operations), and evidence from `tests/Golden/evidence/` until M3 produces the real file. Its output's first word is *provisional*. It raises the findings no publish can: a rename without its refactorlog entry, for a column (a dropped and a created column of one type at one ordinal), a table (a dropped and a created table with the same columns) or a schema move (a same-named table in another schema); and, on a table in `dbchange/ledgers/cdc-tracked.md`, a column-list change or a `TableRebuild` in the environment's plan, because a rebuild creates a new table, copies the rows and renames it, which drops the capture instance bound to the old table's `object_id`; a sample change proves on a copy what DacFx does to that capture instance. DML in a pre-deploy script is a data-modifying step. A change no pattern matches is *unclassified change: prove it*. | every sample change classifies as its operation; each rename-by-typing sample change is refused with its remedy |
 | 2.5 | B | `io/Predict` and the verbs `predict`, `classify`, `check cdc`. For each requested environment the caller can reach: build head, plan against it, read the `BlockOnPossibleDataLoss` checks, derive the preconditions, run the aggregate queries, and write `dbchange.predict/1` and a Markdown block whose last lines are a fenced machine block (the existing data per environment, the counts, the provenance). The machine block's parser is built here and the gate reuses it. `check cdc --env <e>` reads `sys.tables.is_tracked_by_cdc` (a catalog read) and prints the rows for `dbchange/ledgers/cdc-tracked.md`; with `--commit` it commits and pushes them on a new branch, for review. | the JSON validates; the block round-trips through its parser |
-| 2.6 | C | the corpus begins: `tests/Golden/changes/<operation>/` holds, per sample change, the edit to the golden project, the expected preconditions, and the expected prediction on an empty, a populated and a violating copy, each populated by a plain `INSERT` script under `tests/Golden/` until the generator replaces them in M3; ported from v2's `SamplePr*` facts. | the sample changes so far run in one parameterized test |
+| 2.6 | C | the corpus begins: `tests/Golden/changes/<operation>/` holds, per sample change, the edit to the golden project, the expected preconditions, and the expected prediction on an empty, a populated and a violating copy, each populated by a plain `INSERT` script under `tests/Golden/` until the planter replaces them in M3; ported from v2's `SamplePr*` facts, and seeded from the Facsimile's four operations files (`cases/40-ops-columns.md` to `cases/43-compound.md`). The Facsimile's case catalog, its invariants and `ARCHITECTURE.md` move to `tests/Cases/` with their manifest rows and a budget row of their own, set by a decision line at the move: the catalog is about 19,500 lines (2026-10-19), and the golden corpus is held to 3,000. Its citations are fixed for the move, its restated counts point to the generated traceability matrix, and `catalog_lint.py` becomes a test in `Budgets.Tests` that also regenerates the matrix. | the sample changes so far run in one parameterized test; the catalog's lint is green as a C# test |
 
 **Exit.**
 1. On a branch that makes a populated column NOT NULL, a developer's `dbchange predict` prints,
@@ -482,48 +551,64 @@ no sample change predicts with the line *conversion unproven for this pair* unti
 
 ---
 
-## 9. M3 — Synthetic copy (days 2–8, lane T; `synthetic-copy up` at the existing-data tier by day 6)
+## 9. M3 — Synthetic copy (days 2–6, lane T; re-cut 2026-10-19, pending the operator: §17 item 20)
 
-**Outcome.** One command, from the SSDT repository's clone alone, builds a synthetic copy current to any
-ref: the repository's schema built and published the way the pipeline does it, with rows generated
-from the committed evidence and the head commit's week, at the existing-data, shape or scale tier. The
-second time takes seconds. A lead refreshes the evidence with one command and one pull request, and
-only when the live existing data says it is stale.
+**Outcome.** One command, from the SSDT repository's clone alone, builds a synthetic copy current to
+any ref: the repository's schema built and published the way the pipeline does it, its seeds run as
+they run in every environment, and synthetic rows planted, never generated from a distribution.
+Given an `ExistingData`, the copy holds exactly that existing data: one witness row for each
+precondition the environment answered yes, and none for a no. Without one, it holds a few presence
+rows per table, for a developer's daily work. The second time takes seconds, and nothing in it
+needs refreshing but the repository.
 
-WPs 3.1 to 3.5 land by day 6, because M4 proves on copies of the existing-data-tier synthetic copy.
-The generator's port (3.1 to 3.3) needs only M0; `synthetic-copy up` (3.5) needs M1's build.
+**The re-cut.** Until 2026-10-19 this milestone ported v2's generator (`SyntheticData`, about 1,800
+lines checked byte for byte against v2's output) and built three tiers. The Facsimile shows that a
+verdict depends only on the existing-data tier (§3.1), so this plan builds that tier with a planter,
+WP 3.8, under the law WP 3.3 states for it: given an `ExistingData`, it realizes that existing
+data and nothing more. **On the trigger** (`planter-needs-row` frequent on the SSDT repository's
+real schema, or a question about scale), or if the operator overturns the re-cut, these return as
+this file described them at `138e037`: WP 3.2's kernel `Evidence`; WP 3.3's port of the generator,
+with Bogus for shape-tier values; the shape and scale tiers of `synthetic-copy up --tier`;
+`dbchange/evidence.shape.json` with `profile --commit` and `check evidence`; and the seed policy.
+
+WPs 3.1, 3.8, 3.4 and 3.5 land by day 6, because M4 proves on copies planted at an environment's
+existing data. The planter's plan (3.1, 3.8) needs only M0; `synthetic-copy up` (3.5) needs M1's
+build.
 
 | WP | Lane | What | Done when |
 |---|---|---|---|
-| 3.1 | T | kernel `Schema`, the typed schema the generator reads over `Element`s (tables; columns with their type facets; keys; references; uniques; checks; defaults; identity; computed and temporal columns flagged), and `Order` (a load order over references; nullable legs deferred to a second pass; a cycle with no nullable leg is a refusal naming it). | `Schema.Of` over a published copy's model equals, mapped, the catalog v2's read side writes as JSON for the same copy (v2's CLI, run from the archive) |
-| 3.2 | T | kernel `Evidence`: measures per table, column, reference and unique candidate; disclosure classes (count, bucket, vocabulary), where a vocabulary can be constructed only with an environment *confirmed* synthetic as its provenance, so the committed shape tier is literal-free by type; row tiers; and the derivation rule for a column the evidence predates (null in every existing row unless a default fills it). A codec with a round-trip property. The evidence's *standing sites* (every table's presence, every column's nulls and maximum length, every candidate reference's orphans, every unique candidate's duplicates) are what `check evidence` compares. | the codec's round trip and the literal-freedom constructor tests pass |
-| 3.3 | T | kernel `SyntheticData` (`Generate`), ported with its tests first from v2's `SyntheticData.fs`, `SyntheticCorrection.fs`, `SyntheticVolume.fs`, `Centrality.fs`, and `Twin.Core`'s `Evidence.fs` and `DerivedEvidence.fs`. The random source is a parameter (no `Random` and no clock in the kernel); the seed is the ISO week of the head commit's committer date, computed in `io` and passed in; S-stability is kept (a schema edit regenerates only the touched tables' columns). Three tiers. The **existing-data tier** is exact to R6 (a row where the environment has rows, a null where it has nulls, an orphan where it has orphans, two equal values where it has duplicates, a value at the recorded maximum length), and given an `ExistingData` it realizes that existing data and nothing more. Orphans are generated only on references the evidence records as orphaned and no trusted constraint declares. | v2's generated rows at one seed, per table ordered by key, are byte-identical (law 11′'s differential half); S-stability holds |
-| 3.4 | B | `io/LocalServer`, completed from M1's minimal form: Docker with the SQL Server image pinned by tag and digest in `dbchange/ledgers/toolchain.md` (pulled when absent; SQL Server Agent enabled, so CDC works), wherever Docker is installed; LocalDB through `sqllocaldb` where it is not; or a local developer-edition instance. The image's digest joins `Server` in every provenance record. Every copy registered in `.dbchange/copies.json` under `dbchange_<host>_<pid>_<rand>`; the sweep drops only this host's registered names older than a day; a local server on a host that any environment's reference resolves to is exit 9; backup and restore into `.dbchange/cache/`. | two concurrent runs share nothing; a killed run is swept by the next |
-| 3.5 | T | `io/SyntheticCopy`, and `synthetic-copy up [--tier existing-data\|shape\|scale] [--at <ref>] [--existing-data <file>]`: build at the ref (M1); create a database named from its fingerprints (`dbchange_synthetic_<schema>_<evidence>_<seed>_<tier>[_<existing-data>]`, §4 row 13) under a lock file in `.dbchange/` (`FileLock.Take(path, timeout)`); publish under the pipeline's profile with drop-not-in-source, so the post-deploy seeds run as they do in every environment; generate; bulk-load in `Order`'s order; fill the deferred legs; validate every constraint `WITH CHECK CHECK` and refuse by name on a violation; back it up into the cache. Shape-tier values are generated with Bogus in `io`, never in the kernel. The synthetic copy carries no state table, so its schema is exactly the repository's and `check drift --target synthetic-copy` is its health check. | after `synthetic-copy up --at <Dev's deployed tag>`, `check drift --target synthetic-copy --at <that tag>` exits 0 (R12, the synthetic copy's half) |
-| 3.6 | T | `synthetic-copy check`, `status`, `down`: generate twice with identical digests; every trusted reference resolves, and orphans exist exactly where the evidence records them; measuring the generated set again recovers the evidence within ε; the deploy plan against it is empty; `status` reads the fingerprints from the name and verifies them; `down --if-idle` drops this host's synthetic copies and stops the LocalDB instance only when no `dbchange` process holds the lock. | law 11′ green |
-| 3.7 | T | `io/Profile` and the verbs `profile` and `check evidence`. `dbchange profile --env dev [--vocabulary] [--counts] [--commit]` runs M2's builders over every standing site the schema declares, plus buckets, and writes `dbchange/evidence.shape.json`. `--vocabulary` is exit 9 until the environment is confirmed synthetic. An environment classified real is always measured as `--counts`: row tiers only, into `dbchange/ledgers/row-tiers.md`, with the environment and the date on every row. `--commit` commits on a new branch, pushes it with the caller's git credential, and prints the URL that opens the pull request. `check evidence` compares the committed evidence's standing sites with the live existing data over the same sites, and refuses a file that is not literal-free. | law 12′ green; the planted-value scan's second half passes |
+| 3.1 | T | kernel `Schema`, the typed schema the planter reads over `Element`s (tables; columns with their type facets; keys; references; uniques; checks; defaults; identity; computed and temporal columns flagged), and `Order` (a load order over references; nullable legs deferred to a second pass; a cycle with no nullable leg is a refusal naming it). | `Schema.Of` over a published copy's model equals, mapped, the catalog v2's read side writes as JSON for the same copy (v2's CLI, run from the archive) |
+| 3.2 | T | **On §17 item 20's trigger.** kernel `Evidence`: measures, disclosure classes and the standing sites that `check evidence` compares, as this file described it at `138e037`. | as at `138e037` |
+| 3.3 | T | **On the trigger.** kernel `SyntheticData` (`Generate`), ported with its tests first from v2's generator, for the shape and scale tiers, with the seed policy and Bogus values in `io`, as this file described it at `138e037`. WP 3.8 holds the existing-data tier under this package's law. | as at `138e037` |
+| 3.4 | B | `io/LocalServer`, completed from M1's minimal form: `DBCHANGE_SQL` when it is set; else the container from the SQL Server image pinned by tag and digest in `dbchange/ledgers/toolchain.md` (pulled when absent; SQL Server Agent enabled, so CDC works), where Docker is installed; else LocalDB 16.x through `sqllocaldb`, which every machine in the environments' network uses (§4 row 16). LocalDB is slow and fragile at the edges: CREATE and DROP wait up to 180 seconds (decided 2026-09-25); a DROP goes through `SINGLE_USER WITH ROLLBACK IMMEDIATE` and `ClearPool` on an unpooled `master` connection; the first connect is retried once. Where a container serves, the image's digest joins `Server` in every provenance record. Every copy registered in `.dbchange/copies.json` under `dbchange_<host>_<pid>_<rand>`; the sweep drops only this host's registered names older than a day; a local server on a host that any environment's reference resolves to is exit 9; backup and restore into `.dbchange/cache/`. | two concurrent runs share nothing; a killed run is swept by the next; S4's timings are a decision line |
+| 3.5 | T | `io/SyntheticCopy`, and `synthetic-copy up [--at <ref>] [--existing-data <file>]`: the Facsimile's copy build, steps 1 to 8 of its `ARCHITECTURE.md` §5. **1.** Restore the base from the cache; on a miss, build at the ref (M1), create a database named from its fingerprints (§4 row 13) under a lock file in `.dbchange/` (`FileLock.Take(path, timeout)`), publish under the pipeline's profile with drop-not-in-source so the post-deploy seeds run as they do in every environment, and back it up. **2, 3.** Plant WP 3.8's presence rows, then its violating rows, in `Order`'s order, as ScriptDom `INSERT`s. **4.** Reproduce the environment's trust state: a constraint the environment holds untrusted or disabled is suspended to plant and restored exactly (the Facsimile's F9; the Twin's gate that forced every constraint trusted turned a block into a wrong clean). **5.** Run the change's declared witnesses, DML only, inside the same suspend-and-restore envelope: a DML file committed on the change's branch, whose path this package fixes; a literal neither synthetic nor defined by the repository's model is refused, and a failing row is refused by its line. **6.** Hash every touched and every seeded table. **7.** Accept: count the copy over its own plan's preconditions and require the environment's `ExistingData`, every no included (§4 row 21). **8.** Identity: the plan from the base to the copy is empty, so the witnesses changed no schema. **The base is never re-published after planting**: a re-publish erases the witnesses. The synthetic copy carries no state table, so its schema is exactly the repository's and `check drift --target synthetic-copy` is its health check. | after `synthetic-copy up --at <Dev's deployed tag>`, `check drift --target synthetic-copy --at <that tag>` exits 0 (R12, the synthetic copy's half); a copy missing one witness fails acceptance, naming the precondition |
+| 3.6 | T | `synthetic-copy check`, `status`, `down`: planting twice gives identical hashes; every trusted reference resolves; acceptance and identity hold; `status` reads the fingerprints from the name and verifies them; `down --if-idle` drops this host's synthetic copies and stops the LocalDB instance only when no `dbchange` process holds the lock. | law 11′ green in its planted form |
+| 3.7 | T | `io/Profile` and the verb `profile`, narrowed to looking, as the Facsimile's `shape` does. `dbchange profile --env <e> <schema.table.column>` returns the value-free shape of one column an authored script reads: signatures (`TRANSLATE` to character classes) with their counts, signatures seen fewer than five times folded into one count, and distinct-as-collated beside distinct-binary (the Facsimile's P6; `archive/v2/TWIN_SUCCESSION.md` Appendix D). The agent then declares a witness for every shape the script handles, or `-- shapes: none (<reason>)`. A signature is a string, not an integer, so against an environment classified real it waits on §17 item 24; until then it runs only on an environment confirmed synthetic. `--vocabulary` is exit 9 until the environment is confirmed synthetic. `profile --env <e> --counts` measures row tiers only, into `dbchange/ledgers/row-tiers.md`, with the environment and the date on every row. | law 12′ green in its planted form; the planted-value scan's second half passes |
+| 3.8 | T | kernel `Witness`, the existing-data tier's plan, ported test-first from the Facsimile's `cases/20-planter.md`. From the copy's `Schema`, the preconditions and an `ExistingData`, it gives the rows to plant, table by table: one valid row where the environment has rows, with its NOT NULL foreign-key ancestors (an ancestor reuses a seeded row before a new one is planted); one violating row for each precondition answered violating, per value or collation class; per table the largest of its needs, not their sum; a child linked to a planted or seeded parent wherever the change validates a foreign key, so the copy holds no orphan the environment lacks; values in nullable columns, so a populated but clean table stays clean. Literals are ordinal and fitted to each column's width, with no `Random`, no clock and no seed, and none comes from an environment. Without an `ExistingData`, a few presence rows per table. | every pure case of `cases/20-planter.md` passes; two plans from the same inputs are identical (D1), and a schema edit changes only the touched tables' rows (D3) |
 
 **Exit.**
-1. On a clean laptop with Docker or LocalDB and nothing but the SSDT repository's clone, `dbchange
-   synthetic-copy up` reaches a current synthetic copy at the shape tier in under ten minutes, and
-   from the cache in under a minute (R5).
-2. `dbchange synthetic-copy check` passes; two generated sets under one seed are byte-identical (R8; law 11′).
-3. At the existing-data tier, aggregate queries on the synthetic copy find each of R6's population rules met.
-4. A lead's `dbchange measure --env dev --commit` ends at a pull request that changes only
-   `dbchange/evidence.shape.json`. The planted-value scan's second half: `profile` against the
-   fixture classified `real` stores no value, and `check evidence` refuses a file carrying a
-   planted literal (R3, R7; law 12′).
+1. On a clean laptop with LocalDB 16.x and nothing but the SSDT repository's clone, `dbchange
+   synthetic-copy up` reaches a current synthetic copy in under ten minutes, and from the cache in
+   under a minute (R5, at the existing-data tier).
+2. `dbchange synthetic-copy check` passes; two plantings from the same inputs are byte-identical
+   (R8, as the planter's determinism; law 11′).
+3. Given an `ExistingData` holding each of R6's sites (rows, a null, an orphan, a duplicate, a value
+   over the new length), the copy answers every precondition as the environment did, each no
+   included, and its plan from the base is empty (R6, at the existing-data tier).
+4. The planted-value scan's second half: `profile` against the fixture classified `real` stores no
+   value, and a declared witness carrying a literal that is neither synthetic nor defined by the
+   repository is refused (R3, R7's scan; law 12′).
 5. No `.bak`, `.bacpac`, `.dacpac` or generated file is tracked, and `.dbchange/` is ignored (R4).
 
-**Retires.** `bake.mjs` (251 lines); the Twin CLI; `twin.json` (its evidence moves to
-`dbchange/evidence.shape.json`, and existing data and tiers replace its scenarios); the hand-seeded
-golden project as a test database (it stays as a fixture).
+**Retires.** `bake.mjs` (251 lines); the Twin CLI; `twin.json` (its scenario pins become declared
+witnesses, and no evidence of its is carried); the σ mint; the hand-seeded golden project as a test
+database (it stays as a fixture).
 
-**Watch for.** The generator is the largest new code (about 1,800 lines against v2's 1,260) and
-the only piece checked byte for byte against v2's output; port its tests first and keep the seed
-fixture red until it goes green. S4 decides whether a fresh copy for a proof is a restore (assumed
-under twenty seconds) or a generated set at the existing-data tier from scratch (seconds, always
-available); proofs use whichever is faster, and the shape tier keeps the restore.
+**Watch for.** Whether the planter's ordinal literals satisfy the SSDT repository's real check
+constraints. Where they cannot, the agent writes one valid row by hand (`planter-needs-row`), and if
+that turns out frequent, §17 item 20's trigger fires. S4 decides whether a fresh copy for a proof is
+a restore (assumed under twenty seconds) or a publish from scratch; S9 decides whether trust state
+needs witnesses of its own.
 
 ---
 
@@ -536,11 +621,11 @@ predicted, proven at its existing data, applies or not, and why.
 
 | WP | Lane | What | Done when |
 |---|---|---|---|
-| 4.1 | B | `io/Prove`. For each distinct `ExistingData` value (Dev's by default; those in a prediction file or a PR body's machine block with `--existing-data-from`): a fresh copy, restored from the cached synthetic copy of that existing data or generated at the existing-data tier, never the synthetic copy itself; build head; plan against the copy; publish **Strict** (the pipeline's profile as loaded) and record the outcome: *published*; *blocked*, with `blockedBy: block-on-possible-data-loss` (Msg 50000) or `blockedBy: constraint-violation` (SQL Server refused the change on existing rows, such as Msg 547, 515, 1505, 2628 or 245), and the message verbatim, since the copy holds only generated rows; or *failed* for anything else. On a block, publish **Permissive** on the same copy and record the consequence (rows before and after per touched table, widths, trust, and the error number at each violating site). Read back trust (`is_not_trusted` on every foreign key and check, a catalog read). Compute conservation hashes for a multi-phase step. Publish again and require the plan empty and every seeded table's content hash unchanged (value D5). Assert CDC silence on the Docker local server, where SQL Server Agent runs the capture job; on LocalDB record *not provable here*. The provenance: the copy's name, the script's SHA-256, the DacFx version and the server, the time, the five inputs. Drop the copy unless `--keep`. | the make-mandatory sample change yields exit 3, `blockedBy: block-on-possible-data-loss`, the verbatim message and its provenance |
-| 4.2 | A | kernel `Outcome.Prove`, `Readback`, `AppliesTo` (existing data, DacFx version, server and publish profile, §3); the shapes (`one release`, `two releases`, `refused`), each with its reason; "does not apply: <the input that differs>". | law T as a kernel property |
-| 4.3 | B | the verb `prove`: `--target synthetic-copy` means fresh copies restored from the synthetic copy, and `--target copy:<registered name>` a copy the registry holds; `env:` is exit 9 with "prove never publishes to a named environment; use predict". A one-screen Markdown summary by default and the JSON with `--json` (R10). With no local server on the machine, exit 4 with the remedy, and nothing classified from the text (R27). The refactorlog writer: `dbchange diff --refactorlog <old> <new>` writes the entry with `XmlWriter`, with v2's `RefactorLogEmitter` as the specification. | law 6 green |
-| 4.4 | C, A | the corpus completed: every operation's sample change and the compound case, each with its expected classification, its prediction per `ExistingData` value, and its proof, the `INSERT` fixtures replaced by generated sets at the existing-data tier; one parameterized test runs them all (the proof lane: nightly, on both CI operating systems). | the proof lane green on the committed DacFx |
-| 4.5 | B | laws 6, 7, 8, 9, 10, P and T as `Io.Tests` (Appendix C); law 8's CDC half on the Docker local server. | all green |
+| 4.1 | B | `io/Prove`. For each distinct `ExistingData` value (Dev's by default; those in a prediction file or a PR body's machine block with `--existing-data-from`): a fresh copy, restored from the base and planted at that existing data (WP 3.5's steps 1 to 8), never the synthetic copy itself; build head; plan against the copy; publish **Strict** (the pipeline's profile as loaded) and record the outcome: *published*; *blocked*, with `blockedBy: block-on-possible-data-loss` (Msg 50000) or `blockedBy: constraint-violation` (SQL Server refused the change on existing rows, such as Msg 547, 515, 1505, 2628 or 245), and the message verbatim, since the copy holds only planted rows; or *failed* for anything else. The Facsimile's verdict table (its `ARCHITECTURE.md` §6, `cases/30-outcomes.md`) maps each message number: its `guard` is `block-on-possible-data-loss`; its `constraint`, `null`, `unique`, `truncation`, `overflow`, `conversion`, `keylength` and `temporal` are `constraint-violation`, with the number kept; a collation conflict (Msg 468) turns on the server's collation and on no row, so it is *failed*, naming the copy's collation and the environment's (S8); an error raised inside a pre- or post-deploy batch is a third value, `authored-script`, because a change whose own script fails cannot ship as written, which is a verdict and not a tooling failure (§4 row 15, widened); engine warnings never decide. After a block, script head against the copy and record what was left applied, by phase (pre-deploy, main, post-deploy, constraint validation), because a failed deploy is not atomic under the default options. On a block, publish **Permissive** on the same copy and record the consequence (rows before and after per touched table, widths, trust, and the error number at each violating site). Read back trust (`is_not_trusted` on every foreign key and check, a catalog read). Compute conservation hashes for a multi-phase step. Publish again and require the plan empty and every seeded table's content hash unchanged (value D5); a replay that itself fails is the verdict, because the deployment tool does redeploy. A two-release change is proved release by release on one copy, each release replayed and the replay recorded (the Facsimile's step 12). Assert CDC silence on the Docker local server, where SQL Server Agent runs the capture job. On LocalDB, a proof that touches a table in `dbchange/ledgers/cdc-tracked.md` exits 4 with the reason before it publishes (`V3_ARCHITECTURE.md` §8.6): a server without CDC can publish clean what a CDC-enabled one refuses with Msg 4928, so such a proof is principal-led on a full SQL Server whose copy has those tables enabled for CDC. The provenance: the copy's name, the script's SHA-256, the DacFx version and the server, the time, the five inputs. Drop the copy unless `--keep`. | the make-mandatory sample change yields exit 3, `blockedBy: block-on-possible-data-loss`, the verbatim message and its provenance |
+| 4.2 | A | kernel `Outcome.Prove`, `Readback`, `AppliesTo` (existing data, DacFx version, server and publish profile, §3); the shapes (`one release`, `two releases`, `refused`), each with its reason; "does not apply: <the input that differs>". `Outcome.Assume`, for an environment with no `ExistingData` (Prod, §4 row 22): both states of every precondition, the worst of them, stamped *assumed*. | law T as a kernel property; no assumed outcome ever reads *applies* |
+| 4.3 | B | the verb `prove`: `--target synthetic-copy` means fresh copies restored from the synthetic copy, and `--target copy:<registered name>` a copy the registry holds; `env:` is exit 9 with "prove never publishes to a named environment; use predict". A one-screen Markdown summary by default and the JSON with `--json` (R10). With no local server on the machine, exit 4 with the remedy, and nothing classified from the text (R27). `--assume <env>=worst` proves both states of every precondition at that environment's deployed tag (from `deployments.md`), and names the count to run before promoting. The refactorlog writer: `dbchange diff --refactorlog <old> <new>` writes the entry with `XmlWriter`, with v2's `RefactorLogEmitter` as the specification. | law 6 green |
+| 4.4 | C, A | the corpus completed: every operation's sample change and the compound case, each with its expected classification, its prediction per `ExistingData` value, and its proof, the `INSERT` fixtures replaced by planted sets; one parameterized test runs them all (the proof lane: nightly, on both CI operating systems), the Facsimile's corpus cases (`cases/40-ops-columns.md` to `cases/43-compound.md`, `cases/50-environments.md`) among them. | the proof lane green on the committed DacFx |
+| 4.5 | B | laws 6, 7, 8, 9, 10, F, P and T as `Io.Tests` (Appendix C); law 8's CDC half on the Docker local server; the Facsimile's privacy cases, attacked (`cases/60-privacy.md`). | all green |
 
 **Exit.**
 1. The make-mandatory sample change: `dbchange prove` exits 3 with `BlockOnPossibleDataLoss`'s message
@@ -550,10 +635,11 @@ predicted, proven at its existing data, applies or not, and why.
 2. Every sample change in the corpus is green on the committed DacFx (R9). Law P holds on every
    sample change: `blocks` is predicted exactly when Strict blocks; a site is predicted violating
    exactly when the Permissive publish fails there with the precondition's error number; the count
-   predicted on the copy equals the count the generated set holds. Law T holds: no proof is
+   predicted on the copy equals the count the planted set holds. Law F holds on every corpus case: the verdict on the copy planted from a stand-in environment's `ExistingData` equals the verdict of publishing head onto a full copy of that environment. Law T holds: no proof is
    reported at existing data, a DacFx version or a publish profile it did not run at.
 3. R6's check: NOT NULL on a populated table, a reference over recorded orphans, and a narrowing
-   below the recorded maximum each block at the existing-data, shape and scale tiers.
+   below the recorded maximum each block at the existing-data tier, and at each further tier §9's
+   trigger brings back.
 4. R13's trust check: under the pipeline's profile as committed (S7), a declaratively added foreign
    key over clean rows ends `is_not_trusted = 0` (law 10); a profile that turns constraint
    validation off makes it a finding, never a silent success (§1 fact 11).
@@ -561,14 +647,23 @@ predicted, proven at its existing data, applies or not, and why.
 6. R25: a proof killed mid-publish leaves a registered copy that the next run sweeps; two
    concurrent proofs on one machine both pass.
 7. R27: on a machine with no local server, `prove` exits 4 with the remedy, and `classify` still
-   says *provisional* rather than guessing from the text.
+   says *provisional* rather than guessing from the text; on LocalDB, a proof that touches a
+   CDC-tracked table exits 4 before it publishes.
+8. Twin parity, the Facsimile's gate G3: every case of `cases/80-twin-parity.md` is green, so each
+   Twin responsibility is kept or safely retired, the `SamplePr*` facts among them. The Twin stays
+   in service until then, and for one release cycle after (G4), in which each schema pull request
+   records both verdicts and a disagreement is a defect.
+9. `prove --assume prod=worst` on the make-mandatory sample change reports both states, stamped
+   *assumed*, and names the count to run before promoting; the description never reads *applies*
+   for Prod.
 
 **Retires.** `prove.mjs` (427 lines) and its `sqlpackage` dependency; the `sqlpackage` install step
 in the pipeline.
 
 **Watch for.** Until S7 lands the Octopus step's profile, every proof runs under the golden
 project's Pipeline profile and its provenance says *profile not verified against the Octopus step*;
-law 10's meaning is relative to it (§17 items 1 and 15).
+law 10's meaning is relative to it (§17 items 1 and 15). A failed publish is not rolled back under
+the default options: the record by phase is what the description shows, and nothing claims a rollback.
 
 ---
 
@@ -582,8 +677,8 @@ in under ten minutes, and posts the table.
 | WP | Lane | What | Done when |
 |---|---|---|---|
 | 5.1 | A | kernel `PullRequestDescription` and `Locks`, reading `knowledge/description.md` (WP 7.2 lands it by day 5). The evidence table first: the build; the change, with its data-loss steps and renames with refactorlog presence; *first time on these environments*, from `dbchange/ledgers/operations.md` (value G4); the prediction per environment, or *pending a lead*; the proof per `ExistingData` value, with *applies* or the input that differs; baseline drift; in-flight collision; the DacFx pin; the profile's provenance; consumers to republish, or *not checked*. Then the ten sections, with "The data" carrying rows before, rows after and the approver for any data-modifying pre-deploy (value S5), and "Not checked" pre-filled with the four standing items of Appendix B's last row (application behaviour in Service Studio; the correctness of the business answer; Prod's population until it is measured; any change between the last read and the deploy) above a placeholder for the author's own. Placeholders for the intent and the business answer with its owner. The banned-word check as a pure function. `Locks`: open windows from `dbchange/ledgers/in-flight.md`; a change with data-loss steps on more than one table and no program row. | a description over the corpus passes `Register.Samples`' rules; every claim in it carries its provenance with its five inputs or names the one it lacks (law 5′); placeholders are detected by position |
-| 5.2 | B | `io/Gate` and the verbs `gate`, `describe`, `check inflight`. Base and head from git. `classify`'s blocking findings (a rename without its entry, for a column, a table or a schema move; a CDC column-list change) and the lock checks run first and exit 9 with the row, before any proof. The existing data comes from the PR body's machine blocks; a block whose provenance names a different head package is stale and reported so; with no block, Dev's existing data comes from the committed evidence. The synthetic copy at the existing-data tier; a proof per distinct `ExistingData` value (environments whose existing data is the same share a proof; the base is published once and restored per set). The gate reads `dbchange/ledgers/row-tiers.md` for each environment it reports on, and an environment with no dated row reads *not measured* (value G5). The description is regenerated; placeholders and banned words fail the gate, by line (R18); a body section that disagrees with the regenerated one, and an author's provenance (script SHA-256, DacFx version, publish profile, existing data) that disagrees with the gate's, are findings posted with the table and never failures. `changelog.json` (created, dropped, renamed with refactorlog keys, retyped; the open windows). The page's repository cells (open windows, changes in review) are regenerated (R23). `gate.json`; exit 0, 3 with prove's verdict attached, 9, or a tooling code that says it is one. | `dbchange gate` run locally and in CI on one branch give identical `gate.json` apart from the provenance's target and time |
-| 5.3 | C | `ci/azure/`: `gate.yml` with two jobs from the clone, each checking out with LFS and running `pwsh ./dbchange.ps1 gate …` on the .NET 10 SDK the hosted image carries: `ubuntu-latest` with the pinned SQL Server container (the proof, CDC included, and the posted table) and `windows-latest` with LocalDB (the Windows checkout's exactness and parity); the `RecordInPullRequest` and `VendoredCitations` checks; a host step of at most twenty-five lines of PowerShell that writes the PR body to a file and posts the evidence table as a comment with the job's access token), its README with the branch-policy steps (a YAML `pr:` trigger does not fire on Azure Repos), and the pre- and post-deploy snippets M6 uses. | the template runs end to end when queued by hand on a scratch pull request in the SSDT repository, before the policy is registered |
+| 5.2 | B | `io/Gate` and the verbs `gate`, `describe`, `check inflight`. Base and head from git. `classify`'s blocking findings (a rename without its entry, for a column, a table or a schema move; a CDC column-list change) and the lock checks run first and exit 9 with the row, before any proof. The existing data comes from the PR body's machine blocks; a block whose provenance names a different head package is stale and reported so; with no block, an environment's existing data was not read, and the gate proves it as assumed worst (WP 4.3), marked so. The synthetic copy at the existing-data tier; a proof per distinct `ExistingData` value (environments whose existing data is the same share a proof; the base is published once and restored per set). The gate reads `dbchange/ledgers/row-tiers.md` for each environment it reports on, and an environment with no dated row reads *not measured* (value G5). The description is regenerated; placeholders and banned words fail the gate, by line (R18); a body section that disagrees with the regenerated one, and an author's provenance (script SHA-256, DacFx version, publish profile, existing data) that disagrees with the gate's, are findings posted with the table and never failures. `changelog.json` (created, dropped, renamed with refactorlog keys, retyped; the open windows). The page's repository cells (open windows, changes in review) are regenerated (R23). `gate.json`; exit 0, 3 with prove's verdict attached, 9, or a tooling code that says it is one. | `dbchange gate` run locally and in CI on one branch give identical `gate.json` apart from the provenance's target and time |
+| 5.3 | C | `ci/azure/`: `gate.yml` with two jobs from the clone, each checking out with LFS and running `pwsh ./dbchange.ps1 gate …` on the .NET 10 SDK the hosted image carries: `ubuntu-latest` with the pinned SQL Server container (the proof, CDC included, and the posted table) and `windows-latest` with LocalDB (the Windows checkout's exactness and parity); the `RecordInPullRequest` and `VendoredCitations` checks; a host step of at most twenty-five lines of PowerShell that writes the PR body to a file and posts the evidence table as a comment with the job's access token), its README with the branch-policy steps (a YAML `pr:` trigger does not fire on Azure Repos), and the pre- and post-deploy snippets M6 uses. v2's `pipelines/ssdt-agent-pr-validation.yml` is no model for it: it proves into a new, empty database, where every populated tightening passes (`archive/v2/TWIN_SUCCESSION.md` §8), so it is never instantiated. | the template runs end to end when queued by hand on a scratch pull request in the SSDT repository, before the policy is registered |
 | 5.4 | B | `dbchange knowledge vendor --to <SSDT repository checkout>`, on a new branch as one pull request: `tools/dbchange/` (the published tool, `net10.0` and framework-dependent, with the `net10.0` targets and the reference assemblies), `dbchange.cmd` and `dbchange.ps1` at the repository root (both export the telemetry opt-outs), the LFS rules for the tool's binaries, `.dbchange/` in `.gitignore`, the pipeline templates, and `dbchange/environments.json` and the ledgers seeded *only if absent*, every environment seeded `real`. Line endings: the vendoring proposes `.gitattributes` and `.editorconfig` lines for `*.sql`, `*.sqlproj`, `*.refactorlog` and `*.publish.xml` that declare the endings the files already carry (`STATE.md`), and never edits those files the SSDT repository owns in place. A new tool version appends exactly one dated row to `dbchange/ledgers/toolchain.md`; the README gives the `git lfs prune` step for the retired one. v2's packager overwrote the ledgers (`ssdt-agent-package.mjs:604–632`). | re-vendoring the same version changes no byte; a new version changes the tool folder and adds one ledger row, nothing else |
 
 **Exit.**
@@ -606,7 +701,7 @@ in under ten minutes, and posts the table.
 **Retires.** `inflight-check.mjs` (145 lines); the placeholder pipeline; the ledger overwrite.
 
 **Watch for.** The hosted image's LocalDB start and the ten-minute budget at the SSDT project's size.
-The existing-data tier generates in seconds, so the builds and the publishes take most of the time.
+The existing-data tier plants in seconds, so the builds and the publishes take most of the time.
 How the tool folder crosses into the environments' network is §17's item 14, and LFS on the SSDT repository
 (item 4) gates exit 4 there.
 
@@ -658,7 +753,7 @@ last.
 | WP | What | Done when |
 |---|---|---|
 | 7.1 | Citations rewritten: findings by identifier, samples by shape, handbook by title, ledgers by their new path (`knowledge/ledgers/` for the templates the tool seeds; `dbchange/ledgers/` for the SSDT repository's own). | the citation test is green at every commit |
-| 7.2 | `knowledge/`, with `description.md` first (by day 5, because WP 5.1 reads it): then `README.md`, `authoring.md` (S0 to S8, each with its verb), `reviewing.md`, the operations with their `recognize:` blocks (moved from `tests/Golden/patterns/`; the classifier reads whatever files exist), the shared reasoning, `findings.md`, twelve samples, the ledger templates (with `cdc-tracked.md`), the eight handbook chapters. The entry skill's first step is the compound check (R28). The router's rule when `dbchange` is absent: stop, author the change, open the pull request marked *provisional*, and let the gate prove it (R27). | the knowledge budgets hold (≤ 11,000 lines; ≤ 90 per operation) |
+| 7.2 | `knowledge/`, with `description.md` first (by day 5, because WP 5.1 reads it): then `README.md`, `authoring.md` (S0 to S8, each with its verb), `reviewing.md`, the operations with their `recognize:` blocks (moved from `tests/Golden/patterns/`; the classifier reads whatever files exist), the shared reasoning, `findings.md`, twelve samples, the ledger templates (with `cdc-tracked.md`), the eight handbook chapters. The entry skill's first step is the compound check (R28). The router's rule when `dbchange` is absent: stop, author the change, open the pull request marked *provisional*, and let the gate prove it (R27). The Facsimile's planned changes to v2's skills (its `ARCHITECTURE.md` §10) land here instead: the local-server skill names `doctor`, `predict`, `profile` and `synthetic-copy up` and drops the container ladder; the proving skill keeps its reasoning while its mechanics become `prove`; each operation's proof plan (its preconditions, value classes and the witnesses an author declares) is generated from its cases; a remedy is written by predicate and never by a literal value, checks its own preconditions, and throws before any write; and a pre- or post-deploy script's work is not rolled back with a failed deploy. | the knowledge budgets hold (≤ 11,000 lines; ≤ 90 per operation) |
 | 7.3 | `io/Knowledge` and the verb `knowledge package --check`, driven by `knowledge/targets.json`: the Copilot router, five path-scoped instructions, two agents, one prompt, the skills index, the two schema pull-request templates, and the `.claude/` pointers. `knowledge vendor` (WP 5.4) carries the generated bundle to the SSDT repository. | `knowledge package --check` is clean; the instruction tests are green (Appendix D) |
 | 7.4 | The trial: one developer's machine, the vendored bundle, one real change from intent to pull request, and one compound request, which must come back as an ordered list of pull requests with the reason for the order (R28). The rung that held is a decision line. | the decision line exists |
 
@@ -725,13 +820,13 @@ requirements alone.
 ## 16. How agents build it
 
 - **Four lanes, one pull request per work package.** A: the kernel. B: io and SQL. T: the
-  generator and the synthetic copy. C: knowledge, documents, the corpus and CI. A work package is a
+  planter and the synthetic copy. C: knowledge, documents, the corpus and CI. A work package is a
   pull request of about six hundred changed lines at most, its test written first. The test encodes
   the "done when", and the pull request cannot merge red.
 - **The specification is named per port.** A work package that ports names the v2 files it ports
   from (the ledger is `V3_ARCHITECTURE.md` Appendix D), ports their tests before the code, and is
-  reviewed against them. Where v2 produced an output, that output is the reference: the generator's
-  rows, the read side's catalog, the recorded verdicts.
+  reviewed against them. Where v2 produced an output, that output is the reference: the read
+  side's catalog and the recorded verdicts; where the Facsimile wrote a case, the case is.
 - **Every session keeps the instruction architecture's protocol (a).** The doctor line;
   `AGENTS.md`; `NEXT.md`; the package's README. It works under the laws and the budgets, rewrites
   `NEXT.md`, and adds at most one line to `DECISIONS.md`. A question only the operator can answer
@@ -760,11 +855,11 @@ requirements alone.
 | 4 | Git LFS enabled on the SSDT repository | the git host's administrator | M5 exit 4 on the SSDT repository, and nothing else | the rest of M5 runs on this repository and a scratch SSDT repository |
 | 5 | The gate registered as a branch policy | the git host's administrator | M5 exit 1 | the gate is queued by hand on a pull request until then |
 | 6 | One dev lead for evidence refreshes and QA and UAT predictions | the operator | M2 exit 2; M3 exit 4 | the operator |
-| 7 | The .NET 10 SDK and Docker on every laptop and hosted agent (S6) | whoever manages the machines; the backport agent's `STATE.md` | building a `.sqlproj` there, and so every verb that builds | `dbchange doctor` names a missing SDK with its remedy; without Docker, LocalDB is the local server and CDC reads *not provable here* |
+| 7 | The .NET 10 SDK and Docker on every laptop and hosted agent (S6) | whoever manages the machines; the backport agent's `STATE.md` | building a `.sqlproj` there, and so every verb that builds | `dbchange doctor` names a missing SDK with its remedy; without Docker, LocalDB 16.x is the local server, as on every machine in the environments' network (settled 2026-10-19), and a proof touching a CDC-tracked table is principal-led on a full SQL Server |
 | 8 | The first Visual Studio Copilot trial | the operator and one developer | M7's exit | the 18.4 rung (`V3_ARCHITECTURE.md` §16.1, item 2) |
 | 9 | The cutover tools: will the reverse leg run, and will anything re-emit from OSSYS | the operator | W; M8 | frozen in the archive; no port |
-| 10 | Which tables CDC captures, per environment | the dev leads | M2's CDC finding; M4's CDC proofs | `check cdc` proposes the ledger on day five; CDC proofs run on the Docker local server (§1 fact 12) |
-| 11 | Prod's counts before its first release | the operator | the page's Prod row; any prediction for Prod | Prod greyed; `dbchange measure --env prod --counts` before its first release |
+| 10 | Which tables CDC captures, per environment | the dev leads | M2's CDC finding; M4's CDC proofs | `check cdc` proposes the ledger on day five; CDC proofs run on the Docker local server in this repository's CI (§1 fact 12), and for the SSDT repository they are principal-led on a full SQL Server (§4 row 16) |
+| 11 | Prod's existing data | the operator | the page's Prod row; any prediction for Prod | nobody reads Prod (settled 2026-10-18): Prod greyed on the page, and proved `--assume prod=worst` (§4 row 22) until item 21's login exists |
 | 12 | The reviewers roster | the operator | nothing in code; the gate is load-bearing until the roster is data | `V3_ARCHITECTURE.md` §16.1, item 5 |
 | 13 | One repository or two | the operator | the vendor contract | two (§15 item 1) |
 | 14 | How the tool folder crosses into the environments' network | the operator and whoever manages the machines | WP 5.4 on the SSDT repository | a person copies the published folder into a pull request |
@@ -773,6 +868,20 @@ requirements alone.
 | 17 | A service account holding every reader group's read access and the metamodel's, for a self-hosted agent | the owners of the directory groups | the gate predicting QA and UAT itself (the backport prompt's prerequisite 7) | the lead's pasted block is the prediction of record |
 | 18 | The first real Dev deploy of a declarative foreign key, read back | the team, at their next such change | turns law 10 from a copy's fact into the environments' | `check drift` and the trust query (`is_not_trusted`) after that deploy; the result recorded in `knowledge/findings.md` with its provenance |
 | 19 | The SQL Server version and compatibility level the environments run (S8) | the dev leads | the pinned image's tag | SQL Server 2022 (`mcr.microsoft.com/mssql/server:2022-latest`, pinned by digest) until S8 answers |
+| 20 | The re-cut of M3: the existing-data tier planted by the Facsimile's planter; the generator's port, the shape and scale tiers, the evidence file and the seed policy off the critical path until a trigger (§9) | the operator | M3's scope; R5 to R8 as both implementations read them | proposed 2026-10-19 with its `DECISIONS.md` line, to confirm or overturn. Confirmed, `VALUES.md` D6, P1, P2 and P3 move to their planted forms (WP 3.8 and WP 3.5) in the confirming pull request. Overturned, WP 3.8 is dropped, §9 returns to this file at `138e037`, and M3 to days 2–8 and about 4,840 lines |
+| 21 | A login holding `VIEW DEFINITION` alone, on Prod, and on QA and UAT for any unattended reader: it reads the schema, scripts the plan and reads `sys.partitions`, so it predicts every `TableEmpty` site without granting a row. Violation counts still need `SELECT` | the owners of the directory groups | a prediction for Prod; the gate predicting by itself (item 17) | Prod proved `--assume prod=worst`; ask for the login by that exact grant, since a login holding `db_datareader` alone is refused by Extract and Script |
+| 22 | Whether a package feed exists for the tool | whoever manages the machines | distribution only | the committed tool folder (§4 row 10) |
+| 23 | A code for the agent's next step: a missing object, an authored script to look at, a witness to declare, a failed acceptance (the Facsimile's exit 5; v3's 5 means *differs*) | the operator | M4's stops | recommended: `8 needs-input`, added to `cli/exits.frozen` by the change that first raises one; until then such a stop is exit 9, naming its next step |
+| 24 | Whether a column's value-free shape (character-class signatures with counts, rare ones folded: the Facsimile's P6) may be read from an environment classified real | the operator | WP 3.7 on QA, UAT and Prod | signatures are read only from an environment confirmed synthetic; on a real one, an authored script checks its own preconditions and throws before any write |
+
+**Settled by the operator, 2026-10-18 and 19** (`archive/v2/ssdt-agent/facsimile/HANDOFF.md`):
+v3 is the Facsimile's home, built in C#; its PowerShell realization is a record, not a fallback.
+MCP is a first-class surface with the CLI as its floor, the MCP policy being enabled
+(`V3_INSTRUCTION_ARCHITECTURE.md` §9.3). The team's laptops run LocalDB 16.x and the environments'
+network has no Docker (§4 row 16). Developers read Dev, dev leads read QA and UAT, and nobody reads
+Prod (§4 row 22). Two principals keep the tool, one on the team and one on the supporting team,
+deliberately named in no repository; break-glass is the on-team principal with a dev lead. The Twin
+stays in service until parity and one release cycle side by side (M4 exit 8).
 
 ---
 
@@ -789,7 +898,7 @@ requirements alone.
   overflow messages (Msg 245, 248, 220) and into truncation messages (Msg 2628). The aggregate
   queries use the `TRY_` forms and length tests, so they raise none of these against an
   environment; a failed query against a real environment reports only its number; the messages
-  that do carry values come from copies, whose rows are generated.
+  that do carry values come from copies, whose rows are planted.
 - **The time-of-check gap.** A prediction reads a moment, and UAT can change before the deploy.
   The description says so; a lead predicts again on the day of promotion; `check drift` before the
   deploy bounds the gap and the one after closes it.
@@ -797,8 +906,23 @@ requirements alone.
   the lead's machine block is the prediction of record. The gate checks its consistency (the head
   package it names, the identity, the time) and never its origin. A service account on a
   self-hosted agent (§17 item 17) retires the paste.
-- **The generator's port.** The largest new code and the only byte-for-byte check against v2.
-  Tests first; the seed fixture; lane T starts on day two.
+- **The generator's port, if §17 item 20 is overturned.** The largest new code and the only
+  byte-for-byte check against v2. Tests first; the seed fixture; lane T starts on day two.
+- **A failed deploy is not atomic.** Under the default options, a blocked unique-index build left
+  the index dropped and the column altered, and a Msg 547 at `WITH CHECK CHECK` lands after the
+  commit (verified 2026-10-15, `archive/v2/TWIN_SUCCESSION.md` §2). So a wrong *clean* on a copy
+  becomes a half-applied schema upstream. Law F, the record by phase (WP 4.1) and the captured
+  profile (S7) bound it.
+- **Constraint validation runs after the post-deploy script** on DacFx 170.5.96. S10 checks 162.x;
+  if it differs there, a lookup the post-deploy script seeds may not satisfy a new foreign key.
+- **A copy that lies about the environment.** Re-publishing the base after planting erases the
+  witnesses, and a copy whose constraints were forced trusted turns a block into a wrong *clean*,
+  as the Twin's post-mint trust gate did. WP 3.5 never re-publishes the base and reproduces the
+  environment's trust state; S9 says whether a schema read keeps it to reproduce.
+- **A pipeline that proves into an empty database passes every populated tightening.** v2's
+  `pipelines/ssdt-agent-pr-validation.yml` does exactly that, and WP 5.3 never instantiates it.
+- **The planter's literals against the SSDT repository's real check constraints.** Frequent
+  `planter-needs-row` stops are §17 item 20's trigger, not a defect to work around.
 - **The image drifting.** `2022-latest` moves. The pin is by digest in the toolchain ledger, every
   provenance record names it, and a new digest is a decision line, never a silent pull.
 - **The publish profile and the DacFx version are still unverified.** Until S7 lands, every
@@ -837,10 +961,10 @@ the prompt's own check, so the mapping holds for the backport and for v3 alike (
 | R2 | binaries in LFS, pinned by commit, a dated row per version, pruned | M5 | M5 exit 4; WP 5.4 |
 | R3 | committed inputs are literal-free or synthetic | M3 | M3 exit 4 |
 | R4 | nothing generated is committed or shared | M3 | M3 exit 5 |
-| R5 | one command builds a current synthetic copy | M3 | M3 exit 1 (the fingerprints in the name, §4 row 13) |
-| R6 | tiered volumes; the existing-data tier exact | M3, M4 | M3 exit 3 (population); M4 exit 3 (blocks at every tier) |
-| R7 | evidence refreshed by one command and one pull request; the planted-value scan | M2, M3, M6 | M3 exit 4 (the pull request); M2 exit 4, M3 exit 4 and M6 exit 5 (the scan, to the whole chain) |
-| R8 | the seed policy, deterministic | M3 | M3 exit 2 |
+| R5 | one command builds a current synthetic copy | M3 | M3 exit 1, at the existing-data tier (the fingerprints in the name, §4 row 13) |
+| R6 | tiered volumes; the existing-data tier exact | M3, M4 | M3 exit 3 (acceptance at the existing-data tier); M4 exit 3 (blocks at every tier built). The shape and scale tiers return on §17 item 20's trigger |
+| R7 | evidence refreshed by one command and one pull request; the planted-value scan | M2, M3, M6 | M2 exit 4, M3 exit 4 and M6 exit 5 (the scan, to the whole chain); the evidence pull request returns with the shape tier (§9) |
+| R8 | the seed policy, deterministic | M3 | M3 exit 2, as the planter's determinism; the seed policy returns with the shape tier |
 | R9 | a fresh copy and its provenance for every proof | M4 | M4 exits 1, 2 |
 | R10 | one command, one validated JSON object, one screen | M4 | M4 exit 1; WP 4.3 |
 | R11 | a read-only prediction per readable environment, blocks and applies | M2 | M2 exits 1, 2 |
@@ -886,7 +1010,7 @@ the prompt's own check, so the mapping holds for the backport and for v3 alike (
 
 | # | `V3_ARCHITECTURE.md` §13 | Its form in the lifecycle | Lands in | Its form in the cutover tools |
 |---|---|---|---|---|
-| 1 | the same inputs emit the same bytes | **1′** every generated artifact (a generated set, a description, the page, the bundle, `changelog.json`) is byte-identical from the same fingerprinted inputs | M3, M5, M6, M7 | `emit` byte-identical (oracle 1) |
+| 1 | the same inputs emit the same bytes | **1′** every generated artifact (a planted set, a description, the page, the bundle, `changelog.json`) is byte-identical from the same fingerprinted inputs | M3, M5, M6, M7 | `emit` byte-identical (oracle 1) |
 | 2 | emit then read is the identity | **2′** a published copy is in sync with its package: the plan against it is empty | M1 | as stated |
 | 3 | emit is faithful to the repository | **3′** the model is complete: stable across builds, sensitive to every sample change (scripts included), and a package's plan against its own published copy empty | M1 | as stated |
 | 4 | a vanilla policy changes nothing | none; the lifecycle has no policy | — | as stated |
@@ -896,9 +1020,10 @@ the prompt's own check, so the mapping holds for the backport and for v3 alike (
 | 8 | an idempotent redeploy is silent | as stated: the second plan is empty, every seeded table's content hash is unchanged, and zero capture rows appear where CDC exists | M4 | — |
 | 9 | `BlockOnPossibleDataLoss` is data-blind | as stated, and as a property of `Outcome.Predict` | M2, M4 | — |
 | 10 | a foreign key lands trusted | under the pipeline's profile, on the committed DacFx; a profile that turns validation off is a finding (§1 fact 11) | M4 | — |
-| 11 | a generated set has no orphans and repeats itself | **11′** a generated set repeats itself byte for byte under one seed and is S-stable; every trusted reference resolves, and orphans exist only where the evidence records them on references no trusted constraint declares; measuring it again recovers the evidence within ε | M3 | — |
-| 12 | the synthetic copy carries no literal | **12′** the committed evidence holds no value except a vocabulary from an environment confirmed synthetic; by type, by `check evidence`, and by the planted-value scan | M3 | — |
-| P | — | on a copy, the prediction equals the proof: `blocks` exactly when Strict blocks; *violating* exactly when Permissive fails at that site with the precondition's error number; the predicted count equals the count the generated set holds | M4 | — |
+| 11 | a generated set has no orphans and repeats itself | **11′**, planted: a planted set repeats itself byte for byte and a schema edit replants only the touched tables; every trusted reference resolves, and an orphan exists only where the `ExistingData` holds one; counting the copy again recovers the `ExistingData`, every no included, and its plan from the base is empty. The generated form (one seed; the evidence within ε) returns with the shape tier | M3 | — |
+| 12 | the synthetic copy carries no literal | **12′**, planted: no value from an environment reaches a copy or a committed file. `ExistingData` holds booleans; a planted literal is ordinal, marked synthetic, or defined by the repository's model, and a declared witness carrying any other literal is refused; and the planted-value scan finds nothing. The evidence form (a vocabulary only from an environment confirmed synthetic) returns with the shape tier | M3 | — |
+| F | — | on a stand-in environment, the verdict on the copy planted from its `ExistingData` equals the verdict of publishing head onto a full copy of it (the Facsimile's F3) | M4 | — |
+| P | — | on a copy, the prediction equals the proof: `blocks` exactly when Strict blocks; *violating* exactly when Permissive fails at that site with the precondition's error number; the predicted count equals the count the planted set holds | M4 | — |
 | T | — | a proof is reported for an environment only at that environment's existing data, DacFx version and publish profile | M4 | — |
 
 ---
@@ -907,14 +1032,14 @@ the prompt's own check, so the mapping holds for the backport and for v3 alike (
 
 | # | Test (`V3_INSTRUCTION_ARCHITECTURE.md` §10) | Lands in |
 |---|---|---|
-| 1 | `Manifest` | M0 (WP 0.6), with a row for each of the five root documents |
+| 1 | `Manifest` | M0 (WP 0.6), with a row for each root design document |
 | 2 | `Budgets` | M0, with Appendix F's ceilings |
 | 3 | `Register.Samples` | M7 |
 | 4 | `Register.Errors` | M1 (WP 1.5), when the first refusals exist |
-| 5 | `Register.Prose` | M0, on `VALUES.md` first; the five root documents excluded until M8 |
-| 6 | `Vocabulary` | M7; the five root documents excluded until M8 |
-| 7 | `NoRestatedCounts` | M0; the five root documents excluded until M8 |
-| 8 | `Citations` | M0 (WP 0.6) for this repository's documents; M7 for `knowledge/`; the five root documents excluded until M8 |
+| 5 | `Register.Prose` | M0, on `VALUES.md` first; the root design documents excluded until M8 |
+| 6 | `Vocabulary` | M7; the root design documents excluded until M8 |
+| 7 | `NoRestatedCounts` | M0; the root design documents excluded until M8 |
+| 8 | `Citations` | M0 (WP 0.6) for this repository's documents; M7 for `knowledge/`; the root design documents excluded until M8 |
 | 9 | `VerbsMatchArchitecture` | M8, when `ARCHITECTURE.md` exists; until then the verb reference is generated from `--help --json` and cannot drift |
 | 10 | `LawsMatchArchitecture` | M8; `LAWS.md` is generated from M1 on (WP 1.7's `ci/laws.sh`) |
 | 11 | `PackagerCheck` | M7 |
@@ -987,7 +1112,7 @@ var untrusted = new DacDeployOptions { BlockOnPossibleDataLoss = true, ScriptNew
 
 Code only; tests are budgeted separately below. `ci/budgets.json` carries these ceilings from M0.
 
-**`kernel/` (ceiling 6,800; planned 6,460)**
+**`kernel/` (ceiling 6,800; planned 4,440)**
 
 | File | Lines | M |
 |---|---:|---|
@@ -1001,12 +1126,11 @@ Code only; tests are budgeted separately below. `ci/budgets.json` carries these 
 | `Classify.cs` (renames of three kinds, shapes from `recognize:`) | 450 | M2 |
 | `Schema.cs` | 520 | M3 |
 | `Order.cs` | 180 | M3 |
-| `Evidence.cs` (standing sites, confirmed provenance) | 720 | M3 |
-| `SyntheticData.cs` | 1,800 | M3 |
+| `Witness.cs` (the existing-data tier's plan) | 500 | M3 |
 | `PullRequestDescription.cs`, `Locks.cs` | 570 | M5 |
 | `Platform.cs`, `Page.cs` (table classes, *in sync*) | 350 | M6 |
 
-**`io/` (ceiling 6,400; planned 5,980)**
+**`io/` (ceiling 6,400; planned 5,480)**
 
 | File | Lines | M |
 |---|---:|---|
@@ -1016,18 +1140,21 @@ Code only; tests are budgeted separately below. `ci/budgets.json` carries these 
 | a minimal `LocalServer.cs` (create, register, drop) | 60 | M1 |
 | `Profiles.cs` (options only; SQLCMD sensitivity), `Git.cs`, `Doctor.cs` | 440 | M1 |
 | the `BlockOnPossibleDataLoss` reader, `AggregateQueries.cs`, `Predict.cs`, the machine block's parser | 690 | M2 |
-| `LocalServer.cs` completed, `SyntheticCopy.cs` (with the shape tier's Bogus values), `Profile.cs` | 1,450 | M3 |
+| `LocalServer.cs` completed, `SyntheticCopy.cs` (the copy build's eight steps), `Profile.cs` (a column's value-free shape; row tiers) | 950 | M3 |
 | `Prove.cs`, `RefactorLog.cs` | 550 | M4 |
 | `Gate.cs`, `Vendor.cs`, `Json.cs` additions | 670 | M5 |
 | `Ossys.cs` (the allowlist), the page's commit and `deployments.md` | 370 | M6 |
 | `Knowledge.cs` | 400 | M7 |
 
-**`cli/` (ceiling 1,700; planned 1,530):** the dispatcher, the verb table and the renderers (280,
-M0), then one file per verb at about a hundred lines (M1 320 · M2 220 · M3 170 · M4 120 · M5 200 ·
+**`cli/` (ceiling 1,700; planned 1,480):** the dispatcher, the verb table and the renderers (280,
+M0), then one file per verb at about a hundred lines (M1 320 · M2 220 · M3 120 · M4 120 · M5 200 ·
 M6 160 · M7 60).
 
-**Per milestone (code):** M0 1,120 · M1 2,560 · M2 1,880 · M3 4,840 · M4 790 · M5 1,440 · M6 880 ·
-M7 460; about 13,970 in all, against a ceiling of 14,900.
+**Per milestone (code):** M0 1,120 · M1 2,560 · M2 1,880 · M3 2,270 · M4 790 · M5 1,440 · M6 880 ·
+M7 460; about 11,400 in all, against a ceiling of 14,900. Before the re-cut of M3 (§17 item 20), M3
+planned 4,840: `Evidence.cs` 720 and `SyntheticData.cs` 1,800 in the kernel, 1,450 in io and 170 in
+cli, and they return with the trigger. `ci/budgets.json`'s planned figures move when the operator
+decides; its ceilings do not.
 
 **Tests (ceiling 20,000, raised from 10,500 when M1 closed; measured M0 2,491 · M1 5,302; the rest planned from the original shares):** M2 1,984 · M3 3,510 · M4 2,441 · M5 1,831 · M6 1,068 · M7 1,373. The original plan read M0 700 · M1 1,500 · M2 1,300 · M3 2,300 · M4 1,600 ·
 M5 1,200 · M6 700 · M7 900. The corpus under `tests/Golden/` is data rather than code, and is held

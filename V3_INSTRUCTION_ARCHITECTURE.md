@@ -1366,6 +1366,15 @@ can host an MCP server against the SSDT repository's checkout. Until then the CL
 `--json` and the frozen exit codes is the tool surface on every rung, including agent mode off.
 §12 carries the question.
 
+*Settled 2026-10-18 by the operator* (`archive/v2/ssdt-agent/facsimile/HANDOFF.md`): the MCP
+policy is enabled and the team already runs MCP servers in Copilot, so `dbchange serve --mcp` is
+built, as a first-class surface with the CLI as its floor. The Facsimile's `TARGET.md` §8 fixes
+its shape: one tool per verb, each described in at most two sentences, its input schema the verb's
+arguments and its result the verb's JSON with the one stdout line; no resources and no prompts,
+since knowledge lives in the skill files; three sentences of server instructions (every call ends
+in a verdict, a stop or done; a stop names the next step, so take it; never retry a stop
+unchanged); stdout is the protocol and progress goes to stderr.
+
 ### 9.4 The hooks
 
 A maintainer surface only: the team does not use Claude Code, so the hooks belong to the engine
@@ -1550,10 +1559,10 @@ anything earlier.
   lists the unverified items and this document adds none. The trial on one developer's machine
   (companion §16, item 2) decides; until then the router, the five instructions and the prompt
   are the surface, and they work on every rung.
-- **MCP on the team's build.** §9.3 is an open question: whether Visual Studio's agent mode, gated
-  by the Copilot policy, can host an MCP server against the SSDT repository's checkout. If not, the
-  verbs are the same verbs on the terminal and the loss is convenience, not capability. Cost if yes:
-  about two hundred lines generated from the verb table.
+- **MCP on the team's build.** Settled 2026-10-18 (§9.3): the policy is enabled and the server is
+  built. What remains is a trial's question: which Visual Studio build discovers it from the SSDT
+  repository's checkout. Where one does not, the verbs are the same verbs on the terminal and the
+  loss is convenience, not capability. Cost: about two hundred lines generated from the verb table.
 - **Two repositories drift.** A vendored file edited by hand in the SSDT repository is
   caught only if the SSDT repository's pipeline runs `--check`, and registering that pipeline is a human
   act in Azure DevOps. Until it is registered, the bake lane's pull request is the only

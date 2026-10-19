@@ -88,7 +88,7 @@
       "owner": "tool",
       "reader": ["the operator", "the build session"],
       "moment": ["until M8"],
-      "budget": 3095,
+      "budget": 3118,
       "generator": null,
       "ancestor": []
     },
@@ -108,7 +108,7 @@
       "owner": "tool",
       "reader": ["the operator", "the build session"],
       "moment": ["until M8"],
-      "budget": 431,
+      "budget": 444,
       "generator": null,
       "ancestor": []
     },
@@ -118,7 +118,7 @@
       "owner": "tool",
       "reader": ["the operator", "the build session"],
       "moment": ["until M8"],
-      "budget": 1035,
+      "budget": 1162,
       "generator": null,
       "ancestor": []
     },
@@ -128,7 +128,7 @@
       "owner": "tool",
       "reader": ["the operator", "the build session"],
       "moment": ["until M8"],
-      "budget": 547,
+      "budget": 556,
       "generator": null,
       "ancestor": []
     },
@@ -138,7 +138,7 @@
       "owner": "tool",
       "reader": ["the operator", "the blueprint session"],
       "moment": ["until M8"],
-      "budget": 400,
+      "budget": 488,
       "generator": null,
       "ancestor": []
     },
