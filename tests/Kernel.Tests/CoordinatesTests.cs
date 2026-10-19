@@ -21,6 +21,9 @@ public sealed class CoordinatesTests
     /// and QST-58: every precondition on a table the change creates is answered. QST-46, QST-62 and QST-100: a column the change creates
     /// is counted nowhere, its existing rows holding its default or NULL. QST-101: the new parent of a foreign key is an object the change
     /// creates, and only the child is counted. QST-102 and QST-103: a renamed column and a moved table are counted under their old keys.
+    /// WP 2.3's queries give, from these places, the answers the catalog expects: a duplicate once the table holds two rows for QST-46
+    /// and QST-100, CK_Product_Qty clean and CK_Product_Rank broken by any row for QST-62, and an orphan for each non-NULL OrderTypeId
+    /// for QST-101.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]

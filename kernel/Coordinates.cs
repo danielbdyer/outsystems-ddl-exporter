@@ -8,7 +8,8 @@ namespace DbChange.Kernel;
 /// <summary>
 /// Where a precondition's rows are in an environment, by the coordinate rules of WP 2.1 (the Facsimile's S3: a missing object is a refusal,
 /// never zero rows). An object the change creates is answered from the change: a table it creates holds no row, so a precondition on one
-/// is answered with no rows and none violating, and a column it creates holds its default, or NULL, in every existing row of its table. An
+/// is answered with no rows and none violating; a column it creates holds one value in every existing row of its table, its default when
+/// it is NOT NULL and NULL when it allows NULL (<see cref="Place.Default"/>), which WP 2.3's queries read where the column would stand. An
 /// object the change renames or moves, or one in a table it renames or moves, is counted under the key it had. Anything else is counted
 /// where it is. An object the environment does not hold under that key is the error plan.missing-object. The cases are closed.
 /// </summary>
@@ -101,9 +102,11 @@ public abstract record Coordinates
     private static bool Holds(ElementKey key, HashSet<ElementKey> made, HashSet<ElementKey> held, Change change) =>
         made.Contains(key) || held.Contains(change.KeyBefore(key));
 
-    /// <summary>The default a column the change creates gives every existing row: its default's expression, or null for NULL.</summary>
+    /// <summary>The value a column the change creates gives every existing row: its default's expression when the column is NOT NULL,
+    /// else null for NULL.</summary>
     private static string? Default(ElementKey column, Change change) =>
-        change.Created.FirstOrDefault(e => e.Key.Type == "DefaultConstraint"
+        change.Created.FirstOrDefault(e => e.Key == column)?["Nullable"] is not Value.Boolean { IsTrue: false } ? null
+        : change.Created.FirstOrDefault(e => e.Key.Type == "DefaultConstraint"
             && e.Relationships.Any(r => r.Name == "TargetColumn" && r.Targets.Any(t => t.Key == column)))?["Expression"] switch
         {
             Value.Text t => t.Content,
@@ -122,7 +125,10 @@ public abstract record Coordinates
 /// One table or column a precondition reads, and where an environment holds it: <see cref="After"/>, its key after the change;
 /// <see cref="Environment"/>, the key the environment holds it under, its own or the one it had before the change renamed or moved it or
 /// its table, or null for an object the change creates; and, for a column the change creates in a table it does not, the
-/// <see cref="Default"/> every existing row of the table holds, its expression as the model writes it, or null for NULL.
+/// <see cref="Default"/> every existing row of the table holds: its default's expression as the model writes it when the column is NOT
+/// NULL, else null for NULL. DacFx 170.5.96 adds a column that allows NULL with no WITH VALUES, so its existing rows hold NULL whatever
+/// its default; and it adds a NOT NULL column with no default to an empty table alone (Msg 4901), which a BlockOnPossibleDataLoss site
+/// asks. WP 2.3's queries read this value where the column's name would stand, and a table the change creates as a table with no row.
 /// </summary>
 public sealed record Place(ElementKey After, ElementKey? Environment, string? Default) : IComparable<Place>
 {

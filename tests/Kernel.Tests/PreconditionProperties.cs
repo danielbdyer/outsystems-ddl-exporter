@@ -10,10 +10,10 @@ namespace DbChange.Kernel.Tests;
 /// Models of one to three tables, in dbo or sales, each with a primary key on Id, a few columns of the types DacFx models and, by chance, a
 /// unique index, a check and a foreign key to another table's Id, some disabled; and edits of them whose preconditions are known by
 /// construction: a column made mandatory or optional, retyped, given a unique index or a check, dropped, or joined by a new column (one
-/// with a default and a unique index over it among them); a foreign key's delete action changed or the key enabled or disabled; a check's
-/// expression changed; a table created; columns and tables renamed through the refactorlog; and the tables the plan's sites check. Each
-/// edit records what the precondition table must find, so a property compares Preconditions.Of with what the edits made, under the
-/// names the change leaves.
+/// with a default and a unique index over it among them, NOT NULL or nullable); a foreign key's delete action changed or the key enabled
+/// or disabled; a check's expression changed; a table created; columns and tables renamed through the refactorlog; and the tables the
+/// plan's sites check. Each edit records what the precondition table must find, so a property compares Preconditions.Of with what the
+/// edits made, under the names the change leaves.
 /// </summary>
 internal static class PreconditionProperties
 {
@@ -27,7 +27,8 @@ internal static class PreconditionProperties
     /// <summary>
     /// Generated models before and after edits, the refactorlog's renames, the plan's sites, the preconditions the edits make, what each
     /// edit was (for a failing sample's print), and for each table and column after the change the key it had before, the key itself for
-    /// one never renamed, and none for a column the change creates, with the default the edit gave it.
+    /// one never renamed, and none for a column the change creates, with the value its table's existing rows hold: the default the edit
+    /// gave a NOT NULL column, and none, for NULL, for a column that allows NULL, whatever its default.
     /// </summary>
     public sealed record Edited(Model Before, Model After, SortedArray<Rename> Renames, SortedArray<BlockOnPossibleDataLossSite> Sites,
         SortedArray<Precondition> Expected, string Edits, IReadOnlyDictionary<ElementKey, ElementKey> Was,
@@ -136,12 +137,18 @@ internal static class PreconditionProperties
                     edits.Add(path + " joined by a new column");
                     break;
                 case 8:
-                    after = after.With(TableOf(table) + ".n" + name + " int NOT NULL")
+                    var mandatory = draw.OneIn(2);
+                    after = after.With(TableOf(table) + ".n" + name + (mandatory ? " int NOT NULL" : " int NULL"))
                         .Default("DF_T" + table + "_n" + name, TableOf(table), "n" + name, "((7))")
                         .UniqueIndex("UX3_T" + table + "_n" + name, TableOf(table), "n" + name);
-                    defaults[(table, "n" + name)] = "((7))";
+                    if (mandatory)
+                    {
+                        defaults[(table, "n" + name)] = "((7))";
+                    }
+
                     intents.Add(new Intent("Unique", table, "n" + name));
-                    edits.Add(path + " joined by a new column with a default and a unique index");
+                    edits.Add(path + " joined by a new " + (mandatory ? "NOT NULL" : "nullable")
+                        + " column with a default and a unique index");
                     break;
             }
         }

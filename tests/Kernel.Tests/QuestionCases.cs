@@ -11,8 +11,10 @@ namespace DbChange.Kernel.Tests;
 /// of WP 2.1 holds, each under its identifier. A case gives the environment's model, the model the change brings and the plan's
 /// BlockOnPossibleDataLoss sites, which WP 2.2's reader will find in DacFx's script; the preconditions the change asserts are the case's
 /// questions in v3's words (V3_MILESTONES.md §3.1: HasRows is TableEmpty, Orphan is ForeignKey, CheckFalse is Check). What else a case
-/// expects waits on its work package: the value classes of Fits and Unique on WP 2.3, its measures and the kinds only a plan's statements
-/// show on WP 2.1's second slice, and the reading of the script's text on WP 2.2. Two of v3's decisions differ from the catalog and the
+/// expects waits on its work package: the value classes of Fits and Unique, and the answer over a column the change creates (QST-46,
+/// QST-62, QST-100) or a parent table it creates (QST-101), on WP 2.3, whose queries read the value the coordinate rules give each
+/// existing row (CoordinatesTests) where the column's name would stand; its measures and the kinds only a plan's statements show on
+/// WP 2.1's second slice; and the reading of the script's text on WP 2.2. Two of v3's decisions differ from the catalog and the
 /// cases follow v3: any change to a column's type is Fits (decision 2.9), where the catalog asks nothing of a widening or a collation
 /// alone (QST-19, QST-21, QST-33); and a key a table the change creates declares inline is Unique, answered from the change as any
 /// precondition on that table is (QST-45, QST-58, QST-69, QST-101), where the catalog reads only a separate ADD.

@@ -11,10 +11,11 @@ using Xunit;
 namespace DbChange.Io.Tests;
 
 /// <summary>
-/// Baseline drift on plans DacFx 170.5.96 makes package to package, which connect to nothing, under the pipeline profile. A change of a
-/// column's type or nullability under an object that reads it plans DacFx's own Drop and Create of that object around the ALTER COLUMN,
-/// and a change of a clustered key's type a TableRebuild with its own Drops and Creates; none of them is drift, and an object the
-/// environment lacks is. An unnamed constraint's report item is keyed as io/Ssdt.ReadModel keys the constraint.
+/// Baseline drift and the coordinate rules on plans DacFx 170.5.96 makes package to package, which connect to nothing, under the
+/// pipeline profile. A change of a column's type or nullability under an object that reads it plans DacFx's own Drop and Create of that
+/// object around the ALTER COLUMN, and a change of a clustered key's type a TableRebuild with its own Drops and Creates; none of them is
+/// drift, and an object the environment lacks is. An unnamed constraint's report item is keyed as io/Ssdt.ReadModel keys the
+/// constraint. A column the change adds that allows NULL holds NULL in every existing row whatever its default.
 /// </summary>
 public sealed class BaselineDriftTests : IDisposable
 {
@@ -124,6 +125,27 @@ public sealed class BaselineDriftTests : IDisposable
         Assert.Equal(3, unmatched.Plan.Report.Operations.Count(o => o.Key.Type == "CheckConstraint"));
         Assert.Equal([("plan.unnamed-unmatched", "[dbo].[T]"), ("plan.unnamed-unmatched", "[dbo].[T]")],
             unmatched.Plan.Notes.Select(n => (n.Code, n.Subject)));
+    }
+
+    /// <summary>
+    /// The coordinate rule for a column the change adds, against DacFx's script: it adds a column that allows NULL with no WITH VALUES,
+    /// so each existing row holds NULL whatever the column's default, and a NOT NULL column with its default; a unique index over each
+    /// is counted with that value in place of the column.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_column_added_that_allows_NULL_holds_NULL_in_every_existing_row_whatever_its_default()
+    {
+        var planned = Planned([TableT[..^2] + ");"],
+            [TableT + "Note INT NULL CONSTRAINT DF_T_Note DEFAULT (7), Rank INT NOT NULL CONSTRAINT DF_T_Rank DEFAULT (0));",
+                "CREATE UNIQUE INDEX UX_T_Note ON dbo.T (Note);", "CREATE UNIQUE INDEX UX_T_Rank ON dbo.T (Rank);"]);
+        var preconditions = Ok(Preconditions.Of(planned.Before, planned.After, planned.Change, []));
+
+        Assert.Matches(@"ADD \[Note\] INT\s+CONSTRAINT \[DF_T_Note\] DEFAULT \(7\) NULL,", planned.Plan.Script);
+        Assert.DoesNotContain("WITH VALUES", planned.Plan.Script, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal([("[Note]", null), ("[Rank]", "(0)")], preconditions.Select(p => Ok(Coordinates.Of(p, planned.Change, planned.Before)))
+            .Select(c => Assert.IsType<Coordinates.Counted>(c).Places.Single(place => place.After.Type == "Column"))
+            .Select(place => (place.After.Name.ToString(), place.Default)));
     }
 
     /// <summary>The change from <paramref name="before"/> to <paramref name="after"/>, and the plan of the package after it against
