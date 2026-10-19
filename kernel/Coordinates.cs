@@ -26,12 +26,23 @@ public abstract record Coordinates
         _ => throw new UnreachableException(),
     };
 
+    /// <summary>Where <paramref name="precondition"/> is answered, with names compared ordinally, as the kernel compares them.</summary>
+    public static Result<Coordinates> Of(Precondition precondition, Change change, SortedArray<Element> environment) =>
+        Of(precondition, change, environment, Collation.CaseSensitive);
+
     /// <summary>Where <paramref name="precondition"/> is answered: from <paramref name="change"/>, or by a count in
-    /// <paramref name="environment"/>, the model of the environment the change is planned against.</summary>
-    public static Result<Coordinates> Of(Precondition precondition, Change change, SortedArray<Element> environment)
+    /// <paramref name="environment"/>, the model of the environment the change is planned against, its names compared under
+    /// <paramref name="collation"/> as Change.Between compares them; a place names each object as the environment spells it.</summary>
+    public static Result<Coordinates> Of(Precondition precondition, Change change, SortedArray<Element> environment, Collation collation)
     {
-        var made = change.Created.Select(e => e.Key).ToHashSet();
-        var held = environment.Select(e => e.Key).ToHashSet();
+        var comparer = ElementKey.Comparer(collation);
+        var made = change.Created.Select(e => e.Key).ToHashSet(comparer);
+        var held = new Dictionary<ElementKey, ElementKey>(comparer);
+        foreach (var element in environment)
+        {
+            held.TryAdd(element.Key, element.Key);
+        }
+
         if (Table(precondition.Table, made, held, change).Failed(out var table, out var error))
         {
             return error;
@@ -73,9 +84,9 @@ public abstract record Coordinates
             {
                 places.Add(new Place(key, null, key.Parent is { } owner && !made.Contains(owner) ? Default(key, change) : null));
             }
-            else if (held.Contains(was))
+            else if (held.TryGetValue(was, out var spelled))
             {
-                places.Add(new Place(key, was, null));
+                places.Add(new Place(key, spelled, null));
             }
             else
             {
@@ -95,12 +106,12 @@ public abstract record Coordinates
     /// The key of a table a precondition names: a Table, or a View where the change creates or the environment holds a view of that name
     /// (an indexed view's unique index); a Table when neither holds one, for the error that names it.
     /// </summary>
-    private static Result<ElementKey> Table(Name name, HashSet<ElementKey> made, HashSet<ElementKey> held, Change change) =>
+    private static Result<ElementKey> Table(Name name, HashSet<ElementKey> made, Dictionary<ElementKey, ElementKey> held, Change change) =>
         ElementKey.Of("Table", name).Bind(table => ElementKey.Of("View", name).Map(view =>
             !Holds(table, made, held, change) && Holds(view, made, held, change) ? view : table));
 
-    private static bool Holds(ElementKey key, HashSet<ElementKey> made, HashSet<ElementKey> held, Change change) =>
-        made.Contains(key) || held.Contains(change.KeyBefore(key));
+    private static bool Holds(ElementKey key, HashSet<ElementKey> made, Dictionary<ElementKey, ElementKey> held, Change change) =>
+        made.Contains(key) || held.ContainsKey(change.KeyBefore(key));
 
     /// <summary>The value a column the change creates gives every existing row: its default's expression when the column is NOT NULL,
     /// else null for NULL.</summary>
