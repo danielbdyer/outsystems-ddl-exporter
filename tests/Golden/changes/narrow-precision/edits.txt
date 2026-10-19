@@ -1,0 +1,3 @@
+=== Modules/Order.sql
+--- Total           DECIMAL(18, 2)  NOT NULL
++++ Total           DECIMAL(8, 2)  NOT NULL

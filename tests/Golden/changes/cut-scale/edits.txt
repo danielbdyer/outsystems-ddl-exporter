@@ -1,0 +1,3 @@
+=== Modules/OrderLine.sql
+--- Amount      DECIMAL(18, 2)  NOT NULL
++++ Amount      DECIMAL(18, 1)  NOT NULL

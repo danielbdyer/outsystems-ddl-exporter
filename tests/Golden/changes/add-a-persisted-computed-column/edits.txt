@@ -1,0 +1,4 @@
+=== Modules/Product.sql
+--- CategoryId INT           NULL,
++++ CategoryId INT           NULL,
++++     CodeLength AS LEN(Code) PERSISTED,

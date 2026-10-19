@@ -1,0 +1,3 @@
+=== Modules/Order.sql
+--- StatusText      NVARCHAR(20)    NOT NULL
++++ StatusText      NVARCHAR(20)    NULL

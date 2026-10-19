@@ -6,6 +6,9 @@ Microsoft.Data.SqlClient
 Microsoft.NET.Test.Sdk
 Microsoft.NETFramework.ReferenceAssemblies.net472
 Microsoft.SqlServer.DacFx
+# Microsoft.SqlServer.DacFx 162.5.57 as well, in tests/DacFx162/ alone, through a VersionOverride (DECISIONS.md, 2026-10-19). Its graph
+# adds no line here, because this list names the packages a project references: Microsoft.Data.SqlClient 5.1.6, ScriptDom 161.9142.1,
+# Microsoft.Build 15.9.20 and Azure.Identity 1.11.4 among them, pinned by tests/DacFx162/packages.lock.json and passing NuGet's audit.
 Microsoft.SqlServer.TransactSql.ScriptDom
 NetArchTest.Rules
 System.Security.Cryptography.Pkcs
