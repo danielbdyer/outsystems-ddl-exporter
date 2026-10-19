@@ -1,6 +1,24 @@
 {
   "about": "Line ceilings the Budgets test enforces, from V3_MILESTONES.md Appendix F. A budget counts the physical lines of every file its include globs match, minus its exclude globs and neverCounted. A ceiling rises only with a DECISIONS.md line in the same pull request. planned, plannedFiles and plannedByMilestone are the plan's figures: data to compare against, never a failure.",
   "neverCounted": ["**/bin/**", "**/obj/**"],
+  "eachFile": {
+    "about": "Ceilings on each C# file on its own, beside the package budgets (the operator's ruling of 2026-10-19: a package ceiling may rise, the lines per file hold). A file of one of the groups below holds its group's ceiling in physical lines, counted as the package budgets count them, and every line of it holds widthCeiling: its length in characters as a .NET string counts them, a trailing carriage return not counted. A file over its ceiling is split into partial files; a line over the width is broken without changing what it means. These ceilings rise only with a DECISIONS.md line in the same pull request.",
+    "widthCeiling": 140,
+    "groups": {
+      "code": {
+        "about": "every C# file of the three packages.",
+        "include": ["kernel/**/*.cs", "io/**/*.cs", "cli/**/*.cs"],
+        "exclude": [],
+        "ceiling": 500
+      },
+      "tests": {
+        "about": "every C# file of every test project; the corpus under tests/Golden/ is data and has neither ceiling.",
+        "include": ["tests/**/*.cs"],
+        "exclude": ["tests/Golden/**"],
+        "ceiling": 800
+      }
+    }
+  },
   "code": {
     "about": "C# in the three packages together; tests are budgeted separately.",
     "budgets": ["kernel", "io", "cli"],
