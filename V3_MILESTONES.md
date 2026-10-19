@@ -286,8 +286,9 @@ What it changes in this plan:
 2. **A proof's `ExistingData` is measured on the copy, never copied from its input.** After
    planting, the copy is counted over its own plan's preconditions, and every answer, each "no"
    included, must equal the environment's (the Facsimile's acceptance, F1). So a copy that misses a
-   precondition the environment's plan holds, baseline drift among them, fails `AppliesTo` by
-   construction rather than by a comparison someone remembered to write.
+   precondition the environment's plan holds, baseline drift among them, is refused at acceptance,
+   naming the precondition, and no proof from it can ever claim to apply: the guarantee is built
+   into the copy, not left to a comparison someone remembered to write.
 3. **The copy's base stays the repository at the environment's deployed tag**, so nothing extracted
    is committed (R4). The Facsimile's base, the environment's extracted schema, is the same
    database exactly when the environment is in sync with that tag, and point 2 catches it when it
