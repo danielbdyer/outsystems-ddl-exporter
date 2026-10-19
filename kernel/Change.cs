@@ -42,6 +42,16 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
 {
     public bool IsEmpty => Created.Count + Dropped.Count + Renamed.Count + Altered.Count == 0;
 
+    /// <summary>
+    /// The key an element the after model holds had in the before model: the key a rename or a case-only pair records for it, else its own
+    /// key under the key its parent had, so a column of a renamed table is found under the table's old key. A key the change creates
+    /// comes back under its parent's old key, a key no before model holds.
+    /// </summary>
+    public ElementKey KeyBefore(ElementKey after) =>
+        Renamed.Concat(CaseOnlyRenamed).FirstOrDefault(r => r.After == after) is { } rename ? rename.Before
+        : after.Parent is { } parent && KeyBefore(parent) is var was && was != parent ? after.Under(was)
+        : after;
+
     /// <summary>The change from <paramref name="before"/> to <paramref name="after"/> with names compared ordinally, as the kernel compares
     /// them: the comparison that follows no database.</summary>
     public static Result<Change> Between(SortedArray<Element> before, SortedArray<Element> after, SortedArray<Rename> renames) =>
