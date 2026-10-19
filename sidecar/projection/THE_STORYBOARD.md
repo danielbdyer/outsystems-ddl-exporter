@@ -420,7 +420,7 @@ when the sprint's delta contains it; `·` = elided. The **felt arc** and the **l
 |---|---|---|---|---|---|---|---|---|---|---|
 | **P-1/2 · Load → on-prem** | ○ | ● | ● | ○ | ● | ● | ● | ● | ● | `Ready to load Dev to on-prem.` · curious→clear→loaded→settled |
 | **P-3 · UAT re-key** | ● | ● | ● | ● map | ● move | ● | ● | ● | ● | `Ready, once 3 users are mapped.` · careful→guided→mapped→confident |
-| **P-4 · SSIS publication** | · | ● | ● | ● declare | ● publish | ○ | · | ● | ○ | `The delta for the SSIS team, replayable from genesis.` · responsible→precise→handed off |
+| **P-4 · SSIS publication** | · | ● | ● | ● declare | ● publish | ○ | · | ● | ○ | `The delta for the SSIS maintainers, replayable from genesis.` · responsible→precise→handed off |
 | **P-5 · Idempotent redeploy** | ○ | ● | ● *(empty)* | · | ● *(no-op)* | ● `=0` | ● | ○ | ○ | `Nothing to apply. The database is provably unchanged.` · reassured (confirmed idempotent) |
 | **P-6 · In-place migrate** | ● | ●● *(both)* | ● | ● confirm | ● | ● | ● | ● | ● | `14 changes, 1 to confirm.` · alert→consenting→verified→trusting |
 | **P-7 · Eject / freeze** | · | ● | ● *(genesis→frozen)* | ● provenance | ● publish | · | ● | ● *(chain closed)* | ● *(finish)* | `Frozen. Provenance complete from genesis to freeze, verified.` · deliberate→certain→terminal |

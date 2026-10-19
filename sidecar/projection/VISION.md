@@ -42,7 +42,7 @@ This document carries V2's strategic frame across context boundaries. Read it on
 
 A 300-table OutSystems 11 Reactive system on managed AWS, mid-development, facing an External Entities cutover. Every Entity and Static Entity will be swapped 1:1 — internal management ceded to OutSystems' platform replaced by external management against a team-managed on-prem SQL Server. Schema and data live outside OutSystems' database; Integration Studio declares the External Entities pointing back at the external schema. The platform consumes the swap as if nothing changed; underneath, the entire data plane has migrated.
 
-Four environments — dev, qa, UAT, prod — each with on-prem SQL Server consumption via Azure DevOps PRs. CDC running in production with features depending on it; spurious change records would disrupt those features. User FKs (CreatedBy, UpdatedBy) wired through every entity, requiring environment-specific remapping when data is reflowed. Migration-team workflow that publishes legacy domain data into the on-prem database. RefactorLog records that need to survive across schema versions. Repeatable cadence — schema and data evolve continuously; the extraction gets re-run regularly.
+Four environments — dev, qa, UAT, prod — each with on-prem SQL Server consumption via pull requests. CDC running in production with features depending on it; spurious change records would disrupt those features. User FKs (CreatedBy, UpdatedBy) wired through every entity, requiring environment-specific remapping when data is reflowed. Data-migration workflow that publishes legacy domain data into the on-prem database. RefactorLog records that need to survive across schema versions. Repeatable cadence — schema and data evolve continuously; the extraction gets re-run regularly.
 
 If V2's emission is wrong: production data integrity corrupted; CDC-dependent features broken silently; rollback prohibitively expensive; partial cutover leaves hybrid state structurally hard to recover from.
 
@@ -54,7 +54,7 @@ V1 ships the cutover-relevant capabilities (extraction, two-phase inserts, FK re
 
 **Target artifacts (all sibling Π's of the same Catalog).** V2 emits multiple synchronized projections, each shaped for its consumer:
 
-- **SSDT DDL** (per-table `.sql` shape, V1's existing format) — the **production deployment** surface. Promoted into the Azure DevOps integration-test lane and verified by the canary read-back before merge. V2's emitter is opinionated, deterministic, and refactor-log-aware.
+- **SSDT DDL** (per-table `.sql` shape, V1's existing format) — the **production deployment** surface. Promoted into the CI integration-test lane and verified by the canary read-back before merge. V2's emitter is opinionated, deterministic, and refactor-log-aware.
 - **CDC-aware data inserts** — `StaticSeedsEmitter` / `MigrationDependenciesEmitter` / `BootstrapEmitter` (chapter 4.1) produce data emissions that respect CDC-tracked tables: topologically-sorted two-phase insertion, redeploy-idempotent, and tagged so insert plans avoid spurious change records on tables where CDC is enabled. This is one of the load-bearing cutover demands; V2 makes it algebraic where V1 does it by hand.
 - **DACPAC** — the **fast-iteration and baselining** surface. Declarative artifact for ephemeral-DB deploy via DacFx, used in canary tier-1/tier-2 property tests for sub-second-to-150ms feedback cycles. Refactor.log records ride alongside, communicating renames so DacFx incremental deploys ALTER rather than DROP+CREATE. The DACPAC is *not the only* deployment artifact — it is the artifact whose iteration cost is small enough to drive the canary's property-test surface.
 - **Refactor log** (`RefactorLogEmitter`) — sibling Π over `CatalogDiff`. SSDT-native format consumed by both the SSDT and DACPAC paths.
@@ -65,13 +65,13 @@ V1 emits one artifact class (SSDT scripts) hand-curated per environment; V2 emit
 **Verification posture, two lanes:**
 
 - **Fast lane (DACPAC).** Tier-1 property tests run pure (no Docker) on the F# emitter's `TSqlModel` round-trip. Tier-2 property tests run against testcontainers ephemeral SQL Server. Sub-second to ~150ms per case. Drives most of the canary's coverage.
-- **Promoted lane (SSDT + CDC-aware data inserts).** Once a slice is fast-lane-green, V2 emits the SSDT shape + CDC-aware data inserts and promotes the artifact into Azure DevOps's integration-test environment. The canary reads the deployed schema via the read-side adapter (chapter 3.1) and asserts equality-by-SsKey against the V2-expected Catalog. The redeploy-zero-ALTER-and-zero-CDC-record assertion runs on the live integration target — this is where CDC-safety is actually verified.
+- **Promoted lane (SSDT + CDC-aware data inserts).** Once a slice is fast-lane-green, V2 emits the SSDT shape + CDC-aware data inserts and promotes the artifact into the CI integration-test environment. The canary reads the deployed schema via the read-side adapter (chapter 3.1) and asserts equality-by-SsKey against the V2-expected Catalog. The redeploy-zero-ALTER-and-zero-CDC-record assertion runs on the live integration target — this is where CDC-safety is actually verified.
 
 Both lanes use the same `Catalog × Policy × Profile` algebra and the same `Emitter<'element>` shape. The DACPAC is fast; the SSDT + data lane is real. The canary verifies both.
 
 ## V1's empirical foundation
 
-V1 has been doing this work — extraction; specializations; opinionated formatting; topologically-sorted two-phase inserts; user FK reflow between environments; profile interventions on the data; standalone domain record injection for legacy migration teams; environment promotion via Azure DevOps PRs. V1 is not a failed predecessor; V1 is the empirical foundation V2 inherits. Every specialization V2 must support exists in V1 because V1 discovered it through the lived work of building it.
+V1 has been doing this work — extraction; specializations; opinionated formatting; topologically-sorted two-phase inserts; user FK reflow between environments; profile interventions on the data; standalone domain record injection for legacy migration teams; environment promotion via pull requests. V1 is not a failed predecessor; V1 is the empirical foundation V2 inherits. Every specialization V2 must support exists in V1 because V1 discovered it through the lived work of building it.
 
 V1's correctness is implicit — checked by hand, verified by experience, trusted because nothing has badly failed yet. The cutover scales the stakes past what implicit correctness can carry. V2 makes the correctness explicit, verifiable, and indefinitely repeatable.
 
@@ -197,12 +197,12 @@ Stage 0 pays back at chapter 3.3: every chapter beyond that is pure compounding.
 
 ## Chapter 4 plan — the production-deployment chorus
 
-Chapter 3 closes with the DACPAC fast lane and the canary's property-test surface. Chapter 4 adds the **promoted lane**: the SSDT DDL emitter + CDC-aware data inserts that go through Azure DevOps integration tests for production deployment.
+Chapter 3 closes with the DACPAC fast lane and the canary's property-test surface. Chapter 4 adds the **promoted lane**: the SSDT DDL emitter + CDC-aware data inserts that go through CI integration tests for production deployment.
 
 **4.1 SSDT DDL emitter (sibling Π) + CDC-aware data triumvirate.**
 - `Projection.Targets.SSDT.DdlEmitter` (F# `Emitter<SsdtFile>` returning per-table content keyed by SsKey). Composes via `Render.toSsdtDirectory`; output shape matches V1's `<outDir>/Modules/<Module>/<Schema>.<Tbl>.sql` convention (Appendix F §1 names the seam). DACPAC and SSDT DDL are sibling Π's of the same Catalog — T11 cross-validates them.
 - `StaticSeedsEmitter` → `MigrationDependenciesEmitter` → `BootstrapEmitter` with `EmissionPolicy` DU (`AllRemaining` default / `AllExceptStatic` / `AllData`). All three are CDC-aware: each consumes a `CdcAwareness` configuration (per-table CDC-enabled flag from the deployed schema's `sys.tables` / `cdc.change_tables`) and plans inserts to be redeploy-idempotent. The redeploy-zero-CDC-record assertion is the integration-test verification on the promoted lane.
-- Promoted-lane integration test: emit SSDT + data inserts → deploy to Azure DevOps integration environment → canary read-back compares to V2-expected Catalog → redeploy → assert zero ALTERs and zero CDC records on tracked tables.
+- Promoted-lane integration test: emit SSDT + data inserts → deploy to the CI integration environment → canary read-back compares to V2-expected Catalog → redeploy → assert zero ALTERs and zero CDC records on tracked tables.
 
 **4.2 User FK reflow as a real Policy axis + pass + sibling Π.** `UserMatchingStrategy = ByEmail | BySsKey | ManualOverride | FallbackToSystemUser`. `UserRemapContext = Map<SsKey, Map<SourceUserId, TargetUserId>>` produced by discovery pass, consumed by the data triumvirate at emission time.
 
@@ -255,7 +255,7 @@ The vision is the load-bearing structure that lets the chapters ahead support mo
 
 ## Closing
 
-V1 ships the cutover. V2 makes it verifiable, reversible, and repeatable, across two verification lanes — the DACPAC fast lane that drives the property-test surface, and the SSDT-DDL-plus-CDC-aware-data-inserts promoted lane that goes through Azure DevOps integration tests for production deployment. Three structural type theorems (T1 / T11 / A1 encoded as types, not disciplines), one property-test surface (FsCheck + tiered predicates), one read-side adapter (delivering value before any new emitter ships), one triangulation comparator, and a sibling chorus that cross-validates DACPAC against SSDT against the deployed schema are the load-bearing structure. Everything else is parking lot until a forcing function fires.
+V1 ships the cutover. V2 makes it verifiable, reversible, and repeatable, across two verification lanes — the DACPAC fast lane that drives the property-test surface, and the SSDT-DDL-plus-CDC-aware-data-inserts promoted lane that goes through CI integration tests for production deployment. Three structural type theorems (T1 / T11 / A1 encoded as types, not disciplines), one property-test surface (FsCheck + tiered predicates), one read-side adapter (delivering value before any new emitter ships), one triangulation comparator, and a sibling chorus that cross-validates DACPAC against SSDT against the deployed schema are the load-bearing structure. Everything else is parking lot until a forcing function fires.
 
 The five acceptance criteria above are testable. The fallback ladder is named. The drift-detection job covers continuing operations past the cutover. The chapter 3 sequence is concrete and starts delivering value in week one; the chapter 4 sequence promotes V2 from "verifies V1" to "emits production artifacts V1 cannot reach."
 
@@ -295,7 +295,7 @@ Initial vision document. Preserved verbatim below at "Historical: revision 1 vis
 
 A 300-table OutSystems 11 Reactive system on managed AWS, mid-development, facing an External Entities cutover. Every Entity and every Static Entity will be swapped 1:1 — internal management ceded to OutSystems' platform replaced by external management against a team-managed on-prem SQL Server. Schema and data live outside OutSystems' database. Integration Studio declares the External Entities pointing back at the external schema. The platform consumes the swap as if nothing changed; underneath, the entire data plane has migrated.
 
-Four environments — dev, qa, UAT, prod — each with on-prem SQL Server consumption via Azure DevOps PRs. CDC running in production with features depending on it; spurious change records would disrupt those features. User FKs (CreatedBy, UpdatedBy) wired through every entity, requiring environment-specific remapping when data is reflowed (Dev → UAT with user-matching strategy). Migration-team workflow that publishes legacy domain data into the on-prem database. RefactorLog records that need to survive across schema versions. Repeatable cadence — schema and data evolve continuously; the extraction gets re-run regularly as the source of truth evolves.
+Four environments — dev, qa, UAT, prod — each with on-prem SQL Server consumption via pull requests. CDC running in production with features depending on it; spurious change records would disrupt those features. User FKs (CreatedBy, UpdatedBy) wired through every entity, requiring environment-specific remapping when data is reflowed (Dev → UAT with user-matching strategy). Data-migration workflow that publishes legacy domain data into the on-prem database. RefactorLog records that need to survive across schema versions. Repeatable cadence — schema and data evolve continuously; the extraction gets re-run regularly as the source of truth evolves.
 
 If V2's emission is wrong: production data integrity corrupted; CDC-dependent features broken, possibly silently; rollback prohibitively expensive across environments and versions; operator trust gone. Worst case: cutover fails after partial completion, leaving the system in a hybrid state that's structurally hard to recover from.
 
@@ -303,7 +303,7 @@ This is what V2 must survive. The algebra is not aesthetic; it is the structural
 
 ### What V1 already does
 
-V1 (the parent outsystems-ddl-exporter project) has been doing this work — extraction; specializations; opinionated formatting; topologically-sorted two-phase inserts; user FK reflow between environments; profile interventions on the data; standalone domain record injection for legacy migration teams; environment promotion via Azure DevOps PRs. V1 is not a failed predecessor. V1 is the empirical foundation V2 inherits. Every specialization V2 must support exists in V1 because V1 discovered it through the lived work of building it.
+V1 (the parent outsystems-ddl-exporter project) has been doing this work — extraction; specializations; opinionated formatting; topologically-sorted two-phase inserts; user FK reflow between environments; profile interventions on the data; standalone domain record injection for legacy migration teams; environment promotion via pull requests. V1 is not a failed predecessor. V1 is the empirical foundation V2 inherits. Every specialization V2 must support exists in V1 because V1 discovered it through the lived work of building it.
 
 V1's correctness is implicit — checked by hand, verified by experience, trusted because nothing has badly failed yet. The cutover scales the stakes past what implicit correctness can carry. V2 makes the correctness explicit, verifiable, and indefinitely repeatable.
 

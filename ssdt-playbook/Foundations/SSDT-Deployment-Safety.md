@@ -46,7 +46,7 @@ Your publish profile (`.publish.xml`) controls deployment behavior. These settin
 
 **Recommendations:**
 
-> **This estate's settings are fixed in the pipeline.** The Azure DevOps → Octopus publish
+> **This estate's settings are fixed in the pipeline.** The pipeline's publish
 > carries its DacFx flags in the pipeline's own XML for every environment (QA and UAT already
 > publish with them). The tables in this section are generic SSDT guidance for understanding
 > the axes — the pipeline profile is authoritative, and developers never choose per-deploy

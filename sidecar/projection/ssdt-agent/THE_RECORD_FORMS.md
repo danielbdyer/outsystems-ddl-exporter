@@ -5,7 +5,7 @@ good record *looks like*, positively, so the shape is the only thing an author c
 `THE_DECISION_TREE.md` is the steps; this is the words. Read all three before rewriting a skill
 file.
 
-The reader is a reviewer on a global team — Pune, Porto, Portland — with strong SQL Server
+The reader is a reviewer on a global team with strong SQL Server
 knowledge but no time and no patience for a story. Write for that reader.
 
 ---

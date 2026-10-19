@@ -196,7 +196,7 @@ Per `V2_DRIVER.md` per-axis correctness stakes. For each axis: where V2 stands; 
 
 **Gated for flip:**
 - **PostDeployTemplateEmitter** (row 140; chapter 4.1 slice 9 deferred) — V1 emits `PostDeployment-Bootstrap.sql` with guard logic; V2 deferred
-- **`.sqlproj` realizer** (row 141) — V1 emits MSBuild file for Visual Studio / Azure DevOps integration; V2 produces `ArtifactByKind<SsdtFile>` map; realizer not yet shipped
+- **`.sqlproj` realizer** (row 141) — V1 emits MSBuild file for Visual Studio / CI integration; V2 produces `ArtifactByKind<SsdtFile>` map; realizer not yet shipped
 - **EvidenceCacheCoordinator** (row 135; 9-variant invalidation enum) — V2 has no caching layer; deferred until operator-reality canary surfaces evidence-load as bottleneck
 - **SQL validation step** (row 136) — V1 uses SMO + DacFx; V2 deferred; cash-out: `Validator` sibling Π consuming SSDT stream + producing ValidationReport at realization layer
 

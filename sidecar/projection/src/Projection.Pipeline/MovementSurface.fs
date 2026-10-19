@@ -17,12 +17,12 @@ open Projection.Core
 // surface were removed at slice F5 — flows are the only entry.
 
 /// Permission facet — how a target environment is *reached* (THE_CLI.md §6).
-/// `Bundle` writes only files (an SSDT bundle for Octopus) and needs no live
+/// `Bundle` writes only files (an SSDT bundle for the deployment tool) and needs no live
 /// gate; `Direct` is a live connection; `Docker` is the ephemeral one-touch.
 [<RequireQualifiedAccess>]
 type Access =
     /// A file-production target: the SSDT bundle (CREATE files + RefactorLog +
-    /// pre/post-deploy + data scripts) is WRITTEN to `out`, for Octopus to apply.
+    /// pre/post-deploy + data scripts) is WRITTEN to `out`, for the deployment tool to apply.
     /// `readConn` (optional, env:/file:) is a live connection to the real target
     /// database — present so a bundle place can ALSO be a direct READ source
     /// (the reverse leg, `compare`) even though its WRITE path is the file bundle.
@@ -51,7 +51,7 @@ type Grant =
 /// (THE_CLI.md §4.1; THE_DATA_PRODUCERS §0/§4.6; DECISIONS 2026-06-09 item 5).
 /// The estate hosts ONE `SsKey` model in two physical shapes: `Physical` is the
 /// frozen OSUSR cloud rendition (A — the up-leg sink); `Logical` is the hosted
-/// on-prem rendition (B — the migration team's load target, the legacy reverse
+/// on-prem rendition (B — the migration engineers' load target, the legacy reverse
 /// leg's source). The flag distinguishes a *peer* source (physical, the `golden`
 /// cloud→cloud move) from a *legacy* source (logical, the `preview` B→A reverse
 /// leg). It is env METADATA, not a refusal gate — it does not narrow `access` /
@@ -1901,7 +1901,7 @@ module Command =
 
     /// M3.b — the recognized B→A reverse leg of a flow (`THE_DATA_PRODUCERS`
     /// LE-1): a `legacy` move whose live source bears the `logical` rendition (B,
-    /// the migration-team-populated on-prem model) and whose live sink bears the
+    /// the migration-engineer-populated on-prem model) and whose live sink bears the
     /// `physical` rendition (A, the frozen OSUSR cloud model) of the ONE authored
     /// `SsKey` model. Carries the resolved source/sink connection specs; the
     /// engine face is `Transfer.runWithRenames` (the LE-2-proven capability) over

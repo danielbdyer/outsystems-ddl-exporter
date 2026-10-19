@@ -126,7 +126,7 @@ Team Explorer → Changes tab
 Add PhoneNumber column to Customers table
 
 - Added optional VARCHAR(20) column
-- For feature: Customer contact management (PROJ-123)
+- For feature: Customer contact management (work item 123)
 - Nullable field, no data migration needed
 ```
 
@@ -141,7 +141,7 @@ Click: "Commit All"
 Team Explorer → Sync → Push
 ```
 
-**GitHub/Azure DevOps**:
+**the git host**:
 ```
 1. Navigate to repository
 2. You'll see banner: "Your branch has changes"

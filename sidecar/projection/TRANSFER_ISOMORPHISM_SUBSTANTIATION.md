@@ -64,7 +64,7 @@ physical `OSUSR_*` **disposition A** (the on-prem target being the logical **dis
 two realizations of one identity-stable model (the Realization name-space, not two times). The
 "OutSystems-authority round-trip proof" / data-level canary (row 8 above; PRESCOPE_TRANSFER §10 Slice C)
 specializes **per producer**: `synthetic` → `π ∘ σ ≈ id` (`SyntheticCanaryTests`, green); `legacy` →
-the **B→A reverse-leg round-trip** (the logical on-prem model → physical cloud; same `SsKey` model, no foreign tolerances — the foreign→logical mapping is the migration team's, upstream); `peer` → the re-key canary (the
+the **B→A reverse-leg round-trip** (the logical on-prem model → physical cloud; same `SsKey` model, no foreign tolerances — the foreign→logical mapping is the migration engineers', upstream); `peer` → the re-key canary (the
 `Order → User-by-email` join identical across source and sink while the source user surrogates are
 provably absent from the sink — `ReconciledByRule` + `Reconciliation.reconcileKind`, row 5/6 above). The
 `peer`/`golden` flow **excludes user rows and re-keys their FKs** by email. The catalogue is

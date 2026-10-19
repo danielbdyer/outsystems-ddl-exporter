@@ -1,4 +1,4 @@
-Below is a prioritized, tiered blueprint of the **essential inclusions** for making the SSDT + Azure DevOps + Octopus operating model succeed across **6 pods (2 devs + a dev lead each), ~300 entities, 12 modules**, and a path to **CDC enablement**, while **explicitly acknowledging a short-term velocity dip** and **committing to a return-to-velocity** once the system stabilizes. Each tier includes: what must be understood, the behaviors to institutionalize, the artifacts to ship, owners, metrics, and recommended diagrams. After the tiers, you’ll find a **Canonical Essentials List** to “lock” the scope for validation.
+Below is a prioritized, tiered blueprint of the **essential inclusions** for making the SSDT + CI pipeline + deployment tool operating model succeed across **6 teams (2 devs + a dev lead each), ~300 entities, 12 modules**, and a path to **CDC enablement**, while **explicitly acknowledging a short-term velocity dip** and **committing to a return-to-velocity** once the system stabilizes. Each tier includes: what must be understood, the behaviors to institutionalize, the artifacts to ship, owners, metrics, and recommended diagrams. After the tiers, you’ll find a **Canonical Essentials List** to “lock” the scope for validation.
 
 ---
 
@@ -16,7 +16,7 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 * SSDT project in repo with clear folder structure.
 * **PR template** (risk callouts, migration type, test notes).
 * **“Survival loop” runbook** (10-step laminated recipe).
-  **Owners:** Dev Leads (enforce), Senior ICs (model), Octopus/Ops (pipeline health).
+  **Owners:** Dev Leads (enforce), Senior ICs (model), Ops (pipeline health).
   **Metrics:** Build pass %, PR lead time, deploy success %, refresh completion %.
   **Diagram:** ***Swimlane*** for the survival loop across roles.
 
@@ -28,14 +28,14 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 * **14:00 PR cutoff → 15:00 Dev deploy → 15:30 team-wide refresh.**
 * Test/Prod on a predictable weekly/biweekly schedule; **no Friday Prod** during ramp-up.
   **Artifacts:**
-* Calendar holds, Slack reminders, “Day-of” checklist.
-  **Owners:** Dev Leads (pods), Release Manager/Ops.
-  **Metrics:** % of pods hitting refresh on time, change-fail rate.
+* Calendar holds, chat reminders, “Day-of” checklist.
+  **Owners:** Dev Leads (teams), Release Manager/Ops.
+  **Metrics:** % of teams hitting refresh on time, change-fail rate.
   **Diagram:** ***Timeline/Train track*** showing cutoff → deploy → refresh.
 
 ## 3) Non-Negotiable Guardrails (Safety Nets)
 
-**What:** Small rules that massively reduce cross-pod breakage.
+**What:** Small rules that massively reduce cross-team breakage.
 **Behaviors:**
 
 * **No prod edits** outside SSDT.
@@ -49,7 +49,7 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
   **Metrics:** Incidents from breaking changes, CI gate failure rate.
   **Diagram:** ***Icon list*** (shield/lock/check).
 
-## 4) Role Clarity Across 6 Pods
+## 4) Role Clarity Across 6 Teams
 
 **What:** Everyone knows their lane and handoffs.
 **Behaviors:**
@@ -62,7 +62,7 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 * One-page **Role Charter** per role.
   **Owners:** EM/Dev Leads.
   **Metrics:** Review SLA, rework rate, time-to-unblock.
-  **Diagram:** ***Swimlane*** across pods/roles.
+  **Diagram:** ***Swimlane*** across teams/roles.
 
 ---
 
@@ -116,7 +116,7 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 * CI enforces **build pass**, gate scans, environment-specific guards.
   **Artifacts:**
 * **Code Review Checklist**; CODEOWNERS for DB areas.
-  **Owners:** Dev Leads, designated DB champions.
+  **Owners:** Dev Leads, designated DB reviewers.
   **Metrics:** Rework rate per PR; % CI gate pass first time.
   **Diagram:** ***Gate icons*** along the PR pipeline.
 
@@ -136,18 +136,18 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 
 # Tier 3 — Adoption: Make habits stick and morale hold
 
-## 10) Champions & Reinforcement Loops
+## 10) Reviewers & Reinforcement Loops
 
 **What:** Human + automated nudges that normalize the new rhythm.
 **Behaviors:**
 
 * Seniors **narrate PRs** and post screenshots of “good diffs.”
-* Slack **refresh reminders**; “green streak” call-outs.
+* chat **refresh reminders**; “green streak” call-outs.
   **Artifacts:**
-* Named **DB champions** per pod; recognition rubric.
+* Named **DB reviewers** per team; recognition rubric.
   **Owners:** Dev Leads, EM.
-  **Metrics:** Participation in rituals; % pods with active champion.
-  **Diagram:** ***Org map*** of pods with champion badges.
+  **Metrics:** Participation in rituals; % teams with an active reviewer.
+  **Diagram:** ***Org map*** of teams with reviewer badges.
 
 ## 11) Metrics That Actually Matter
 
@@ -158,7 +158,7 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
   **Artifacts:**
 * Dashboard: build pass %, PR lead time, deploy success, refresh SLA, change-fail rate.
   **Owners:** EM/Dev Leads.
-  **Metrics:** Trend toward green; variance across pods.
+  **Metrics:** Trend toward green; variance across teams.
   **Diagram:** ***Mini KPI board*** with trend arrows.
 
 ## 12) Knowledge Base & Playbooks (Living)
@@ -197,7 +197,7 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 * Template generation for pass-through views; scripts to scaffold two-phase migrations; pre-commit linters.
   **Artifacts:**
 * Tooling repo; VS/IDE snippets; PR bots (e.g., auto-label “needs two-phase”).
-  **Owners:** Senior ICs/Platform team.
+  **Owners:** Senior ICs/tooling owners.
   **Metrics:** Manual review time; PR churn.
   **Diagram:** ***Before/after flow*** of a change with automation.
 
@@ -209,7 +209,7 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 * Standardize keys/audit columns; avoid schema flapping on CDC-critical tables.
   **Artifacts:**
 * CDC target list; retention/lineage notes; view contracts for change stability.
-  **Owners:** Data Eng + DB champions.
+  **Owners:** the data engineers + DB reviewers.
   **Metrics:** CDC job health; downstream freshness/latency.
   **Diagram:** ***Data flow*** from OLTP → CDC → downstream.
 
@@ -235,7 +235,7 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 2. Survival loop runbook: build → PR → deploy → refresh.
 3. Release train & daily refresh cadence.
 4. Non-negotiable guardrails (no prod edits, no `SELECT *`, data-loss block).
-5. Role clarity across pods; dev leads as cadence owners.
+5. Role clarity across teams; dev leads as cadence owners.
 
 **Tier 2 (Stabilization):**
 6. Two-phase migration as default.
@@ -245,7 +245,7 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 10. Troubleshooting one-pager for top issues.
 
 **Tier 3 (Adoption):**
-11. Champions network + reinforcement rituals.
+11. Reviewer network + reinforcement rituals.
 12. Small, visible KPI board reviewed weekly.
 13. Living knowledge base/playbooks.
 
@@ -261,7 +261,7 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 
 * **Opening:** Lead with Tier 1 only. Land the survival loop, cadence, and guardrails with absolute clarity.
 * **Middle:** Layer Tier 2 practices as “how we keep it livable” (two-phase, contract-minimalism, static data discipline, reviews/gates).
-* **Adoption:** Show Tier 3 as the *culture kit* (champions, metrics, knowledge base).
+* **Adoption:** Show Tier 3 as the *culture kit* (reviewers, metrics, knowledge base).
 * **Closing:** Promise Tier 4 (return-to-velocity) with **objective triggers** and a visible roadmap.
 
 ---
@@ -270,7 +270,7 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 
 * **Tier 1:** Swimlane of survival loop; daily train timeline; icon guardrails; role swimlanes.
 * **Tier 2:** Two-phase timeline; contract-minimalism decision tree; static-data flow; PR gate strip with icons; compact troubleshooting table.
-* **Tier 3:** Pod map with champion badges; mini KPI dashboard; docs site map.
+* **Tier 3:** Team map with reviewer badges; mini KPI dashboard; docs site map.
 * **Tier 4:** Maturity staircase with triggers; before/after of automation; CDC flow; deprecation calendar.
 
 ---
@@ -280,15 +280,15 @@ Below is a prioritized, tiered blueprint of the **essential inclusions** for mak
 * Publish the **survival loop runbook** and **PR template**.
 * Schedule and announce the **daily 15:30 refresh ritual**.
 * Turn on CI gates for **forbidden-drop/`SELECT *`**.
-* Appoint **one champion per pod**; hold a 20-minute champions sync.
+* Appoint **one reviewer per team**; hold a 20-minute reviewers sync.
 * Create a **1-slide KPI board**; share in standup every other day.
 
 ---
 
-If you want, I can turn this blueprint into a **presentation outline** with slide titles, bolded lead-ins, and diagram wireframes for each tier, or produce a **one-page wall poster** version of Tier 1 for every pod’s workspace.
+If you want, I can turn this blueprint into a **presentation outline** with slide titles, bolded lead-ins, and diagram wireframes for each tier, or produce a **one-page wall poster** version of Tier 1 for every team’s workspace.
 
 
-Perfect — let’s build out the **micro-artifacts** of Tier 1 so you have tangible, hand-off-ready materials to put in front of pods on Day T+1. These are the lightweight but high-impact scaffolds that make the new process concrete.
+Perfect — let’s build out the **micro-artifacts** of Tier 1 so you have tangible, hand-off-ready materials to put in front of teams on Day T+1. These are the lightweight but high-impact scaffolds that make the new process concrete.
 
 ---
 
@@ -326,13 +326,13 @@ _(Any context, known caveats, rollback considerations)_
 
 ## 2. **Survival Loop Checklist (Laminated Card)**
 
-Purpose: one-page, posted at each desk/Slack pin.
+Purpose: one-page, posted at each desk/chat pin.
 Format: numbered list with verbs bolded.
 
 **The Daily Survival Loop**
 
 1. **Pull latest** SSDT main branch.
-2. **Branch off** `feature/[pod]-[ticket]`.
+2. **Branch off** `feature/[team]-[ticket]`.
 3. **Implement change** in SSDT project (tables, views, static data).
 4. **Build locally**; fix all compile errors.
 5. **Run tests** (basic deploy to dev sandbox).
@@ -342,7 +342,7 @@ Format: numbered list with verbs bolded.
 9. **Refresh External Entities** in Integration Studio at 15:30.
 10. **Republish modules** dependent on changed entities.
 
-**Golden Rule:** *If you break the loop, you block your pod.*
+**Golden Rule:** *If you break the loop, you block your team.*
 
 ---
 
@@ -396,8 +396,8 @@ Visual cue: a small train icon moving left to right, with “stations” labeled
 
 ---
 
-📌 With these five artifacts + five metrics, Tier 1 is **operationalized**: nothing is left at the level of abstraction, and every pod can point to a concrete “what to do” in the moment.
+📌 With these five artifacts + five metrics, Tier 1 is **operationalized**: nothing is left at the level of abstraction, and every team can point to a concrete “what to do” in the moment.
 
 ---
 
-Would you like me to now **draft the exact laminated survival checklist and guardrails poster** as if they were to be printed and pinned at each pod’s workspace (short, bold, highly visual)?
+Would you like me to now **draft the exact laminated survival checklist and guardrails poster** as if they were to be printed and pinned at each team’s workspace (short, bold, highly visual)?

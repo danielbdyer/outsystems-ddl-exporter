@@ -13,7 +13,7 @@ description: Use when the developer says "remove the attribute", "delete the Leg
 > as **two releases**. A dev lead approves this; once the column holds data whose loss cannot be
 > undone, the approval carries the strongest weigh-line — *danger is not release-count.*
 
-> **SHIP terminal: TWO-RELEASE.** This pipeline (Azure DevOps → Octopus) cannot relax
+> **SHIP terminal: TWO-RELEASE.** This pipeline (CI → deployment tool) cannot relax
 > `BlockOnPossibleDataLoss`, so a populated drop ships as R1 (a pre-deploy that drops the column's
 > default constraint then the column, with the model still declaring it) then R2 (the model drops
 > the column as a no-op). Proven live 2026-08-21 — this advances `FINDINGS_AND_CHANGES.md` Part 5,

@@ -5,7 +5,7 @@
 Table: dbo.YourTableName
 Description: Brief description of what this table stores
 Created: YYYY-MM-DD
-Work item: AB#XXXX
+Work item: XXXX
 */
 CREATE TABLE [dbo].[YourTableName]
 (

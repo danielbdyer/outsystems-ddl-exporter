@@ -272,7 +272,7 @@ module private TransferCanaryFixtures =
             [ { SsKey = rpKKey "Mod"; Name = rpName "M"; Kinds = [ cust ]; IsActive = true; ExtendedProperties = [] } ] []
         |> Result.value
 
-    /// B (logical on-prem, migration-team-populated) → A (physical cloud OSUSR).
+    /// B (logical on-prem, migration-engineer-populated) → A (physical cloud OSUSR).
     let legacySourceContract : Catalog = legacyContract "Customer"          "Email"   "EMAIL"
     let legacySinkContract   : Catalog = legacyContract "OSUSR_XF_CUSTOMER" "Contact" "CONTACT"
 
@@ -1328,7 +1328,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                             })
                 }))
 
-    // M3 / LE-2 — the legacy B→A reverse-leg canary. The migration team's data
+    // M3 / LE-2 — the legacy B→A reverse-leg canary. The migration engineers' data
     // sits in the LOGICAL on-prem rendition ([dbo].[Customer].[Email]); the engine
     // pipes it UP into the PHYSICAL cloud rendition ([dbo].[OSUSR_XF_CUSTOMER].[Contact]).
     // Same SsKey-stable model — NOT foreign schema, no tolerances. The two-contract
@@ -1341,7 +1341,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
         TaskSync.run (fun () ->
             fixture.WithEphemeralDatabase "LegacyBASrc" (fun src _ ->
                 task {
-                    // B (logical): the hosted on-prem model the migration team filled.
+                    // B (logical): the hosted on-prem model the migration engineers filled.
                     do! Deploy.executeBatch src (SsdtDdlEmitter.statements TransferCanaryFixtures.legacySourceContract |> Render.toText)
                     do! Deploy.executeBatch src
                             "INSERT INTO [dbo].[Customer] ([ID],[EMAIL]) VALUES (1, N'alice@x'), (2, N'bob@x');"

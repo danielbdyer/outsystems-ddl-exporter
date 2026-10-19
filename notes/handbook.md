@@ -103,7 +103,7 @@ This is where the Rosetta Stone, "I Used To / Now I", and "Feels Like / Actually
 
 **5.1 File Structure and Naming**
 - Standard layout
-- *Worked example: Tour of our actual project*
+- *Worked example: Tour of an estate's SSDT project*
 
 **5.2 What Lives Where**
 - Tables, views, procs, scripts
@@ -288,7 +288,7 @@ This is where the Rosetta Stone, "I Used To / Now I", and "Feels Like / Actually
 **12.4 UAT Strategy**
 - Communicate gaps
 - Gap logging
-- Client-facing messaging template
+- End-user messaging template
 
 **12.5 Production Strategy**
 - Dual-instance seamless transitions
@@ -693,20 +693,20 @@ This is where the Rosetta Stone, "I Used To / Now I", and "Feels Like / Actually
 ---
 
 ### 25. Escalation Paths *(was 23)*
-*Status: Not written — needs org-specific details*
+*Status: Not written — needs team-specific details*
 
 **25.1 When to Escalate**
 - Tier logic recap
 - Judgment call signals
 
 **25.2 How to Escalate**
-- Channels (Slack, PR, synchronous)
+- Channels (chat, PR, synchronous)
 - What to include
 
 **25.3 Who Owns What**
 - Dev lead roster
 - Principal coverage areas
-- Danny's role
+- The playbook owner's role
 
 ---
 
@@ -806,8 +806,8 @@ This is where the Rosetta Stone, "I Used To / Now I", and "Feels Like / Actually
 - SQL Server docs
 
 **31.2 Internal Links**
-- Azure DevOps project
-- Slack channels
+- Estate repository
+- team chat channels
 - Team roster
 
 **31.3 Training Materials**
@@ -970,11 +970,11 @@ If you're new, here's what to do:
 
 | Need | Where to go |
 |------|-------------|
-| Quick question | #ssdt-questions Slack channel |
+| Quick question | the team's chat channel |
 | PR review | Tag in PR per tier guidance |
 | Escalation | See [23. Escalation Paths](#) |
 | Something's broken | [22. Troubleshooting Playbook](#), then escalate |
-| Playbook feedback | #ssdt-playbook Slack channel or direct to Danny |
+| Playbook feedback | the team's feedback channel or direct to the playbook owner |
 
 ---
 
@@ -1159,8 +1159,8 @@ Every schema change on a CDC-enabled table is at least Tier 2. See [11. CDC and 
 - Deployments are predictable and recoverable
 - Schema matches source control — no drift
 
-**For Danny:**
-- The team owns this process; Danny is not a bottleneck
+**For the playbook owner:**
+- The team owns this process; the playbook owner is not a bottleneck
 - Onboarding new team members is structured, not ad-hoc
 - Incidents are rare, and when they happen, they become playbook improvements
 - The team's SSDT capability is growing over time
@@ -1171,7 +1171,7 @@ Every schema change on a CDC-enabled table is at least Tier 2. See [11. CDC and 
 
 - **OutSystems development** — Service Studio, application logic, etc.
 - **General SQL Server administration** — backups, security, performance tuning (beyond indexes)
-- **Pipeline/DevOps configuration** — Azure DevOps setup, deployment agents
+- **Pipeline/DevOps configuration** — CI pipeline setup, deployment agents
 - **Application-level data access** — ORMs, query patterns in application code
 
 Those are important, but they're not this playbook's scope.
@@ -1467,7 +1467,7 @@ If Integration Studio shows changes you didn't expect, pause and investigate:
 
 1. **Verify the right environment:** Are you connected to the database you think you are?
 
-2. **Check SSDT deployment status:** Did the pipeline succeed? Check Azure DevOps (or your CI/CD tool).
+2. **Check SSDT deployment status:** Did the pipeline succeed? Check the CI pipeline (or your CI/CD tool).
 
 3. **Check the database directly:** Open SSMS, connect to the database, verify the table structure.
 
@@ -1557,7 +1557,7 @@ Now that you have the translation layer:
 - **For conceptual foundation:** Read [4. State-Based Modeling vs. Imperative Migrations](#)
 - **For your first change:** Read [22. The Change/Release Process](#) and use the [Before-You-Start Checklist](#)
 - **For specific operations:** Find your operation in [16. Operation Reference](#)
-- **If you're stuck:** Check [24. Troubleshooting Playbook](#) or ask in #ssdt-questions
+- **If you're stuck:** Check [24. Troubleshooting Playbook](#) or ask in the team's chat channel
 
 ---
 
@@ -2413,8 +2413,8 @@ These stay in the project forever. They must be idempotent — safe to run multi
 
 /*
 Migration: Backfill CreatedAt column
-Ticket: JIRA-1234
-Author: Danny
+Ticket: work item 1234
+Author: Alex Example
 Date: 2025-01-15
 
 This migration populates the new CreatedAt column for existing records.
@@ -2480,7 +2480,7 @@ These are for release-specific work. After successful production deployment, the
 One-Time Script: Release 2025.02 data corrections
 Remove after production deployment.
 
-Ticket: JIRA-1456
+Ticket: work item 1456
 Description: Fix incorrectly migrated phone numbers from legacy import
 */
 
@@ -3179,9 +3179,9 @@ EXEC sp_executesql @sql
 
 ## UAT Strategy: Communicate Gaps
 
-In UAT, clients will see the Change History feature. Set expectations.
+In UAT, end users will see the Change History feature. Set expectations.
 
-**Client messaging template:**
+**End-user messaging template:**
 
 > "The Change History feature tracks all modifications to records. During this testing phase:
 > 
@@ -4207,7 +4207,7 @@ Before you can work with the SSDT project, you need:
 | Visual Studio | IDE for editing SSDT projects | Visual Studio 2019/2022 |
 | SSDT workload | SQL Server tooling for Visual Studio | Visual Studio Installer → Data storage and processing |
 | Git | Version control | git-scm.com |
-| Repository access | Clone the SSDT project | Azure DevOps (request access if needed) |
+| Repository access | Clone the SSDT project | the git host (request access if needed) |
 
 ---
 
@@ -4713,7 +4713,7 @@ If your change requires data work:
 
 /*
 Migration: Add MiddleName column to Customer
-Ticket: JIRA-1234
+Ticket: work item 1234
 Author: Your Name
 Date: 2025-01-15
 */
@@ -4801,7 +4801,7 @@ git commit -m "Add MiddleName column to Customer table
 - CDC impact: requires instance recreation
 - Tier 2 change
 
-JIRA-1234"
+work item 1234"
 ```
 
 ### 4.2 Push and Open PR
@@ -4810,7 +4810,7 @@ JIRA-1234"
 git push -u origin feature/add-customer-middlename
 ```
 
-Open a PR in Azure DevOps (or your git platform).
+Open a PR in the git host (or your git platform).
 
 ### 4.3 Fill Out PR Template
 
@@ -4912,7 +4912,7 @@ Merge to main
 ### 6.3 Post-Deployment Verification
 
 After pipeline completes:
-1. Verify pipeline succeeded (check Azure DevOps)
+1. Verify pipeline succeeded (check the CI pipeline)
 2. Spot-check the database (query to confirm change applied)
 3. If CDC change: verify capture instance status
 4. If OutSystems-impacting: proceed with Integration Studio refresh
@@ -5338,7 +5338,7 @@ Escalate even if tier seems lower when:
 | CDC-related change in production | Dev lead minimum |
 | Multi-phase change spanning releases | Dev lead to verify sequencing |
 | Deployment failure in test/UAT/prod | Dev lead + on-call if prod |
-| Data loss or suspected data corruption | Principal + Danny immediately |
+| Data loss or suspected data corruption | Principal + the playbook owner immediately |
 | Novel pattern not covered in playbook | Principal |
 
 ---
@@ -5352,7 +5352,7 @@ Escalate even if tier seems lower when:
 
 ### For Real-Time Help
 
-1. Post in #ssdt-questions with:
+1. Post in the team's chat channel with:
    - What you're trying to do
    - What happened
    - What you've already tried
@@ -5364,7 +5364,7 @@ Escalate even if tier seems lower when:
 
 If something has gone wrong in production:
 
-1. **Immediately:** Notify dev lead and Danny via Slack/phone
+1. **Immediately:** Notify dev lead and the playbook owner via chat/phone
 2. **Include:** What happened, what environment, what's the impact
 3. **Don't:** Try to fix alone if you're uncertain; more damage can occur
 4. **Do:** Preserve evidence (logs, error messages, current state)
@@ -5392,7 +5392,7 @@ Principals should be involved for:
 - Post-incident analysis
 - Playbook evolution (new patterns, new gotchas)
 
-### Danny's Role
+### The Playbook Owner's Role
 
 - Process and playbook owner
 - Escalation point for team conflicts or unclear ownership
@@ -6335,7 +6335,7 @@ WHERE IsActive = 1
 Table: dbo.YourTableName
 Description: Brief description of what this table stores
 Created: YYYY-MM-DD
-Ticket: JIRA-XXXX
+Ticket: work item XXXX
 */
 CREATE TABLE [dbo].[YourTableName]
 (
@@ -6377,7 +6377,7 @@ GO
 ```sql
 /*
 Migration: Brief description
-Ticket: JIRA-XXXX
+Ticket: work item XXXX
 Author: Your Name
 Date: YYYY-MM-DD
 
@@ -6484,7 +6484,7 @@ GO
 ```sql
 /*
 Pre-Deployment Validation: Describe what you're validating
-Ticket: JIRA-XXXX
+Ticket: work item XXXX
 */
 
 PRINT 'Pre-deployment validation...'
@@ -6589,7 +6589,7 @@ Use after any incident for blameless post-mortem:
 - **Duration:** X hours/minutes
 - **Severity:** Critical / High / Medium / Low
 - **Environment:** Dev / Test / UAT / Prod
-- **Ticket:** JIRA-XXXX
+- **Ticket:** work item XXXX
 
 ## What Happened
 [One paragraph description of what occurred]
@@ -6787,16 +6787,16 @@ ORDER BY [Schema], [Table]
 
 | Resource | Location | Notes |
 |----------|----------|-------|
-| SSDT Repository | [Azure DevOps link] | Source of truth for schema |
-| Pipeline Dashboard | [Azure DevOps link] | Deployment status |
-| #ssdt-questions | Slack | Questions and help |
-| #ssdt-playbook | Slack | Playbook feedback |
+| SSDT Repository | [git host link] | Source of truth for schema |
+| Pipeline Dashboard | [CI pipeline link] | Deployment status |
+| the team's chat channel | chat tool | Questions and help |
+| the team's feedback channel | chat tool | Playbook feedback |
 
 ## Team Contacts
 
 | Role | Name | Contact |
 |------|------|---------|
-| Playbook Owner | Danny | @danny |
+| Playbook Owner | [Name] | @playbook-owner |
 | Dev Leads | [Names] | @team-leads |
 | Principals | [Names] | @principals |
 
@@ -6834,14 +6834,14 @@ The playbook evolves. When you encounter something undocumented, something wrong
 
 1. Create a branch in the wiki repository (if git-backed) or draft in a doc
 2. Write the content following the style guide below
-3. Request review from a dev lead or Danny
+3. Request review from a dev lead or the playbook owner
 4. Merge/publish after approval
 
 ### Proposing Structural Changes
 
 For changes to the playbook's organization:
 
-1. Open a discussion in #ssdt-playbook
+1. Open a discussion in the team's feedback channel
 2. Propose the change with rationale
 3. Gather feedback
 4. Implement if consensus reached
@@ -6902,7 +6902,7 @@ Complex topics should layer:
 1. Note your change in the Changelog (Section 33)
 2. If you added a term, add it to the Glossary
 3. If you added a pattern, cross-reference it from Operation Reference
-4. Announce significant additions in #ssdt-playbook
+4. Announce significant additions in the team's feedback channel
 
 ---
 
@@ -6948,7 +6948,7 @@ Track significant changes to the playbook so team members know what's new and ma
 **Why:**
 Team migrating to SSDT-managed External Entities needs comprehensive guidance.
 
-**Author:** Danny
+**Author:** the playbook owner
 
 ---
 
@@ -7150,7 +7150,7 @@ DROP TABLE [dbo].[TableName]
 - [ ] Query confirms zero rows or data has been archived
 - [ ] `sys.dm_sql_referencing_entities` returns empty
 - [ ] Text search across codebase for table name
-- [ ] ETL/reporting team confirms no dependencies
+- [ ] ETL/reporting owners confirm no dependencies
 - [ ] Backup verified and restoration tested
 - [ ] CDC disabled on table (if enabled)
 
@@ -9685,7 +9685,7 @@ Progression isn't about doing higher-tier work faster. It's about developing jud
 
 **Final tier:** Tier 3
 
-**Why:** Must coordinate with ETL team. Need backward compatibility approach or synchronized deployment.
+**Why:** Must coordinate with the ETL maintainers. Need backward compatibility approach or synchronized deployment.
 
 ---
 

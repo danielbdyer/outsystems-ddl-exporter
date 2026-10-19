@@ -214,7 +214,7 @@ Attribution lives at the `Projection.Pipeline` layer, not in Core — the compar
 
 ## 5. The `Projection.Pipeline` C# orchestrator
 
-**Minimum scope.** Test-host-only first slice — i.e., a public class library with one entry-point method, consumed by one xUnit integration test that does the boot/apply/read/compare end-to-end. CLI verb (`Projection.Pipeline verify --emitted <outDir> --snapshot <osm_model.json>`) lands at slice 6, not slice 1. Argument: the canary's first consumer is the canary's own integration test; CLI surface is for the Azure DevOps pipeline and lands once the algebra is green.
+**Minimum scope.** Test-host-only first slice — i.e., a public class library with one entry-point method, consumed by one xUnit integration test that does the boot/apply/read/compare end-to-end. CLI verb (`Projection.Pipeline verify --emitted <outDir> --snapshot <osm_model.json>`) lands at slice 6, not slice 1. Argument: the canary's first consumer is the canary's own integration test; CLI surface is for the CI pipeline and lands once the algebra is green.
 
 **Public surface (slice 1).**
 

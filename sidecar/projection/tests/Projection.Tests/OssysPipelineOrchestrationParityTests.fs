@@ -46,7 +46,7 @@ let ``5.6.α row 139: V1 EmissionFingerprintCalculator ↔ V2 RegistryDigest PAR
 let ``5.6.α row 140: V1 BuildSsdtPostDeploymentTemplateStep lifts to V2 PostDeployTemplateEmitter sibling`` () : unit =
     failwith "deferred — see V1_PARITY_MATRIX.md row 140"
 
-[<Fact(Skip = "Matrix row 141 — 🟠 NOT-MAPPED. V1 `BuildSsdtSqlProjectStep` generates `.sqlproj` MSBuild file with item groups for modules + seeds; relative paths + project name. V2's A.1 Π outputs `seq<Statement>` or typed `ArtifactByKind<SsdtFile>` map; realization layers (not yet written) consume map + produce `.sqlproj`. **Cash-out shape**: `Render.toSqlProject` realizer consuming ArtifactByKind + emitting XML. **Trigger**: V2-owned realization layer ships that needs `.sqlproj` output for Visual Studio / Azure DevOps integration. **Rationale**: project file generation is CI/CD integration concern, not schema-emission; decouples Π from tooling.")>]
+[<Fact(Skip = "Matrix row 141 — 🟠 NOT-MAPPED. V1 `BuildSsdtSqlProjectStep` generates `.sqlproj` MSBuild file with item groups for modules + seeds; relative paths + project name. V2's A.1 Π outputs `seq<Statement>` or typed `ArtifactByKind<SsdtFile>` map; realization layers (not yet written) consume map + produce `.sqlproj`. **Cash-out shape**: `Render.toSqlProject` realizer consuming ArtifactByKind + emitting XML. **Trigger**: V2-owned realization layer ships that needs `.sqlproj` output for Visual Studio / CI integration. **Rationale**: project file generation is CI/CD integration concern, not schema-emission; decouples Π from tooling.")>]
 let ``5.6.α row 141: V1 BuildSsdtSqlProjectStep lifts to V2 Render.toSqlProject realizer`` () : unit =
     failwith "deferred — see V1_PARITY_MATRIX.md row 141"
 

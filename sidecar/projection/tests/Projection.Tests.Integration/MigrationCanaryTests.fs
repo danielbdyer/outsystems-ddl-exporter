@@ -567,7 +567,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     // -- M22 — the Atomic BEGIN TRAN envelope (opt-in, LOCAL full-access) ------
     //
     // The warm container is a LOCAL full-access SQL Server — exactly the class
-    // M22 is scoped to (production schema is ADO/Octopus/SSDT-deployed, not
+    // M22 is scoped to (production schema is deployed by the SSDT pipeline, not
     // direct-connect; the managed cloud is DML-only). These prove the envelope.
 
     [<Fact>]

@@ -1,19 +1,19 @@
 Build started 11/19/2025 4:49:10 PM.
-     1>Project "/Users/dannydyer/outsystems-ddl-exporter/OutSystemsModelToSql.sln" on node 1 (VSTest target(s)).
+     1>Project "/Users/<you>/outsystems-ddl-exporter/OutSystemsModelToSql.sln" on node 1 (VSTest target(s)).
      1>ValidateSolutionConfiguration:
          Building solution configuration "Debug|Any CPU".
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Json.Tests/bin/Debug/net9.0/Osm.Json.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.Json.Tests/bin/Debug/net9.0/Osm.Json.Tests.dll (.NETCoreApp,Version=v9.0)
 VSTest version 17.14.1 (arm64)
 
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/bin/Debug/net9.0/Osm.Pipeline.Tests.dll (.NETCoreApp,Version=v9.0)
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Smo.Tests/bin/Debug/net9.0/Osm.Smo.Tests.dll (.NETCoreApp,Version=v9.0)
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Validation.Tests/bin/Debug/net9.0/Osm.Validation.Tests.dll (.NETCoreApp,Version=v9.0)
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Domain.Tests/bin/Debug/net9.0/Osm.Domain.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/bin/Debug/net9.0/Osm.Pipeline.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.Smo.Tests/bin/Debug/net9.0/Osm.Smo.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.Validation.Tests/bin/Debug/net9.0/Osm.Validation.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.Domain.Tests/bin/Debug/net9.0/Osm.Domain.Tests.dll (.NETCoreApp,Version=v9.0)
 Starting test execution, please wait...
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Dmm.Tests/bin/Debug/net9.0/Osm.Dmm.Tests.dll (.NETCoreApp,Version=v9.0)
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Emission.Tests/bin/Debug/net9.0/Osm.Emission.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.Dmm.Tests/bin/Debug/net9.0/Osm.Dmm.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.Emission.Tests/bin/Debug/net9.0/Osm.Emission.Tests.dll (.NETCoreApp,Version=v9.0)
 A total of 1 test files matched the specified pattern.
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/bin/Debug/net9.0/Osm.Cli.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/bin/Debug/net9.0/Osm.Cli.Tests.dll (.NETCoreApp,Version=v9.0)
 VSTest version 17.14.1 (arm64)
 
 VSTest version 17.14.1 (arm64)
@@ -259,7 +259,7 @@ Total tests: 75
   Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenJsonMalformed [1 ms]
   Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenAttributesCollectionMissing [1 ms]
   Passed Osm.Json.Tests.ModelJsonDeserializerTests.Deserialize_ShouldFail_WhenModuleEntryNull [3 ms]
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Documentation.Tests/bin/Debug/net9.0/Osm.Documentation.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.Documentation.Tests/bin/Debug/net9.0/Osm.Documentation.Tests.dll (.NETCoreApp,Version=v9.0)
 [xUnit.net 00:00:00.29]   Discovered:  Osm.Cli.Tests
 [xUnit.net 00:00:00.29]   Starting:    Osm.Cli.Tests
 VSTest version 17.14.1 (arm64)
@@ -441,8 +441,8 @@ VSTest version 17.14.1 (arm64)
 [xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(Type serviceType)
 [xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService(IServiceProvider provider, Type serviceType)
 [xUnit.net 00:00:00.63]            at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService[T](IServiceProvider provider)
-[xUnit.net 00:00:00.63]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(409,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails()
-[xUnit.net 00:00:00.63]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(419,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails()
+[xUnit.net 00:00:00.63]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(409,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails()
+[xUnit.net 00:00:00.63]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(419,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails()
 [xUnit.net 00:00:00.63]         --- End of stack trace from previous location ---
   Passed Osm.Cli.Tests.Configuration.CliConfigurationLoaderTests.LoadAsync_ReturnsDefault_WhenPathMissing [46 ms]
   Failed Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails [77 ms]
@@ -461,8 +461,8 @@ VSTest version 17.14.1 (arm64)
    at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(Type serviceType)
    at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService(IServiceProvider provider, Type serviceType)
    at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService[T](IServiceProvider provider)
-   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 409
-   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 419
+   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 409
+   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorsWhenConfigurationFails() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 419
 --- End of stack trace from previous location ---
   Passed Osm.Cli.Tests.Commands.CacheOptionBinderTests.GetValue_ParsesCacheOptions [34 ms]
   Passed Osm.Cli.Tests.Commands.CacheOptionBinderTests.GetValue_DefaultsWhenOptionsOmitted [< 1 ms]
@@ -527,15 +527,15 @@ Decision log written to out/policy-decisions.json
 [xUnit.net 00:00:00.74]       Expected: True
 [xUnit.net 00:00:00.74]       Actual:   False
 [xUnit.net 00:00:00.74]       Stack Trace:
-[xUnit.net 00:00:00.74]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/UatUsersCommandFactoryTests.cs(221,0): at Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_UsesConfigurationDefaults_WhenOptionsOmitted()
+[xUnit.net 00:00:00.74]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/UatUsersCommandFactoryTests.cs(221,0): at Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_UsesConfigurationDefaults_WhenOptionsOmitted()
 [xUnit.net 00:00:00.74]         --- End of stack trace from previous location ---
 [xUnit.net 00:00:00.74]     Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline [FAIL]
 [xUnit.net 00:00:00.74]       Assert.Contains() Failure: Sub-string not found
 [xUnit.net 00:00:00.74]       String:    "Using model at model.json.\n\nSSDT build su"···
 [xUnit.net 00:00:00.74]       Not found: "Dynamic data telemetry: output/DynamicDat"···
 [xUnit.net 00:00:00.74]       Stack Trace:
-[xUnit.net 00:00:00.74]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(131,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline()
-[xUnit.net 00:00:00.74]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(159,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline()
+[xUnit.net 00:00:00.74]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(131,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline()
+[xUnit.net 00:00:00.74]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(159,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline()
 [xUnit.net 00:00:00.74]         --- End of stack trace from previous location ---
 [xUnit.net 00:00:00.74]     Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent [FAIL]
 [xUnit.net 00:00:00.74]       System.InvalidOperationException : Unable to resolve service for type 'Osm.Cli.Commands.Options.VerbOptionRegistry' while attempting to activate 'Osm.Cli.Commands.BuildSsdtCommandFactory'.
@@ -552,8 +552,8 @@ Decision log written to out/policy-decisions.json
 [xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(Type serviceType)
 [xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService(IServiceProvider provider, Type serviceType)
 [xUnit.net 00:00:00.74]            at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService[T](IServiceProvider provider)
-[xUnit.net 00:00:00.74]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(372,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent()
-[xUnit.net 00:00:00.74]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(382,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent()
+[xUnit.net 00:00:00.74]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(372,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent()
+[xUnit.net 00:00:00.74]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs(382,0): at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent()
 [xUnit.net 00:00:00.74]         --- End of stack trace from previous location ---
   Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_RequiresUatInventory [1 ms]
   Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_AcceptsUatInventoryCsv [5 ms]
@@ -564,7 +564,7 @@ Decision log written to out/policy-decisions.json
 Expected: True
 Actual:   False
   Stack Trace:
-     at Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_UsesConfigurationDefaults_WhenOptionsOmitted() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/UatUsersCommandFactoryTests.cs:line 221
+     at Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_UsesConfigurationDefaults_WhenOptionsOmitted() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/UatUsersCommandFactoryTests.cs:line 221
 --- End of stack trace from previous location ---
   Failed Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline [5 ms]
   Error Message:
@@ -572,8 +572,8 @@ Actual:   False
 String:    "Using model at model.json.\n\nSSDT build su"···
 Not found: "Dynamic data telemetry: output/DynamicDat"···
   Stack Trace:
-     at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 131
-   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 159
+     at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 131
+   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ParsesOptionsAndRunsPipeline() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 159
 --- End of stack trace from previous location ---
   Passed Osm.Cli.Tests.Commands.UatUsersCommandFactoryTests.Invoke_ParsesOptions [2 ms]
   Failed Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent [2 ms]
@@ -592,8 +592,8 @@ Not found: "Dynamic data telemetry: output/DynamicDat"···
    at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(Type serviceType)
    at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService(IServiceProvider provider, Type serviceType)
    at Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService[T](IServiceProvider provider)
-   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 372
-   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 382
+   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 372
+   at Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_WritesErrorMetadataWhenPresent() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/BuildSsdtCommandFactoryTests.cs:line 382
 --- End of stack trace from previous location ---
   Passed Osm.Cli.Tests.Commands.BuildSsdtCommandFactoryTests.Invoke_ForwardsDeferJunctionTablesOverride [1 ms]
   Passed Osm.Pipeline.Tests.Profiling.ProfilingInfrastructureTests.ForeignKeyProbeQueryBuilder_ConfiguresMetadataCommand [< 1 ms]
@@ -611,7 +611,7 @@ Not found: "Dynamic data telemetry: output/DynamicDat"···
 [xUnit.net 00:00:00.77]       Actual:   "/private/var/folders/bm/8_pl41ls20b9yyldp"···
 [xUnit.net 00:00:00.77]                   ↑ (pos 1)
 [xUnit.net 00:00:00.77]       Stack Trace:
-[xUnit.net 00:00:00.77]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Configuration/CliConfigurationServiceTests.cs(28,0): at Osm.Cli.Tests.Configuration.CliConfigurationServiceTests.LoadAsync_DefaultsToPipelineJson()
+[xUnit.net 00:00:00.77]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Configuration/CliConfigurationServiceTests.cs(28,0): at Osm.Cli.Tests.Configuration.CliConfigurationServiceTests.LoadAsync_DefaultsToPipelineJson()
 [xUnit.net 00:00:00.77]         --- End of stack trace from previous location ---
   Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPayloadIsUnexpected_WritesUniformError(testCase: PipelineCommandCase { CommandName = build-ssdt, SharedArgs = --config config.json --model model.json --profile profile.json --out output --max-degree-of-parallelism 3, FactoryType = Osm.Cli.Commands.BuildSsdtCommandFactory, VerbName = build-ssdt, OptionsType = Osm.Pipeline.Runtime.Verbs.BuildSsdtVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [29 ms]
   Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPayloadIsUnexpected_WritesUniformError(testCase: PipelineCommandCase { CommandName = dmm-compare, SharedArgs = --config config.json --model model.json --profile profile.json --dmm baseline.dmm --out diff --max-degree-of-parallelism 2, FactoryType = Osm.Cli.Commands.DmmCompareCommandFactory, VerbName = dmm-compare, OptionsType = Osm.Pipeline.Runtime.Verbs.DmmCompareVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [< 1 ms]
@@ -627,7 +627,7 @@ Expected: "/var/folders/bm/8_pl41ls20b9yyldpl9pgg580"···
 Actual:   "/private/var/folders/bm/8_pl41ls20b9yyldp"···
             ↑ (pos 1)
   Stack Trace:
-     at Osm.Cli.Tests.Configuration.CliConfigurationServiceTests.LoadAsync_DefaultsToPipelineJson() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Configuration/CliConfigurationServiceTests.cs:line 28
+     at Osm.Cli.Tests.Configuration.CliConfigurationServiceTests.LoadAsync_DefaultsToPipelineJson() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Configuration/CliConfigurationServiceTests.cs:line 28
 --- End of stack trace from previous location ---
   Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPipelineFails_WritesErrorsAndExitCodeOne(testCase: PipelineCommandCase { CommandName = build-ssdt, SharedArgs = --config config.json --model model.json --profile profile.json --out output --max-degree-of-parallelism 3, FactoryType = Osm.Cli.Commands.BuildSsdtCommandFactory, VerbName = build-ssdt, OptionsType = Osm.Pipeline.Runtime.Verbs.BuildSsdtVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [4 ms]
   Passed Osm.Cli.Tests.Commands.PipelineCommandFactorySharedTests.Invoke_WhenPipelineFails_WritesErrorsAndExitCodeOne(testCase: PipelineCommandCase { CommandName = dmm-compare, SharedArgs = --config config.json --model model.json --profile profile.json --dmm baseline.dmm --out diff --max-degree-of-parallelism 2, FactoryType = Osm.Cli.Commands.DmmCompareCommandFactory, VerbName = dmm-compare, OptionsType = Osm.Pipeline.Runtime.Verbs.DmmCompareVerbOptions, ConfigureServices = System.Action`2[Microsoft.Extensions.DependencyInjection.ServiceCollection,Osm.Pipeline.Runtime.IPipelineVerb], AssertOptions = System.Action`1[System.Object] }) [< 1 ms]
@@ -763,7 +763,7 @@ Total tests: 89
   Passed Osm.Pipeline.Tests.BuildSsdtRequestAssemblerTests.ResolveDeferJunctionTables_PrefersOverrides(overrideValue: null, configurationValue: null, expected: False) [< 1 ms]
   Passed Osm.Pipeline.Tests.BuildSsdtRequestAssemblerTests.Assemble_ComposesCacheMetadata [< 1 ms]
   Passed Osm.Pipeline.Tests.BuildSsdtRequestAssemblerTests.Assemble_PrefersOverrideProfilerProvider [< 1 ms]
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Etl.Integration.Tests/bin/Debug/net9.0/Osm.Etl.Integration.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.Etl.Integration.Tests/bin/Debug/net9.0/Osm.Etl.Integration.Tests.dll (.NETCoreApp,Version=v9.0)
   Passed Osm.Pipeline.Tests.Evidence.EvidenceCacheWriterTests.WriteAsync_ShouldDeriveFileNameFromDescriptorType [3 ms]
   Passed Osm.Pipeline.Tests.Profiling.DataProfilerFactoryTests.Create_sql_profiler_allows_named_connection_strings [23 ms]
   Passed Osm.Pipeline.Tests.Profiling.EntityProfilingLookupTests.BuildPlans_ShouldUseOverridesWhenSelectingForeignKeyTargets [25 ms]
@@ -806,7 +806,7 @@ VSTest version 17.14.1 (arm64)
 [xUnit.net 00:00:01.33]       String:    "SQL profiler snapshot:\n  Columns: 2 profi"···
 [xUnit.net 00:00:01.33]       Not found: "Sample rows violating NOT NULL:"
 [xUnit.net 00:00:01.33]       Stack Trace:
-[xUnit.net 00:00:01.33]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs(299,0): at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitSqlProfilerSnapshot_SummarizesKeyAnomalies()
+[xUnit.net 00:00:01.33]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs(299,0): at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitSqlProfilerSnapshot_SummarizesKeyAnomalies()
 [xUnit.net 00:00:01.33]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
 [xUnit.net 00:00:01.33]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
   Passed Osm.Dmm.Tests.ScriptDomDmmLensTests.Project_includes_unique_constraints_from_create_table_and_alter_table [659 ms]
@@ -823,7 +823,7 @@ VSTest version 17.14.1 (arm64)
 String:    "SQL profiler snapshot:\n  Columns: 2 profi"···
 Not found: "Sample rows violating NOT NULL:"
   Stack Trace:
-     at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitSqlProfilerSnapshot_SummarizesKeyAnomalies() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs:line 299
+     at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitSqlProfilerSnapshot_SummarizesKeyAnomalies() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs:line 299
    at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
    at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
   Passed Osm.Cli.Tests.Commands.CommandConsoleTests.WriteErrors_WritesCodeAndMessagePairs [< 1 ms]
@@ -836,7 +836,7 @@ Not found: "Sample rows violating NOT NULL:"
 [xUnit.net 00:00:01.40]       String:    "\nSSDT build summary:\n  Output: /tmp/outpu"···
 [xUnit.net 00:00:01.40]       Not found: "Dynamic insert mode: PerEntity"
 [xUnit.net 00:00:01.40]       Stack Trace:
-[xUnit.net 00:00:01.40]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs(685,0): at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitBuildSsdtSummary_WritesCompactBlock()
+[xUnit.net 00:00:01.40]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs(685,0): at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitBuildSsdtSummary_WritesCompactBlock()
 [xUnit.net 00:00:01.40]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
 [xUnit.net 00:00:01.40]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
 [xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
@@ -978,8 +978,8 @@ A total of 1 test files matched the specified pattern.
 [xUnit.net 00:00:01.77]       Expected: null
 [xUnit.net 00:00:01.77]       Actual:   LoadHarnessOptions { ConnectionString = Server=Test;, SafeScriptPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/Build/safe.sql, RemediationScriptPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/Build/remediation.sql, StaticSeedScriptPaths = System.Collections.Immutable.ImmutableArray`1[System.String], DynamicInsertScriptPaths = System.Collections.Immutable.ImmutableArray`1[System.String], ReportOutputPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/load-harness.report.json, CommandTimeoutSeconds =  }
 [xUnit.net 00:00:01.77]       Stack Trace:
-[xUnit.net 00:00:01.78]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs(92,0): at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing()
-[xUnit.net 00:00:01.78]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs(93,0): at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing()
+[xUnit.net 00:00:01.78]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs(92,0): at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing()
+[xUnit.net 00:00:01.78]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs(93,0): at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing()
 [xUnit.net 00:00:01.78]         --- End of stack trace from previous location ---
   Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_FallsBackToAttributeLengthWhenOnDiskMissing [< 1 ms]
   Passed Osm.Smo.Tests.TypeMappingPolicyTests.Resolve_UsesDecimalPrecisionAndScaleFromOnDiskMetadata [< 1 ms]
@@ -997,7 +997,7 @@ A total of 1 test files matched the specified pattern.
   Passed Osm.Pipeline.Tests.UatUsers.UserMapLoaderTests.Load_ParsesCsv [1 ms]
   Passed Osm.Pipeline.Tests.Evidence.CacheEntryEvaluatorTests.EvaluateExistingEntryAsync_ShouldReuseCacheWhenManifestValid [1 ms]
   Passed Osm.Pipeline.Tests.Evidence.CacheEntryEvaluatorTests.DetermineMissingCacheReasonAsync_ShouldDetectMetadataMismatch [1 ms]
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/bin/Debug/net9.0/Osm.Pipeline.Integration.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/bin/Debug/net9.0/Osm.Pipeline.Integration.Tests.dll (.NETCoreApp,Version=v9.0)
   Passed Osm.Pipeline.Tests.Evidence.CacheEntryEvaluatorTests.EvaluateExistingEntryAsync_ShouldRespectRefreshRequests [< 1 ms]
   Passed Osm.Pipeline.Tests.Evidence.CacheEntryEvaluatorTests.EvaluateExistingEntryAsync_ShouldDeleteCacheWhenArtifactsMismatch [6 ms]
   Passed Osm.Pipeline.Tests.Evidence.CacheMetadataBuilderTests.BuildOutcomeMetadata_ShouldMergeReasonAndBaseMetadata [< 1 ms]
@@ -1146,7 +1146,7 @@ Total tests: 4
   Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_missing_column [22 ms]
   Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_column_order_difference [8 ms]
   Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_extended_property_drift_when_feature_enabled [105 ms]
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.LoadHarness.Integration.Tests/bin/Debug/net9.0/Osm.LoadHarness.Integration.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.LoadHarness.Integration.Tests/bin/Debug/net9.0/Osm.LoadHarness.Integration.Tests.dll (.NETCoreApp,Version=v9.0)
 Starting test execution, please wait...
 A total of 1 test files matched the specified pattern.
 VSTest version 17.14.1 (arm64)
@@ -1180,7 +1180,7 @@ A total of 1 test files matched the specified pattern.
 String:    "\nSSDT build summary:\n  Output: /tmp/outpu"···
 Not found: "Dynamic insert mode: PerEntity"
   Stack Trace:
-     at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitBuildSsdtSummary_WritesCompactBlock() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs:line 685
+     at Osm.Cli.Tests.Commands.CommandConsoleTests.EmitBuildSsdtSummary_WritesCompactBlock() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/CommandConsoleTests.cs:line 685
    at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
    at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
   Passed Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_BindsUatUsersIdempotentFlag [12 ms]
@@ -1192,8 +1192,8 @@ Not found: "Dynamic insert mode: PerEntity"
 Expected: null
 Actual:   LoadHarnessOptions { ConnectionString = Server=Test;, SafeScriptPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/Build/safe.sql, RemediationScriptPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/Build/remediation.sql, StaticSeedScriptPaths = System.Collections.Immutable.ImmutableArray`1[System.String], DynamicInsertScriptPaths = System.Collections.Immutable.ImmutableArray`1[System.String], ReportOutputPath = /var/folders/bm/8_pl41ls20b9yyldpl9pgg580000gn/T/3550gugp.f5u/load-harness.report.json, CommandTimeoutSeconds =  }
   Stack Trace:
-     at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs:line 92
-   at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs:line 93
+     at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs:line 92
+   at Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_RunLoadHarnessSkipsWhenApplyConnectionMissing() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Commands/FullExportCommandFactoryTests.cs:line 93
 --- End of stack trace from previous location ---
   Passed Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_BindsUatUsersOverridesWhenEnabled [33 ms]
   Passed Osm.Cli.Tests.Commands.FullExportCommandFactoryTests.Invoke_WhenUatUsersEnabledRequiresQaInventory [11 ms]
@@ -1271,7 +1271,7 @@ Total tests: 54
   Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_data_type_difference [86 ms]
   Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_detects_foreign_key_drift_when_feature_enabled [23 ms]
   Passed Osm.Dmm.Tests.DmmComparatorTests.Compare_returns_match_for_equivalent_dmm_script [23 ms]
-Test run for /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.LoadHarness.Tests/bin/Debug/net9.0/Osm.LoadHarness.Tests.dll (.NETCoreApp,Version=v9.0)
+Test run for /Users/<you>/outsystems-ddl-exporter/tests/Osm.LoadHarness.Tests/bin/Debug/net9.0/Osm.LoadHarness.Tests.dll (.NETCoreApp,Version=v9.0)
 
 Test Run Successful.
 Total tests: 23
@@ -1284,7 +1284,7 @@ Total tests: 23
 [xUnit.net 00:00:03.23]       Expected: True
 [xUnit.net 00:00:03.23]       Actual:   False
 [xUnit.net 00:00:03.23]       Stack Trace:
-[xUnit.net 00:00:03.23]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Extraction/ConfigurableConnectionTests.cs(34,0): at Osm.Cli.Tests.Extraction.ConfigurableConnectionTests.ExtractModel_ShouldWriteJsonUsingFixtureExecutor()
+[xUnit.net 00:00:03.23]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Extraction/ConfigurableConnectionTests.cs(34,0): at Osm.Cli.Tests.Extraction.ConfigurableConnectionTests.ExtractModel_ShouldWriteJsonUsingFixtureExecutor()
 [xUnit.net 00:00:03.23]         --- End of stack trace from previous location ---
 [xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 9.0.9)
 VSTest version 17.14.1 (arm64)
@@ -1306,7 +1306,7 @@ A total of 1 test files matched the specified pattern.
 [xUnit.net 00:00:03.57]     Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ToFile_ShouldPersistLargeSnapshotWithoutRetainingBuffers [FAIL]
 [xUnit.net 00:00:03.58]       Retained memory (69289968 bytes) exceeded threshold (43996008 bytes).
 [xUnit.net 00:00:03.58]       Stack Trace:
-[xUnit.net 00:00:03.58]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs(680,0): at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ToFile_ShouldPersistLargeSnapshotWithoutRetainingBuffers()
+[xUnit.net 00:00:03.58]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs(680,0): at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ToFile_ShouldPersistLargeSnapshotWithoutRetainingBuffers()
 [xUnit.net 00:00:03.58]         --- End of stack trace from previous location ---
 [xUnit.net 00:00:00.47]     Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldRemoveSupersededEntries_WhenModuleSelectionShrinks [FAIL]
 [xUnit.net 00:00:00.47]       Expected superset.IsSuccess to be true, but found False.
@@ -1319,7 +1319,7 @@ A total of 1 test files matched the specified pattern.
 [xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
 [xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
 [xUnit.net 00:00:00.47]            at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
-[xUnit.net 00:00:00.47]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(194,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldRemoveSupersededEntries_WhenModuleSelectionShrinks()
+[xUnit.net 00:00:00.47]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(194,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldRemoveSupersededEntries_WhenModuleSelectionShrinks()
 [xUnit.net 00:00:00.47]         --- End of stack trace from previous location ---
 [xUnit.net 00:00:00.47]     Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldEvictCache_WhenMetadataChanges [FAIL]
 [xUnit.net 00:00:00.47]       Expected baseline.IsSuccess to be true, but found False.
@@ -1331,7 +1331,7 @@ A total of 1 test files matched the specified pattern.
 [xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
 [xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
 [xUnit.net 00:00:00.47]            at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
-[xUnit.net 00:00:00.47]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(139,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldEvictCache_WhenMetadataChanges()
+[xUnit.net 00:00:00.47]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(139,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldEvictCache_WhenMetadataChanges()
 [xUnit.net 00:00:00.47]         --- End of stack trace from previous location ---
 [xUnit.net 00:00:00.47]     Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldCreateAndReuseCacheEntries [FAIL]
 [xUnit.net 00:00:00.47]       Expected first.IsSuccess to be true, but found False.
@@ -1343,7 +1343,7 @@ A total of 1 test files matched the specified pattern.
 [xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
 [xUnit.net 00:00:00.47]            at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
 [xUnit.net 00:00:00.47]            at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
-[xUnit.net 00:00:00.47]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(47,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldCreateAndReuseCacheEntries()
+[xUnit.net 00:00:00.47]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(47,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldCreateAndReuseCacheEntries()
 [xUnit.net 00:00:00.47]         --- End of stack trace from previous location ---
   Passed Osm.Pipeline.Tests.DmmComparePipelineTests.HandleAsync_confirms_parity_and_writes_diff [93 ms]
   Passed Osm.Pipeline.Tests.SsdtMatrixTests.BuildSsdtMatrixCaseProducesExpectedArtifacts(testCase: MatrixCase { Name = fk-ignore, Model = model.micro-fk-ignore.json, Profile = profiling/profile.micro-fk-ignore.json, Expected = emission-matrix/fk-ignore, Entity = MatrixEntity { Module = M, Schema = dbo, Table = OSUSR_B }, Predicates = System.Collections.Generic.List`1[System.String], StaticData =  }) [96 ms]
@@ -1353,7 +1353,7 @@ A total of 1 test files matched the specified pattern.
   Error Message:
    Retained memory (69289968 bytes) exceeded threshold (43996008 bytes).
   Stack Trace:
-     at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ToFile_ShouldPersistLargeSnapshotWithoutRetainingBuffers() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs:line 680
+     at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ToFile_ShouldPersistLargeSnapshotWithoutRetainingBuffers() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs:line 680
 --- End of stack trace from previous location ---
   Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWriteFailureSnapshotWhenMetadataReaderFails [58 ms]
   Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.SqlValidationStep_records_summary_for_valid_scripts [166 ms]
@@ -1375,7 +1375,7 @@ A total of 1 test files matched the specified pattern.
    at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
    at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
    at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
-   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldRemoveSupersededEntries_WhenModuleSelectionShrinks() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 194
+   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldRemoveSupersededEntries_WhenModuleSelectionShrinks() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 194
 --- End of stack trace from previous location ---
   Failed Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldEvictCache_WhenMetadataChanges [2 ms]
   Error Message:
@@ -1388,7 +1388,7 @@ A total of 1 test files matched the specified pattern.
    at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
    at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
    at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
-   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldEvictCache_WhenMetadataChanges() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 139
+   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldEvictCache_WhenMetadataChanges() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 139
 --- End of stack trace from previous location ---
   Failed Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldCreateAndReuseCacheEntries [1 ms]
   Error Message:
@@ -1401,7 +1401,7 @@ A total of 1 test files matched the specified pattern.
    at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
    at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
    at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
-   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldCreateAndReuseCacheEntries() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 47
+   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldCreateAndReuseCacheEntries() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 47
 --- End of stack trace from previous location ---
 [xUnit.net 00:00:00.48]     Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldExpireEntries_WhenTtlElapsed [FAIL]
 [xUnit.net 00:00:00.48]       Expected first.IsSuccess to be true, but found False.
@@ -1413,7 +1413,7 @@ A total of 1 test files matched the specified pattern.
 [xUnit.net 00:00:00.48]            at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
 [xUnit.net 00:00:00.48]            at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
 [xUnit.net 00:00:00.48]            at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
-[xUnit.net 00:00:00.48]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(99,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldExpireEntries_WhenTtlElapsed()
+[xUnit.net 00:00:00.48]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs(99,0): at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldExpireEntries_WhenTtlElapsed()
 [xUnit.net 00:00:00.48]         --- End of stack trace from previous location ---
 [xUnit.net 00:00:00.48]   Finished:    Osm.Pipeline.Integration.Tests
 [xUnit.net 00:00:00.29]     Osm.LoadHarness.Integration.Tests.LoadHarnessRunnerIntegrationTests.RunAsync_ReplaysScriptsAndWritesReport [SKIP]
@@ -1429,7 +1429,7 @@ A total of 1 test files matched the specified pattern.
    at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
    at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
    at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
-   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldExpireEntries_WhenTtlElapsed() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 99
+   at Osm.Pipeline.Integration.Tests.EvidenceCacheCoordinatorIntegrationTests.CacheAsync_ShouldExpireEntries_WhenTtlElapsed() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/EvidenceCacheCoordinatorIntegrationTests.cs:line 99
 --- End of stack trace from previous location ---
 
 [xUnit.net 00:00:00.30]   Finished:    Osm.LoadHarness.Integration.Tests
@@ -1443,13 +1443,13 @@ Total tests: 10
 [xUnit.net 00:00:03.66]       Expected: True
 [xUnit.net 00:00:03.66]       Actual:   False
 [xUnit.net 00:00:03.66]       Stack Trace:
-[xUnit.net 00:00:03.66]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs(566,0): at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWarnWhenDuplicateAttributeColumnsPresent()
+[xUnit.net 00:00:03.66]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs(566,0): at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWarnWhenDuplicateAttributeColumnsPresent()
 [xUnit.net 00:00:03.66]         --- End of stack trace from previous location ---
  Total time: 1.1159 Seconds
-     1>Project "/Users/dannydyer/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (1) is building "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/Osm.Pipeline.Integration.Tests.csproj" (22) on node 7 (VSTest target(s)).
+     1>Project "/Users/<you>/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (1) is building "/Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/Osm.Pipeline.Integration.Tests.csproj" (22) on node 7 (VSTest target(s)).
     22>_VSTestConsole:
          MSB4181: The "VSTestTask" task returned false but did not log an error.
-    22>Done Building Project "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/Osm.Pipeline.Integration.Tests.csproj" (VSTest target(s)) -- FAILED.
+    22>Done Building Project "/Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Integration.Tests/Osm.Pipeline.Integration.Tests.csproj" (VSTest target(s)) -- FAILED.
   Passed Osm.Pipeline.Tests.BuildSsdtPipelineStepTests.EvidenceCacheStep_persists_result_and_records_metadata [4 ms]
   Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldEmitEmptyArraysWhenEntityFilteredOut [48 ms]
   Failed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWarnWhenDuplicateAttributeColumnsPresent [38 ms]
@@ -1458,7 +1458,7 @@ Total tests: 10
 Expected: True
 Actual:   False
   Stack Trace:
-     at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWarnWhenDuplicateAttributeColumnsPresent() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs:line 566
+     at Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldWarnWhenDuplicateAttributeColumnsPresent() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/SqlModelExtractionServiceTests.cs:line 566
 --- End of stack trace from previous location ---
   Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.CreateCommand_ShouldRejectEmptyModule [< 1 ms]
   Passed Osm.Pipeline.Tests.SqlModelExtractionServiceTests.ExtractAsync_ShouldExposeUserReferencesWhenSystemModulesExcluded [9 ms]
@@ -1516,10 +1516,10 @@ Total tests: 384
      Passed: 382
      Failed: 2
  Total time: 4.7391 Seconds
-     1>Project "/Users/dannydyer/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (1) is building "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/Osm.Pipeline.Tests.csproj" (10) on node 2 (VSTest target(s)).
+     1>Project "/Users/<you>/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (1) is building "/Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/Osm.Pipeline.Tests.csproj" (10) on node 2 (VSTest target(s)).
     10>_VSTestConsole:
          MSB4181: The "VSTestTask" task returned false but did not log an error.
-    10>Done Building Project "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/Osm.Pipeline.Tests.csproj" (VSTest target(s)) -- FAILED.
+    10>Done Building Project "/Users/<you>/outsystems-ddl-exporter/tests/Osm.Pipeline.Tests/Osm.Pipeline.Tests.csproj" (VSTest target(s)) -- FAILED.
   Passed Osm.Cli.Tests.FilesystemPermissionTests.BuildSsdt_fails_when_output_directory_is_read_only [2 s]
   Failed Osm.Cli.Tests.Extraction.ConfigurableConnectionTests.ExtractModel_ShouldWriteJsonUsingFixtureExecutor [2 s]
   Error Message:
@@ -1527,7 +1527,7 @@ Total tests: 384
 Expected: True
 Actual:   False
   Stack Trace:
-     at Osm.Cli.Tests.Extraction.ConfigurableConnectionTests.ExtractModel_ShouldWriteJsonUsingFixtureExecutor() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Extraction/ConfigurableConnectionTests.cs:line 34
+     at Osm.Cli.Tests.Extraction.ConfigurableConnectionTests.ExtractModel_ShouldWriteJsonUsingFixtureExecutor() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Extraction/ConfigurableConnectionTests.cs:line 34
 --- End of stack trace from previous location ---
   Passed Osm.Cli.Tests.CliIntegrationTests.DmmCompare_writes_diff_artifact_when_drift_detected [3 s]
   Passed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_ShouldWriteEvidenceCacheManifest [863 ms]
@@ -1539,7 +1539,7 @@ Actual:   False
 [xUnit.net 00:00:08.56]       Expected: 6
 [xUnit.net 00:00:08.56]       Actual:   5
 [xUnit.net 00:00:08.56]       Stack Trace:
-[xUnit.net 00:00:08.56]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs(73,0): at Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_and_dmm_compare_complete_successfully()
+[xUnit.net 00:00:08.56]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs(73,0): at Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_and_dmm_compare_complete_successfully()
 [xUnit.net 00:00:08.56]         --- End of stack trace from previous location ---
   Passed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_honors_entity_override_from_configuration [746 ms]
   Failed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_and_dmm_compare_complete_successfully [766 ms]
@@ -1548,13 +1548,13 @@ Actual:   False
 Expected: 6
 Actual:   5
   Stack Trace:
-     at Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_and_dmm_compare_complete_successfully() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs:line 73
+     at Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_and_dmm_compare_complete_successfully() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs:line 73
 --- End of stack trace from previous location ---
 [xUnit.net 00:00:09.65]     Osm.Cli.Tests.CliIntegrationTests.Profile_command_captures_fixture_snapshot [FAIL]
 [xUnit.net 00:00:09.65]       System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
 [xUnit.net 00:00:09.65]       Stack Trace:
 [xUnit.net 00:00:09.65]            at System.Text.Json.JsonElement.GetProperty(String propertyName)
-[xUnit.net 00:00:09.65]         /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs(130,0): at Osm.Cli.Tests.CliIntegrationTests.Profile_command_captures_fixture_snapshot()
+[xUnit.net 00:00:09.65]         /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs(130,0): at Osm.Cli.Tests.CliIntegrationTests.Profile_command_captures_fixture_snapshot()
 [xUnit.net 00:00:09.65]         --- End of stack trace from previous location ---
   Passed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_AppliesModuleFilterFromCli [751 ms]
   Failed Osm.Cli.Tests.CliIntegrationTests.Profile_command_captures_fixture_snapshot [343 ms]
@@ -1562,7 +1562,7 @@ Actual:   5
    System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
   Stack Trace:
      at System.Text.Json.JsonElement.GetProperty(String propertyName)
-   at Osm.Cli.Tests.CliIntegrationTests.Profile_command_captures_fixture_snapshot() in /Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs:line 130
+   at Osm.Cli.Tests.CliIntegrationTests.Profile_command_captures_fixture_snapshot() in /Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/CliIntegrationTests.cs:line 130
 --- End of stack trace from previous location ---
 [xUnit.net 00:00:10.47]   Finished:    Osm.Cli.Tests
   Passed Osm.Cli.Tests.CliIntegrationTests.BuildSsdt_AllowsEnvironmentOverrides [815 ms]
@@ -1572,11 +1572,11 @@ Total tests: 88
      Passed: 77
      Failed: 11
  Total time: 11.1521 Seconds
-     1>Project "/Users/dannydyer/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (1) is building "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Osm.Cli.Tests.csproj" (17) on node 8 (VSTest target(s)).
+     1>Project "/Users/<you>/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (1) is building "/Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Osm.Cli.Tests.csproj" (17) on node 8 (VSTest target(s)).
     17>_VSTestConsole:
          MSB4181: The "VSTestTask" task returned false but did not log an error.
-    17>Done Building Project "/Users/dannydyer/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Osm.Cli.Tests.csproj" (VSTest target(s)) -- FAILED.
-     1>Done Building Project "/Users/dannydyer/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (VSTest target(s)) -- FAILED.
+    17>Done Building Project "/Users/<you>/outsystems-ddl-exporter/tests/Osm.Cli.Tests/Osm.Cli.Tests.csproj" (VSTest target(s)) -- FAILED.
+     1>Done Building Project "/Users/<you>/outsystems-ddl-exporter/OutSystemsModelToSql.sln" (VSTest target(s)) -- FAILED.
 
 Build FAILED.
     0 Warning(s)

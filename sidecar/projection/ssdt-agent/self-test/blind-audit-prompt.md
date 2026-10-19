@@ -37,7 +37,7 @@ gospel. Where a standard doc and an actual op file disagree, that disagreement i
 
 1. **Hyper-clear PR (the essence).** A sample-pr is a record a time-pressed dev lead approves or rejects
    **by reading it** — no meeting, no follow-up question. The ten sections are present and each carries
-   a *finding*, not filler. **Test:** read a sample-pr as a dev lead in Pune / Porto / Portland; if you
+   a *finding*, not filler. **Test:** read a sample-pr as a dev lead on a global team; if you
    would have to ask a question before deciding, it fails the essence — name the question.
 2. **Verdict = a risk-driven call to action.** The first line says what the change does and the one
    thing to confirm before it moves up, as an imperative to the reviewer — **not** a bare role ("a
@@ -57,7 +57,7 @@ gospel. Where a standard doc and an actual op file disagree, that disagreement i
    do; deploy-engine internals belong in *What proving showed* as evidence, not as a per-op manual
    control. No op tells the developer to hand-toggle a gate or a trust step the pipeline should own once.
    **Test:** does the developer come away knowing what to do, without engine trivia?
-6. **The deployment reality holds, consistently.** This estate's pipeline (Azure DevOps → Octopus,
+6. **The deployment reality holds, consistently.** This estate's pipeline (CI → deployment tool,
    dacpac) **cannot** relax the data-loss gate, so a data-loss change ships as **two releases**, never a
    gate relaxation. A declarative constraint validates against existing rows at apply time; a drop is
    the irreversible act; a rename/schema-move preserves data only via the refactorlog. **Test:** does

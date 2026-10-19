@@ -48,7 +48,7 @@ stops being "a steady-state emission policy plus an out-of-scope cutover regime"
 
 1. **Down-leg (A→B):** export the cloud schema into the **logical model**; host it on-prem
    (rendition **B**, clean logical names). *(The existing forward projection / publication.)*
-2. **Off-engine:** the **migration team loads the data into the hosted logical model.** Any
+2. **Off-engine:** the **migration engineers load the data into the hosted logical model.** Any
    foreign→logical mapping is *theirs*, upstream of our engine.
 3. **Up-leg (B→A):** the **same model in reverse** pipes that data **back up into the physical
    model** (rendition **A**, the "frozen physical / `OSUSR_*`" version). **This is cloud insertion.**
@@ -73,7 +73,7 @@ bears*:
 |---|---|---|---|
 | **`synthetic`** | Data *generated* to match a captured `Profile` — never read from a live row. `σ : Profile ⟶ Data`. | → physical cloud (A) | **BUILT** |
 | **`peer`** | Another already-deployed cell of the **same model at the same (physical) rendition** — e.g. `cloud-qa`. `SsKey`-stable; only per-DB surrogates differ. | physical → physical (A→A) | design-only |
-| **`legacy`** | The **logical on-prem rendition** (B) of the same model — the hosted model the **migration team populated**. The foreign→logical mapping is theirs, upstream. | logical → physical (**B→A, the reverse / up leg**) | design-only |
+| **`legacy`** | The **logical on-prem rendition** (B) of the same model — the hosted model the **migration engineers populated**. The foreign→logical mapping is theirs, upstream. | logical → physical (**B→A, the reverse / up leg**) | design-only |
 
 The load-bearing distinction between **`peer`** and **`legacy`** is the **source's
 rendition**, *not* foreign-vs-same schema (both are the same model):
@@ -83,7 +83,7 @@ rendition**, *not* foreign-vs-same schema (both are the same model):
   differ per DB (`Id=280` in QA, `Id=18` in UAT). Sink-minted identity + a **Reidentify re-key**
   suffices.
 - `legacy` reads the **logical (B) rendition** — the cross-rendition **reverse leg**. The data
-  arrived in B via the migration team's upstream mapping; our engine only ever sees the logical
+  arrived in B via the migration engineers' upstream mapping; our engine only ever sees the logical
   model, and pipes it up into the physical (A) rendition. Identity is reconciled the same way
   (by `SsKey` / business key), because **it is the same model** — there is no foreign schema for
   the engine to translate.
@@ -139,7 +139,7 @@ data-level H-050; the engine's data-level canary, `TransferCanaryTests`, already
   the cloud→cloud `golden` instance is to write.)*
 - **`legacy`** → the **reverse-leg (B→A) round-trip canary**: read the logical on-prem model (B),
   pipe up into the physical cloud (A), read back, assert the data round-trips. Same `SsKey` model
-  — **no foreign-schema tolerances** (the foreign→logical mapping was the migration team's,
+  — **no foreign-schema tolerances** (the foreign→logical mapping was the migration engineers',
   upstream); identity reconciled as for any same-model move.
 
 All three are **preview/migration tooling, not a production write path** — they live inside
@@ -162,7 +162,7 @@ R6 (`CLAUDE.md` load-bearing commitments; `PRESCOPE_TRANSFER.md` §8): the cloud
    re-key suffices. The rename is **propagated** (2026-06-09): `THE_SYNTHETIC_DATA_DESIGN.md`
    §1 and `THE_CLI.md` §1 now read `peer`.
 3. **`legacy` is the reverse (B→A) leg of the same model — not foreign schema.** The migration
-   team loads the data into the hosted **logical** model (B) upstream of the engine; `legacy`
+   engineers load the data into the hosted **logical** model (B) upstream of the engine; `legacy`
    pipes that data **back up into the physical** cloud model (A, the "frozen physical / `OSUSR_*`"
    version). The engine only ever sees the one logical model; there is no foreign-schema ingest
    and no translation tolerance on the engine's side.
@@ -236,7 +236,7 @@ Slices:
 **Acceptance:** PE-3 green; a re-keyed row captures **one** CDC Update, never Delete+Insert.
 
 ### `legacy` (the `reverse` flow) — the reverse (B→A) leg of the same model
-Not foreign-schema ingest. The migration team has already loaded the data into the hosted
+Not foreign-schema ingest. The migration engineers have already loaded the data into the hosted
 **logical** model (B); `legacy` pipes it **up into the physical** cloud (A). For the engine this
 is a direction-neutral Transfer with **source rendition = logical, sink rendition = physical** of
 the same `SsKey` model. Slices:
@@ -293,7 +293,7 @@ is `grant: data`, DML-only).
   (H-050 + `RawValueCodec`); the design lives in surrogate reconciliation under DML-only sink
   rights (`IdentityDisposition` + `SurrogateRemapContext`). `peer` re-keys (surrogates differ
   across cells); `legacy` reconciles the same-model identities on the reverse leg; `synthetic`
-  mints. None translates foreign schema — that is the migration team's, upstream.
+  mints. None translates foreign schema — that is the migration engineers', upstream.
 - **Total decisions, named skips / no silent drop**: every excluded user, every unmapped orphan,
   every reconcile drop is **named** (a refusal or a declared tolerance), never silently dropped.
 - **The canary is the forcing function** (§3): no producer is "done" without its data canary

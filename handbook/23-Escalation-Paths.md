@@ -35,7 +35,7 @@ Escalate even if tier seems lower when:
 | CDC-related change in production | Dev lead minimum |
 | Multi-phase change spanning releases | Dev lead to verify sequencing |
 | Deployment failure in test/UAT/prod | Dev lead + on-call if prod |
-| Data loss or suspected data corruption | Principal + Danny immediately |
+| Data loss or suspected data corruption | Principal + the playbook owner immediately |
 | Novel pattern not covered in playbook | Principal |
 
 ---
@@ -49,7 +49,7 @@ Escalate even if tier seems lower when:
 
 ### For Real-Time Help
 
-1. Post in #ssdt-questions with:
+1. Post in the team's chat channel with:
    - What you're trying to do
    - What happened
    - What you've already tried
@@ -61,7 +61,7 @@ Escalate even if tier seems lower when:
 
 If something has gone wrong in production:
 
-1. **Immediately:** Notify dev lead and Danny via Slack/phone
+1. **Immediately:** Notify dev lead and the playbook owner via chat/phone
 2. **Include:** What happened, what environment, what's the impact
 3. **Don't:** Try to fix alone if you're uncertain; more damage can occur
 4. **Do:** Preserve evidence (logs, error messages, current state)
@@ -89,7 +89,7 @@ Principals should be involved for:
 - Post-incident analysis
 - Playbook evolution (new patterns, new gotchas)
 
-### Danny's Role
+### The Playbook Owner's Role
 
 - Process and playbook owner
 - Escalation point for team conflicts or unclear ownership

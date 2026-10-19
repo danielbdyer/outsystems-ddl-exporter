@@ -83,11 +83,11 @@ born at the physical floor and propagate up.** Read bottom-to-top: each layer is
 **The engine is a publication-and-provenance engine for an evolving relational model — not, primarily, a
 deployment engine for a live regulated estate.** Its consumers and terminus:
 
-- **An external team's SSIS jobs** map a *legacy application database* into *this* schema's shape, and must
+- **External SSIS jobs** map a *legacy application database* into *this* schema's shape, and must
   *track the relational model's evolution over time* to keep their mappings current.
 - **Own Dev/QA on-prem databases**, created from the OutSystems Dev/QA cloud databases.
 - **The eject** — the terminal state: schema freeze, then the model stops being OutSystems-derived and becomes
-  a thing the operator (and the legacy team) owns outright. After the eject there is no OutSystems to
+  a thing the operator (and the legacy-system owners) owns outright. After the eject there is no OutSystems to
   regenerate from, so the published model and its provenance must be *exactly* right.
 
 **The estate is a lattice of (environment × release-time) cells** — DEV, TEST/QA, UAT, PROD — each the *same
@@ -103,7 +103,7 @@ moves *up* between them. Same axis, different angle. See `THE_DATA_PRODUCERS.md`
   user identities). Forward-only. No masking (Dev/QA data, not sensitive).
 - **PROD has no application/data yet** — so PROD-blast-radius reasoning (atomicity, permission gates) is
   *premature*, not central.
-- The legacy team consumes the **schema model and its evolution** (not data) via SSIS.
+- The legacy-system owners consume the **schema model and its evolution** (not data) via SSIS.
 
 **Cadence:** once a sprint, **demand-driven by the consuming team** — lumpy and batched, not high-frequency.
 So the unit of work is "a sprint's worth of model evolution, published for a downstream consumer to map
@@ -185,7 +185,7 @@ tolerances"; *trigger:* a structured intent/tolerance filter between `between` a
 **Repositioning (the §0 self-correction made concrete):** `SchemaMigrationEmitter`'s explicit
 `ALTER TABLE … ALTER COLUMN` (6.A.12) is **not** the deploy artifact in this premise. It is the engine's
 *internal model of the minimal schema touch* — valuable as a **preview** (what this sprint touches, for the PR
-and the SSIS team), a **verification lens** (does DacFx's publish plan match what the engine predicted?), and
+and the SSIS maintainers), a **verification lens** (does DacFx's publish plan match what the engine predicted?), and
 an **input** to the data-script generation and CDC measurement. Right by name (it *is* the minimal touch);
 re-seated by function (the deploy artifact is declarative + refactorlog + data scripts).
 
@@ -320,7 +320,7 @@ rekey) reorders it:
    per-sprint changelog, a machine-readable diff, or all three? *Gates 6.F.4 — decides whether `Comparison`
    needs a consumer-facing rendering distinct from the deploy rendering.*
 3. **Eject deliverable** — at freeze, is the deliverable the frozen state *plus the full accumulated refactorlog
-   history* (legacy team owns the whole provenance), or the frozen state alone (provenance collapsible at
+   history* (legacy-system owners own the whole provenance), or the frozen state alone (provenance collapsible at
    freeze)? *Decides whether P-PROV is append-forever or collapsible.*
 
 ---

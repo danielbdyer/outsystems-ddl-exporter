@@ -109,7 +109,7 @@ function target({ kind, name }) {
 // Copilot target (GitHub Copilot in Visual Studio, for the estate repo)
 //
 // CONNECTORS.md §2. The team develops in GitHub Copilot inside Visual Studio,
-// against an Azure DevOps SSDT repository that does NOT contain this monorepo's
+// against the estate's SSDT repository, which does NOT contain this monorepo's
 // sidecar/projection/ssdt-agent/ path. So the Copilot bundle assumes the whole
 // canonical tree is VENDORED at `ssdt-agent/` in the estate repo root, and every
 // pointer routes there (vendoring the whole tree keeps its internal cross-
@@ -169,9 +169,9 @@ function routerDoc() {
     GEN, "",
     "# Database schema changes in this repository", "",
     "This repository's database schema is managed with SQL Server Data Tools (SSDT). A change is",
-    "authored as an edit to a table definition, built into a dacpac, and deployed through Azure",
-    "DevOps into Octopus. The deployment always runs with the data-loss guard on, and it cannot be",
-    "relaxed for a single deploy.", "",
+    "authored as an edit to a table definition, built into a dacpac, and deployed through the CI",
+    "pipeline and the deployment tool. The deployment always runs with the data-loss guard on, and",
+    "it cannot be relaxed for a single deploy.", "",
     "A workflow named ssdt-agent guides these changes. Its full content is vendored in this",
     "repository under `" + VENDOR + "/` — the operation skills, the agent roles, the record standard,",
     "and worked examples. Use it whenever you help with a schema or data change.", "",
@@ -485,8 +485,8 @@ function adoptionDoc() {
     "- **What does not follow you to ADO.** GitHub-hosted Copilot features — the coding agent, code",
     "  review's skills, organization-level custom instructions — key off github.com and do not apply",
     "  to an ADO repository. Everything in this bundle is IDE-side and unaffected.", "",
-    "## The Visual Studio 2026 pilot (run before moving anyone)", "",
-    "One champion laptop, Visual Studio 2026 (Community is fine) installed side-by-side with 2022,",
+    "## The Visual Studio 2026 trial (run before moving anyone)", "",
+    "One developer's machine, Visual Studio 2026 (Community is fine) installed side-by-side with 2022,",
     "the estate solution open. Thirty minutes:", "",
     "1. The estate `.sqlproj` opens and builds — 2026 carries only the original (classic) SQL project",
     "   format, so a classic project needs no conversion.",

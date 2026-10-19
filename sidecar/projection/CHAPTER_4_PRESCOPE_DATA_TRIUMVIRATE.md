@@ -1,6 +1,6 @@
 # Chapter 4.1.B pre-scope — CDC-aware data triumvirate
 
-**Pre-scope** for chapter 4.1.B — the CDC-aware data emission triumvirate (`StaticSeedsEmitter` / `MigrationDependenciesEmitter` / `BootstrapEmitter`), the `EmissionPolicy` DU, and per-table `CdcAwareness` configuration. SSDT DDL emission is the sibling slice 4.1.A, scoped separately. This is the **promoted-lane** data-emission surface — the artifact set that goes through Azure DevOps integration tests and against which the load-bearing redeploy-zero-CDC-record assertion fires.
+**Pre-scope** for chapter 4.1.B — the CDC-aware data emission triumvirate (`StaticSeedsEmitter` / `MigrationDependenciesEmitter` / `BootstrapEmitter`), the `EmissionPolicy` DU, and per-table `CdcAwareness` configuration. SSDT DDL emission is the sibling slice 4.1.A, scoped separately. This is the **promoted-lane** data-emission surface — the artifact set that goes through the CI integration tests and against which the load-bearing redeploy-zero-CDC-record assertion fires.
 
 ---
 
@@ -44,7 +44,7 @@ module StaticSeedsEmitter =
 
 ### 2.2 MigrationDependenciesEmitter
 
-Consumes `Catalog` + a `MigrationDependencyContext` value carrying the operator-published legacy-domain rows. The context is *not* in the catalog (because per session-17 §"Three data-emission classes," migration-dependency status is operator intent), but it is *not* `Policy` either — it carries actual row data, not behavioral configuration. Resolve this by treating it as a Profile-shaped sibling input: the context is **environment-specific evidence** the migration team supplies, structurally indistinguishable from per-environment data the read-side might surface.
+Consumes `Catalog` + a `MigrationDependencyContext` value carrying the operator-published legacy-domain rows. The context is *not* in the catalog (because per session-17 §"Three data-emission classes," migration-dependency status is operator intent), but it is *not* `Policy` either — it carries actual row data, not behavioral configuration. Resolve this by treating it as a Profile-shaped sibling input: the context is **environment-specific evidence** the migration engineers supply, structurally indistinguishable from per-environment data the read-side might surface.
 
 ```fsharp
 type MigrationDependencyRow = {
@@ -58,7 +58,7 @@ type MigrationDependencyContext = {
 }
 ```
 
-Source of truth: a new `Projection.Adapters.Migration.DependencyReader` adapter reading from a pickup directory the migration team publishes (NDJSON or CSV), parsed into `Result<MigrationDependencyContext>`. The adapter is at the boundary; the emitter is pure F# in Core.
+Source of truth: a new `Projection.Adapters.Migration.DependencyReader` adapter reading from a pickup directory the migration engineers publish (NDJSON or CSV), parsed into `Result<MigrationDependencyContext>`. The adapter is at the boundary; the emitter is pure F# in Core.
 
 ```fsharp
 [<RequireQualifiedAccess>]
@@ -419,7 +419,7 @@ Approximate total: ~3,350 LOC product + ~5,500 LOC test (chapter 3 ratio target 
 
 ## §9 Promoted-lane integration test
 
-The Azure DevOps pipeline step that proves V2's SSDT + data emission against a real CDC-enabled SQL Server.
+The CI pipeline step that proves V2's SSDT + data emission against a real CDC-enabled SQL Server.
 
 **Harness.** `Projection.Pipeline.PromotedLaneCanary` (C#, chapter 3.1 substrate). Steps:
 
@@ -447,7 +447,7 @@ The output points the operator at the column whose change-detection predicate is
 
 - **CDC capture-instance management.** V2 does not enable CDC; the cutover team does. V2 must respect the existing capture-instance configuration. Risk: if the cutover team enables CDC with a non-default `@role_name` or `@filegroup_name`, V2's discovery must surface the capture instance's existing config rather than re-derive it. Mitigation: `CdcAwareness.CdcInstance : Map<SsKey, string>` carries the capture-instance name as discovered, never as inferred. The integration test parameterizes the capture-instance name on what `cdc.change_tables` returns.
 - **Self-referencing FKs.** Common in `employee.manager_id → employee`, `category.parent_category_id → category`. The two-phase pattern always solves these. Risk surfaces only if the FK column is `NOT NULL` and self-referential — mathematically unsatisfiable. Mitigation: the chapter 2 cycle-resolution discipline marks the column nullable in the catalog, or the integration test fails fast with `EmitError.UnresolvableCycle`.
-- **Cycle resolution at the data level.** Chapter 2's `CycleResolution` operates on the schema; data-level cycles (rows whose mandatory FKs reference each other transitively) are a separate concern. Mitigation: V2 shares chapter 2's cycle topology, but the data-level case where an SCC contains rows mutually referencing each other through `NOT NULL` FKs is rejected at emission time with a structural error. The migration team resolves these by either deferring one FK to nullable or by ordering legacy data so the cycle is broken.
+- **Cycle resolution at the data level.** Chapter 2's `CycleResolution` operates on the schema; data-level cycles (rows whose mandatory FKs reference each other transitively) are a separate concern. Mitigation: V2 shares chapter 2's cycle topology, but the data-level case where an SCC contains rows mutually referencing each other through `NOT NULL` FKs is rejected at emission time with a structural error. The migration engineers resolve these by either deferring one FK to nullable or by ordering legacy data so the cycle is broken.
 - **Migration data quality.** Legacy rows from `MigrationDependencyContext` may violate V2's tightening rules (e.g., a row with `NULL` in a column V2's `NullabilityPass` decided to make NOT NULL). The opportunity stream surfaces these. Emitter graceful degradation: emit the rows as-is (T1 demands determinism); the deployment step fails with a constraint violation surfaced as a `Diagnostics` finding; the operator either relaxes the tightening intervention or fixes the legacy data. V2 does not silently mask the divergence.
 - **Trunk parity divergence.** V2's CDC-aware MERGE differs from V1's MERGE on tracked tables. Differential tests against V1's output will surface a divergence. Mitigation: the divergence is named and intentional — record it in `ADMIRE.md` with the V2-growth template (per `DECISIONS.md` admire-spectrum entry); the differential test classifies the divergence as expected and asserts only on non-CDC tables.
 - **Capture-instance latency.** SQL Server's CDC capture-process polls the transaction log on a configurable interval (default 5 seconds). The integration test must wait for the capture process to drain after the first deploy before issuing the redeploy, or the LSN window will conflate first-deploy and redeploy events. Mitigation: explicit `WAITFOR` plus `sys.sp_cdc_get_max_lsn()` polling in the harness step 7 → 8.

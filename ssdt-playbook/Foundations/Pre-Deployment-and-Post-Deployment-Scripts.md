@@ -183,8 +183,8 @@ These stay in the project forever. They must be idempotent — safe to run multi
 
 /*
 Migration: Backfill CreatedAt column
-Work item: AB#1234
-Author: Danny
+Work item: 1234
+Author: Alex Example
 Date: 2025-01-15
 
 This migration populates the new CreatedAt column for existing records.
@@ -250,7 +250,7 @@ These are for release-specific work. After successful production deployment, the
 One-Time Script: Release 2025.02 data corrections
 Remove after production deployment.
 
-Work item: AB#1456
+Work item: 1456
 Description: Fix incorrectly migrated phone numbers from legacy import
 */
 

@@ -56,12 +56,12 @@ docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
 Windows path, invoked from Git Bash:
 
 ```bash
-export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
+export DOTNET_ROOT="C:/Users/<you>/AppData/Local/Microsoft/dotnet"
 export DOTNET_ROLL_FORWARD=Major
 export MSYS_NO_PATHCONV=1   # REQUIRED on Git Bash for sqlpackage /Action: args AND docker-exec /opt/... paths
 ```
 
-(there, `sqlpackage` lives at `C:\Users\danny\.dotnet\tools\sqlpackage.exe`). The rest of this
+(there, `sqlpackage` lives at `%USERPROFILE%\.dotnet\tools\sqlpackage.exe`). The rest of this
 protocol — the `docker exec ... sqlcmd` line, every `/Action:` switch, every
 `/TargetDatabaseName:"$DB"` — is identical on every box.
 

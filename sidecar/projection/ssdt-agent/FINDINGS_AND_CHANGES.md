@@ -16,7 +16,7 @@ truths land and where changes to that standard are staged before they are folded
 
 ## Part 1 — The axiom: the deployment gate cannot be toggled
 
-The target pipeline is **Azure DevOps → Octopus**, which builds the SQL project to a dacpac and
+The target pipeline is **CI → deployment tool**, which builds the SQL project to a dacpac and
 publishes it. In that pipeline the publish always runs with **`BlockOnPossibleDataLoss = true`**,
 and a change cannot toggle it off for its own deploy.
 
@@ -207,7 +207,7 @@ Does DacFx's declarative difference contain a data-loss step?
          │
          ├─ YES (not this estate) → one release, gate relaxed for that publish, logged.
          │
-         └─ NO  (this estate: Azure DevOps → Octopus)
+         └─ NO  (this estate: CI → deployment tool)
                 → it cannot ship as one declarative release. Use the TWO-RELEASE pattern:
                   • Release 1: a pre-deploy (or one-time) script makes the change physically,
                     with the MODEL UNCHANGED, so DacFx generates no data-loss step. Idempotent

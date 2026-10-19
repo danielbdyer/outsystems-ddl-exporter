@@ -114,7 +114,7 @@ database, reporting the change without touching anything real:
 projection try             # preview (dry-run); nothing is committed
 ```
 
-A `bundle` flow writes SSDT files for a deployment pipeline (Octopus) — no database needed:
+A `bundle` flow writes SSDT files for a deployment pipeline — no database needed:
 
 ```bash
 projection publish         # writes ./dist/onprem-dev/...  (CREATE files + RefactorLog + scripts)

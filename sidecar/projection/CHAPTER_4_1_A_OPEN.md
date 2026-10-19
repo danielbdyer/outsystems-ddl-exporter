@@ -8,7 +8,7 @@ This is the chapter-open document per `DECISIONS 2026-05-15 — Strategic frame 
 
 ## Why this chapter
 
-Chapter 4.1.A delivers **the V2 SSDT DDL emitter** — a sibling Π whose output is per-table `.sql` files arranged exactly as V1 currently emits them at `<outDir>/Modules/<Module>/<Schema>.<Table>.sql`, plus a sibling `<outDir>/manifest.json`. The artifact is the **production-deployment surface** that V2 owns under V2-driver mode (per `V2_DRIVER.md` Phase 2): the bytes that promote into the operator's existing Azure DevOps pipeline.
+Chapter 4.1.A delivers **the V2 SSDT DDL emitter** — a sibling Π whose output is per-table `.sql` files arranged exactly as V1 currently emits them at `<outDir>/Modules/<Module>/<Schema>.<Table>.sql`, plus a sibling `<outDir>/manifest.json`. The artifact is the **production-deployment surface** that V2 owns under V2-driver mode (per `V2_DRIVER.md` Phase 2): the bytes that promote into the operator's existing CI pipeline.
 
 Pre-V2-driver-KPI codification, this chapter was framed as "schema-as-driver: V2 emits SSDT DDL diffable against V1." Post-codification (`DECISIONS 2026-05-10 — V2-driver as destination KPI`), the framing sharpens: V2 emits production SSDT DDL bytes; the canary verifies them; per-environment-per-artifact-type R6 governance flips authority from V1 to V2 once N=10 consecutive green canary runs + operator sign-off support the flip. The chapter owns the schema axis end-to-end.
 

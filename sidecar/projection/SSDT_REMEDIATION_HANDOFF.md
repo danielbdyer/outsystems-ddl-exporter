@@ -14,7 +14,7 @@ names) + data lanes, racing toward an **eject** after which there is no upstream
 review produced a decision register and a **remediation plan of record**: 17 work packages
 (WP-1 … WP-17) that close conspicuous deviations from OutSystems source intent — foreign-key
 reality, empty-string preservation, NVARCHAR fidelity, clustering capture, scalar carriage, and
-more. The manager (Danny) and the SSDT dev leads have signed off on the plan; nothing here is
+more. The manager and the SSDT dev leads have signed off on the plan; nothing here is
 speculative — it's a build queue.
 
 **The one governing idea:** every emission decision should either faithfully mirror database
@@ -105,7 +105,7 @@ it's landed, so the split is now real on the live path. From here:
   the reference). One golden re-record (every PK name changes).
 - **WP-11** — identifier-budget closure for pass-through names (fit-or-refuse).
 
-**Tier 3 — the fidelity cluster (the conspicuous deviations Danny cares most about):**
+**Tier 3 — the fidelity cluster (the conspicuous deviations the manager cares most about):**
 - **WP-3** — stop erasing `'' → NULL` (the universal sentinel in `SqlLiteral.ofRaw` / `Bulk.parseRaw`);
   preserve `N''` end-to-end (V1 parity), handle the single-space sentinel deliberately, retire the
   `EmptyTextNormalizedToNull` tolerance. Touches the codec + a tolerance retirement + goldens.

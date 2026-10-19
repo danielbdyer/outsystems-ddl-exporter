@@ -118,7 +118,7 @@ export DOTNET_ROOT=/root/.dotnet           # wherever the local dotnet root real
 export DOTNET_ROLL_FORWARD=Major           # a .NET-8 tool on a newer installed runtime
 # Git Bash only: export MSYS_NO_PATHCONV=1   (keeps /Action: + /opt/... paths intact)
 # One worked Windows box, verbatim, for contrast (Git Bash):
-#   export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
+#   export DOTNET_ROOT="C:/Users/<you>/AppData/Local/Microsoft/dotnet"
 #   export MSYS_NO_PATHCONV=1
 scripts/warm-sql.sh start                 # container projection-mssql-warm, localhost,11433
 
@@ -276,7 +276,7 @@ The **honest, corrected recipe:**
 - **EMPTY table** -> **ships as a single schema change, applied in place; a dev lead approves this.** No rows, the `IF EXISTS` is false, the RAISERROR never fires, the `ALTER COLUMN NOT NULL`
   lands. (Confirm the table is genuinely empty first.)
 - **POPULATED table (NULLs present OR zero NULLs — it makes no difference)** -> the make-mandatory
-  `ALTER` trips the row-presence guard, and this estate's pipeline (Azure DevOps → Octopus, dacpac)
+  `ALTER` trips the row-presence guard, and this estate's pipeline (CI → deployment tool, dacpac)
   **cannot relax `BlockOnPossibleDataLoss` for one deploy** (`../../FINDINGS_AND_CHANGES.md` Part 1 —
   the locked-gate axiom). So it ships as **two releases**, the pattern proven live on this branch
   (F7):

@@ -161,7 +161,7 @@ The curriculum does not run on katas alone. Four things carry it, and three of t
   precedent.
 - **Pairing.** The absence rule already pairs two senior reviewers on a principal-level change; Phase 2
   uses the same pairing as teaching — the pair reproduces together, and the more-fluent one narrates
-  the mechanism. When the principal returns, they pair with each senior on the hard ops before signing
+  the mechanism. When the principal is available, they pair with each senior on the hard ops before signing
   off alone becomes routine.
 - **The weekly rhythm.** The competence loop (`ENABLEMENT_PROGRAM.md` §5, Loop B) runs weekly: the
   certification runs, the scores land in the ledger, and the lowest-scoring skill or the weakest
@@ -184,8 +184,8 @@ real gates, and it should not be crossed early. It is reached when all of these 
 3. **Escalations are rare and genuinely irreducible.** The changes that still reach the manager or the
    principal are real design decisions, not mechanics the team should now own. If routine mechanics are
    still escalating, the team is not ready and the teaching is not done.
-4. **The principal has returned and the deputization has wound down** — the absence rule is no longer
-   the standing mode, and principal-level changes have a principal again.
+4. **The deputization has wound down** — the absence rule is no longer
+   the standing mode, and principal-level changes go to the principal.
 
 When those hold, the manager exits the routine rotation. They keep three roles: the occasional audit
 (read a sample of merged PRs against the standard), the genuine escalation (the irreducible design
@@ -236,7 +236,7 @@ in seasons rather than dates:
   reproduction certification on the common ops, moving toward Trusted. The estate ledger accrues
   precedent, and "first time on this estate" thins out.
 - **The manager-exit milestone.** When section 7's gates hold — two reviewers at Trusted, precedent in
-  the ledger, escalations rare, the principal back — the manager leaves the routine rotation.
+  the ledger, escalations rare, principal-level review in place — the manager leaves the routine rotation.
 
 The playbook's own progression expectations are the honest pace: Observer to Supported in about a
 week, the later rungs variable and part-time, because the team has a day job. Do not compress it into a

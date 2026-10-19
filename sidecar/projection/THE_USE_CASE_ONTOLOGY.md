@@ -40,7 +40,7 @@
 **This engine is a publication-and-provenance engine for an evolving relational model that
 terminates at an eject — not a live-PROD deployment engine.** It takes a logical model that changes
 over time (sourced today from an OutSystems estate), and on each sprint's demand it *publishes* that
-model's new state to on-prem SQL Server databases and to an external SSIS team that maps a legacy
+model's new state to on-prem SQL Server databases and to external SSIS maintainers who map a legacy
 database against the schema, while *accumulating* an exact, replayable provenance of every change —
 so that at the terminal **eject**, when the model stops being OutSystems-derived and becomes the
 operator's own forever, the published schema and its complete history are provably, exactly right
@@ -151,10 +151,10 @@ deferred in priority.
 | P-1 | **Dev-cloud → Dev on-prem load** | Dev model advanced / new env | once/sprint | on-prem Dev SQL Server | declarative + data load |
 | P-2 | **QA-cloud → QA on-prem load** | QA refresh after release | once/sprint | on-prem QA SQL Server | declarative + data load |
 | P-3 | **Dev → UAT with user re-key** (forward-only, no masking) | UAT sprint refresh | once/sprint | on-prem UAT SQL Server | fresh load (pre-transformed) |
-| P-4 | **SSIS-consumer schema-evolution publication** | sprint completion | once/sprint | external SSIS team | publication only |
+| P-4 | **SSIS-consumer schema-evolution publication** | sprint completion | once/sprint | external SSIS maintainers | publication only |
 | P-5 | **Idempotent redeploy** (zero-touch, CDC-silent) | CI re-trigger / retry | any time | any on-prem target | declarative; no net change |
 | P-6 | **In-place schema evolution** of a deployed DB | sprint advance (`migrate`) | once/sprint/env | any on-prem target | imperative in-place |
-| P-7 | **Terminal eject / freeze** | business decision | once, ever | operator + legacy team | publication only |
+| P-7 | **Terminal eject / freeze** | business decision | once, ever | operator + legacy-system owners | publication only |
 | P-8 | **Drift detection / remediation** | scheduled / on-demand | continuous | operator / DBA | read-only (optional remediate) |
 | P-9 | **Self-check canary** | pre-commit / CI | per-commit | the engine / CI | ephemeral DacFx |
 
@@ -168,7 +168,7 @@ deferred in priority.
   topologically loaded without FK violation; CDC-tracked tables accumulate **zero** spurious
   captures on redeploy.
 - **Lattice cells.** OutSystems Dev cloud (source) × on-prem Dev (sink).
-- **Deploy mode.** Declarative SSDT+DacFx+Octopus for schema; CDC-aware MERGE (or fresh load) for
+- **Deploy mode.** Declarative SSDT+DacFx+the deployment tool for schema; CDC-aware MERGE (or fresh load) for
   data.
 - **Chain (ordered).**
   `Snapshot` (read cloud → Catalog+Profile) → `Diff` (vs prior episode) → `Gate` (declared-loss:
@@ -226,12 +226,12 @@ deferred in priority.
 
 ### P-4 · SSIS-consumer schema-evolution publication
 
-- **Essence.** The external SSIS team maps a legacy DB against this schema and must track the model's
+- **Essence.** The external SSIS maintainers map a legacy DB against this schema and must track the model's
   evolution to keep their mappings current. The engine publishes a per-sprint changelog (schema delta
   + refactorlog + optional narrative) they consume to update their mappings.
 - **Trigger / Cadence.** End of each sprint (or on-demand when the model advances); the team needs
   the delta *since their last mapping*, not just the current state.
-- **Terminus / demand.** The SSIS team: (a) a human-readable per-sprint changelog (what changed, in
+- **Terminus / demand.** The SSIS maintainers: (a) a human-readable per-sprint changelog (what changed, in
   what direction); (b) a machine-readable delta (refactorlog for renames, full state for new/changed
   objects); (c) provenance — which sprint a delta corresponds to, and the ability to reconstruct any
   prior state. The eject (P-7) is this chain's endpoint, so every sprint must accumulate faithfully
@@ -242,11 +242,11 @@ deferred in priority.
 - **Chain.**
   `Snapshot` (current Catalog) → `Diff` (vs prior episode loaded from `LifecycleStore`) →
   `Declare(-loss)` (every Removed surfaced as an explicit drop) → `Rename` (refactorlog entries — the
-  SSIS team cannot infer a rename from CREATE files; the refactorlog **is** the rename signal) →
+  SSIS maintainers cannot infer a rename from CREATE files; the refactorlog **is** the rename signal) →
   `Reshape` (ALTER-lens preview = the human-readable shape diff) → `Add` → `Accumulate` (append +
   dedup refactorlog by `OperationKey`; thread real episode time; `reconstructLatest` from genesis
   still reproduces current state) → `Publish` (CREATE bundle + accumulated refactorlog +
-  ChangeManifest + derived changelog) → `Record` (durable episode — the SSIS team's next mapping
+  ChangeManifest + derived changelog) → `Record` (durable episode — the SSIS maintainers' next mapping
   starts from this Diff).
 - **Faithfulness stakes.** *Must hold:* the refactorlog never loses or duplicates entries (P-PROV);
   `reconstructLatest` from genesis reproduces current state; renames route through the refactorlog
@@ -259,7 +259,7 @@ deferred in priority.
 
 - **Essence.** The same model version re-deployed to an already-correct target produces **zero** CDC
   captures and **zero** schema ALTERs. The engine's highest-stakes single guarantee.
-- **Trigger / Cadence.** A pipeline re-run with no model change (CI re-trigger, Octopus retry,
+- **Trigger / Cadence.** A pipeline re-run with no model change (CI re-trigger, deployment-tool retry,
   operator re-run); any time, potentially many times per sprint per environment.
 - **Terminus / demand.** Any on-prem target with a prior deploy: zero spurious CDC rows (CDC-dependent
   features depend on this).
@@ -308,12 +308,12 @@ deferred in priority.
 ### P-7 · Terminal eject / freeze
 
 - **Essence.** The model stops being OutSystems-derived; OutSystems will no longer regenerate it. The
-  frozen schema and its complete provenance are handed to the operator + legacy team as a
+  frozen schema and its complete provenance are handed to the operator + legacy-system owners as a
   self-contained, permanently frozen artifact. After the eject there is **no upstream** — the
   provenance must be exactly right *forever*.
 - **Trigger / Cadence.** A business decision to exit OutSystems for this schema; once, ever;
   irreversible.
-- **Terminus / demand.** The operator + SSIS/legacy team: (a) the frozen SSDT CREATE files; (b) the
+- **Terminus / demand.** The operator + SSIS maintainers and legacy-system owners: (a) the frozen SSDT CREATE files; (b) the
   complete accumulated refactorlog (every rename since genesis); (c) the episode chain from genesis
   to freeze (`LifecycleStore`) so any future team can reconstruct any prior state; (d) explicit
   markers that the schema is operator-owned and OutSystems-independent.
@@ -331,7 +331,7 @@ deferred in priority.
   (`reconstructLatest` from genesis = terminal state).
 - **Faithfulness stakes.** **P-PROV is the load-bearing law** — append-only, never-deleted,
   episode-timestamped, replay-correct from genesis; this cannot be partially right. *Open design
-  fork (named):* the **eject-deliverable decision** — *append-forever* (the legacy team owns the
+  fork (named):* the **eject-deliverable decision** — *append-forever* (the legacy-system owners own the
   whole provenance chain) vs *collapsible at freeze* (the frozen state alone). The discriminating
   condition: **does any downstream system ever DacFx-publish against an *intermediate* (pre-freeze)
   state?** If yes, append-forever is required (the intermediate refactorlog entries are the only
@@ -425,7 +425,7 @@ thread only got partial):
 2. **Plane** — schema / data / identity / provenance. (Schema and data are the same shape one plane
    apart; identity and provenance are the other two.)
 3. **Deploy mode** — declarative (SSDT CREATE + refactorlog + pre/post → DacFx computes the delta →
-   Octopus publishes) · imperative in-place executor (the lens/dev path) · fresh wipe-and-load
+   the deployment tool publishes) · imperative in-place executor (the lens/dev path) · fresh wipe-and-load
    (always-correct fallback).
 4. **Temporal phase** — genesis → steady-state (snapshot N → N+1) → eject/freeze. The
    snapshot-per-emission discipline and the diff-between-two-snapshots are load-bearing.
@@ -448,7 +448,7 @@ thread only got partial):
 - **Schema plan → delegated.** The engine emits the *declarative* artifact (adjusted `CREATE TABLE` +
   the refactorlog); **DacFx computes the schema ALTER at publish.** The imperative schema ALTER
   (`SchemaMigrationEmitter`) is **not** the deploy artifact — it is a *lens*: a preview (what this
-  sprint touches, for the PR and the SSIS team), a verification check (does DacFx's plan match the
+  sprint touches, for the PR and the SSIS maintainers), a verification check (does DacFx's plan match the
   engine's prediction?), and an input to data-script generation and CDC measurement.
 - **Data plan → engine-owned.** DacFx does not move data; the engine emits the minimal data movement
   as pre/post-deployment scripts, measured by CDC. *This is the engine's hardest-owned correctness*:
@@ -720,7 +720,7 @@ surrogate / tolerance columns; (d) the **gated DELETE** clause.
 | **Declare(-loss)** | operator passes `--allow-drops` / declares a scope | turns refuse → permit | the declaration is recorded in the ChangeManifest | the default is refusal; nothing destructive proceeds without an explicit declaration |
 | **Gate** | a pre-flight probe (connection / permission / data-compat / CDC / scope) | refuse-first; named `Error` | the refusal precedes any mutation | P-GATE: every execution-time failure has a pre-flight that refuses *first* |
 | **Measure** | read `cdc.<table>_CT` count / per-channel move count | the ruler of minimality | `‖emit(δ)‖ = ‖δ‖` (isometry) | the CDC count *is* the norm — minimal ⟺ isometric emission |
-| **Publish** | emit CREATE+refactorlog+pre/post → DacFx → Octopus; or the consumer changelog | the artifact reaches its terminus | the generated script reviewed pre-prod (sp_rename, never DROP+ADD) | the deploy artifact is *declarative + refactorlog + data scripts*, never the imperative ALTER |
+| **Publish** | emit CREATE+refactorlog+pre/post → DacFx → the deployment tool; or the consumer changelog | the artifact reaches its terminus | the generated script reviewed pre-prod (sp_rename, never DROP+ADD) | the deploy artifact is *declarative + refactorlog + data scripts*, never the imperative ALTER |
 | **Record** | write the run as a durable `Episode` into the `LifecycleStore` | the keystone of provenance | the next sprint's Diff loads this prior; FTC reproduces the state | recorded only after Verify — a recorded-but-broken episode corrupts the chain |
 | **Verify** | read-back, assert `Ingest∘Project = id` modulo named tolerances | the canary | PhysicalSchema diff empty; B' reproduces B | equality is *modulo named tolerances*, never raw — a leak is a spurious ALTER |
 | **Reconcile** | discover the source→sink correspondence by a named rule (email; surrogate map) | faithful-by-rule else fail-loud | the matching report; `validate-user-map` | the correspondence is by **business key**, never the raw surrogate |
@@ -731,7 +731,7 @@ surrogate / tolerance columns; (d) the **gated DELETE** clause.
 How each move realizes under the three modes. The granular-vs-coarse intricacy (declared-loss vs
 DacFx's global levers) is held in §5.
 
-| Move | Declarative (SSDT+DacFx+Octopus) | Imperative in-place (lens / `migrate --execute`) | Fresh wipe-and-load |
+| Move | Declarative (SSDT+DacFx+the deployment tool) | Imperative in-place (lens / `migrate --execute`) | Fresh wipe-and-load |
 |---|---|---|---|
 | **Add** | adjusted `CREATE` → DacFx `ADD` | `ALTER … ADD` (lens preview; live executor) | full `CREATE` (empty target → all adds) |
 | **Remove** | file removed → DacFx `DROP` (gated by `DropObjectsNotInSource`=False in prod + `BlockOnPossibleDataLoss`) | `DROP` only under `--allow-drops`, refused first by default | N/A (target is empty) |

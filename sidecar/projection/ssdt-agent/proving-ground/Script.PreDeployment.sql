@@ -42,7 +42,7 @@
 
   So this backfill is NECESSARY but NOT SUFFICIENT on a populated table. Run it, re-run the NULL
   probe to PROVE 0 NULLs remain, but it does NOT earn a clean NOT NULL in the same release. This
-  estate (Azure DevOps -> Octopus) cannot relax BlockOnPossibleDataLoss, so the proven remedy on a
+  estate (CI -> deployment tool) cannot relax BlockOnPossibleDataLoss, so the proven remedy on a
   populated table is the TWO-RELEASE:
     Release 1 -- keep the MODEL at NULL and do the work in this pre-deploy: backfill the NULLs, then
         run the ALTER ... NOT NULL yourself. Because the model still declares NULL, DacFx generates

@@ -32,7 +32,7 @@ decimal — "make Total an integer". No work item supplied — attach one before
 
 ## How it ships
 - Several releases, because a single declarative type change on a populated table is refused: DacFx
-  generates one `ALTER COLUMN`, and this pipeline (Azure DevOps → Octopus) publishes with the data-loss
+  generates one `ALTER COLUMN`, and this pipeline (CI → deployment tool) publishes with the data-loss
   guard `BlockOnPossibleDataLoss` on, which blocks it on row presence.
 - **Release A** — add `TotalWhole INT NULL`. A new nullable column is additive: DacFx generates a plain
   `ADD` with no data-loss step, so it ships in one release.

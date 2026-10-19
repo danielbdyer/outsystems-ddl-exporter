@@ -98,7 +98,7 @@
 - **Refresh OutSystems entities** → [OutSystems Workflow](./OutSystems-DB-Change-Workflow.md#step-4-refresh-integration-studio)
 - **Review a database PR** → [Dev Lead Checklist](./Dev-Lead-Weekend-Briefing.md#pr-review-checklist)
 - **Fix a build error** → [Troubleshooting](./Monday-Morning-Survival-Guide.md#my-build-failed)
-- **Something broke in production** → Slack #database-emergency, ping @db-leads
+- **Something broke in production** → the team's emergency chat channel, ping the database leads
 
 ---
 
@@ -154,8 +154,8 @@ External databases now managed through SSDT projects and DACPAC deployments (not
 **Week 2+**: Start [Learning Path](./Learning-Path-Condensed.md) to build understanding.
 
 **Questions?**: 
-- Slack #database-help
-- Tag @dev-leads for urgent issues
+- the team's chat channel
+- Ask the dev leads for urgent issues
 - Office hours: Tuesday/Thursday 2-3 PM with DB team
 
 ---
@@ -164,10 +164,10 @@ External databases now managed through SSDT projects and DACPAC deployments (not
 
 | Question Type | Ask | Where |
 |--------------|-----|-------|
-| How do I...? | #database-help | Slack |
-| Urgent/Blocking | @dev-leads | Slack DM or #database-help |
-| Production Issue | @db-on-call | #database-emergency |
-| OutSystems Integration | @outsystems-leads | #outsystems-dev |
+| How do I...? | the team's chat channel | chat |
+| Urgent/Blocking | the dev leads | chat DM or the team's chat channel |
+| Production Issue | the on-call DBA | the team's emergency chat channel |
+| OutSystems Integration | the OutSystems leads | the team's chat channel |
 | PR Review | Your dev lead | GitHub PR |
 
 ---
@@ -223,7 +223,7 @@ Visual Studio 2022
 **Verify it opened**:
 - Solution Explorer shows "MyDatabase" project
 - See folders: Tables, Views, Stored Procedures
-- If not, Slack #database-help with screenshot
+- If not, ask in the team's chat channel with a screenshot
 
 #### 2. Find the Table (1 min)
 ```
@@ -277,7 +277,7 @@ Or: Ctrl+Shift+B
 **If Build Failed**:
 - Check syntax (missing comma, typo?)
 - Error says "SQL71501: Unresolved reference"? → You referenced something not in project
-- Still stuck? Copy error to #database-help
+- Still stuck? Copy error to the team's chat channel
 
 #### 5. Commit to Git (3 min)
 ```
@@ -297,7 +297,7 @@ Team Explorer > Sync
 → Click "Push"
 
 Then:
-→ Go to GitHub/Azure DevOps
+→ Go to the git host
 → Create Pull Request
 → Target branch: main
 → Title: "Add PhoneNumber to Customers"
@@ -627,7 +627,7 @@ git pull origin main
 
 ## Resources
 
-- **Slack**: #database-help (questions), #database-emergency (outages)
+- **Chat**: the team's chat channel (questions), its emergency channel (outages)
 - **Office Hours**: Tuesday/Thursday 2-3 PM with DB team
 - **Full Docs**: [All guides and playbooks](./START-HERE.md)
 - **OutSystems Workflow**: [Detailed integration steps](./OutSystems-DB-Change-Workflow.md)
@@ -636,7 +636,7 @@ git pull origin main
 ---
 
 **Last Updated**: [This Weekend]  
-**Maintained By**: Database Platform Team
+**Maintained By**: the database maintainers
 ```
 
 **Why This Works**:
@@ -716,7 +716,7 @@ File → Open
 
 **Which extension?**
 - Usually named: `YourApp_Database` or `ExternalDB_Integration`
-- Ask in #outsystems-dev if unsure
+- Ask in the team's chat channel if unsure
 - **One extension per external database connection**
 
 ---
@@ -739,7 +739,7 @@ Menu: Connect → Database
 **Verify connection**:
 - Left sidebar shows "Tables" folder
 - Can expand to see table list
-- If not, check connection settings or Slack #outsystems-dev
+- If not, check connection settings or the team's chat channel
 
 ---
 
@@ -1008,7 +1008,7 @@ OutSystems app breaks with error:
 **Fix**: 
 - List all extensions using the changed table
 - Refresh and publish EACH ONE
-- Ask in #outsystems-dev: "Which extensions use Customers table?"
+- Ask in the team's chat channel: "Which extensions use Customers table?"
 
 ---
 
@@ -1022,16 +1022,16 @@ OutSystems app breaks with error:
 ### Test Environment
 - **Coordination**: Check if QA testing before you deploy
 - **Timing**: Coordinate DB + OutSystems deployment (both or neither)
-- **Communication**: Post in #qa-team when deploying
+- **Communication**: Post in the team's chat channel when deploying
 
 ### Production Environment
 - **After hours**: Deploy during maintenance window
-- **Approval required**: Change Advisory Board (CAB) approval
+- **Approval required**: change-approval gate
 - **Rollback plan**: Document how to undo if issues
 - **Monitoring**: Watch for errors after deployment
 - **Communication**: 
-  - Pre-deployment: Announce in #general
-  - Post-deployment: Confirm success in #general
+  - Pre-deployment: Announce in the team's chat channel
+  - Post-deployment: Confirm success in the team's chat channel
 
 ---
 
@@ -1079,7 +1079,7 @@ Open SSMS (SQL Server Management Studio)
   - No: Issue is network/permissions
 ```
 
-**Fix**: Slack #database-help with error message screenshot
+**Fix**: post in the team's chat channel with the error message screenshot
 
 ---
 
@@ -1178,7 +1178,7 @@ Ctrl+R - Refresh current table
 
 ## Communication Template
 
-**When deploying to Test/Prod**, post in relevant Slack channel:
+**When deploying to Test/Prod**, post in the relevant team chat channel:
 
 ```
 🗄️ Database Deployment - [Environment]
@@ -1201,7 +1201,7 @@ Questions? Reply here or DM me.
 ---
 
 **Last Updated**: [This Weekend]  
-**Maintained By**: Database Platform Team & OutSystems Team
+**Maintained By**: the database maintainers & the OutSystems maintainers
 ```
 
 **Why This Works**:
@@ -1281,10 +1281,10 @@ Developer needs schema change
 - **After Hours**: Not expected (unless production emergency)
 
 ### Unblocking Developers (5-10 min per question)
-- **Channel**: #database-help Slack channel
+- **Channel**: the team's chat channel
 - **Volume**: Expect 10-20 questions per day Week 1
 - **Goal**: Answer quickly so they don't stay blocked
-- **Escalate**: To @db-platform-team if you don't know answer
+- **Escalate**: To the database maintainers if you don't know answer
 
 ### Production Oversight
 - **Approvals**: All Prod deployments need your sign-off
@@ -1324,7 +1324,7 @@ If failed:
 #### ✅ 2. Descriptive Title & Description
 ```
 ❌ Bad: "Update table"
-✅ Good: "Add PhoneNumber column to Customers for feature ABC-123"
+✅ Good: "Add PhoneNumber column to Customers for work item 123"
 
 PR should answer:
 - What changed?
@@ -1520,7 +1520,7 @@ WHEN NOT MATCHED THEN INSERT VALUES (Source.StatusId, Source.StatusName);
 DO NOT MERGE
 Comment: "Security issue: Remove sensitive data. Use SQLCMD 
 variables or environment config instead."
-Escalate to security team
+Escalate to whoever owns security
 ```
 
 #### ✅ 10. Breaking Changes Documented
@@ -1680,7 +1680,7 @@ Why:
 - Creates audit trail
 - Teaches good habits
 
-Emergency exception: Production is down, WITH phone/Slack coordination.
+Emergency exception: Production is down, WITH phone/chat coordination.
 ```
 
 ---
@@ -1692,7 +1692,7 @@ Emergency exception: Production is down, WITH phone/Slack coordination.
 Approval: NOT NEEDED
 Who Can Deploy: Any developer
 When: Anytime
-Communication: None required (optional Slack post)
+Communication: None required (optional chat post)
 Rollback: Developer handles
 ```
 
@@ -1701,7 +1701,7 @@ Rollback: Developer handles
 Approval: Dev Lead (you)
 Who Can Deploy: Developers with your OK
 When: Business hours preferred
-Communication: Post in #qa-team before deploying
+Communication: Post in the team's chat channel before deploying
 Rollback: Dev Lead coordinates
 
 Before approving:
@@ -1715,7 +1715,7 @@ Before approving:
 Approval: Dev Lead + VP Engineering
 Who Can Deploy: Dev Leads only (or DBA)
 When: After hours only (7pm-7am) or weekends
-Communication: Announce in #general 24 hours before
+Communication: Announce in the team's chat channel 24 hours before
 
 Approval checklist:
 ☐ Deployed and tested in Dev ✅
@@ -1725,14 +1725,14 @@ Approval checklist:
 ☐ OutSystems apps updated and tested ✅
 ☐ Rollback plan documented ✅
 ☐ Dev lead available during deployment window ✅
-☐ CAB (Change Advisory Board) approval ✅
+☐ change-approval gate ✅
 ```
 
 ---
 
 ## Part 6: Escalation Protocols
 
-### When to Escalate to @db-platform-team
+### When to Escalate to the database maintainers
 
 **You should escalate**:
 ```
@@ -1760,9 +1760,9 @@ Approval checklist:
 
 ### How to Escalate
 
-**Slack**:
+**Chat**:
 ```
-@db-platform-team - URGENT
+the database maintainers - URGENT
 
 Issue: [Brief description]
 Environment: [Dev/Test/Prod]
@@ -1776,10 +1776,10 @@ Need: [Specific help needed]
 **For Production Issues**:
 ```
 Call the on-call phone: [NUMBER]
-Post in #database-emergency
-Page @db-on-call in Slack
+Post in the team's emergency chat channel
+Page the on-call DBA in chat
 
-Don't wait for response - call AND Slack
+Don't wait for response - call AND chat
 ```
 
 ---
@@ -1791,7 +1791,7 @@ Don't wait for response - call AND Slack
 7:00 AM  - Review this briefing ✅
 9:00 AM  - Team standup
 9:30 AM  - YOU present: DB workflow demo (15 min) ← CRITICAL
-10:00 AM - Answer questions in #database-help
+10:00 AM - Answer questions in the team's chat channel
 All Day  - Watch for PRs, review quickly
 5:00 PM  - Debrief with other dev leads: What issues came up?
 ```
@@ -1800,8 +1800,8 @@ All Day  - Watch for PRs, review quickly
 ```
 Morning  - Check overnight deployments (if any)
 All Day  - PR reviews (expect 3-5/day, decreasing over week)
-All Day  - #database-help monitoring (expect 10-20 questions/day)
-3:00 PM  - Quick sync with @db-platform-team (daily this week)
+All Day  - monitoring the team's chat channel (expect 10-20 questions/day)
+3:00 PM  - Quick sync with the database maintainers (daily this week)
 5:00 PM  - Hand off any open issues to next dev lead
 ```
 
@@ -1893,7 +1893,7 @@ Verification:
 - Apps tested ✅
 - Performance normal ✅
 
-Monitoring for next 24 hours. Report any issues to #database-help.
+Monitoring for next 24 hours. Report any issues to the team's chat channel.
 ```
 
 ---
@@ -2022,9 +2022,9 @@ NOT expecting:
 - [Playbooks](./Playbooks/) - Specific scenarios
 
 ### Support
-- **Slack**: #database-help (general), #dev-leads (peer support)
-- **Daily Sync**: 3 PM with @db-platform-team (this week only)
-- **On-Call**: @db-on-call for production emergencies
+- **Chat**: the team's chat channel (general), the dev leads' channel (peer support)
+- **Daily Sync**: 3 PM with the database maintainers (this week only)
+- **On-Call**: the on-call DBA for production emergencies
 - **Phone**: [ON-CALL NUMBER] for urgent issues
 
 ---
@@ -2040,9 +2040,9 @@ Before Monday 9 AM:
 - [ ] Test: Deploy to Dev (so you've done it once)
 - [ ] Prepare your Monday 9:30 AM demo
 - [ ] Verify you have access to all needed tools (VS, SSMS, Integration Studio)
-- [ ] Verify you can see PRs in GitHub/Azure DevOps
-- [ ] Join #database-help Slack channel
-- [ ] Add @db-platform-team and @db-on-call to your Slack favorites
+- [ ] Verify you can see PRs in the git host
+- [ ] Join the team's chat channel
+- [ ] Add the database maintainers and the on-call DBA to your chat favorites
 - [ ] Have on-call phone number saved
 
 Optional but helpful:
@@ -2058,12 +2058,12 @@ They'll adapt quickly. Your job is just to keep things moving smoothly this week
 
 We're all in this together.
 
-Questions this weekend? Slack @db-platform-team or call [NUMBER].
+Questions this weekend? Ask the database maintainers in chat or call [NUMBER].
 
 ---
 
 **Last Updated**: [This Weekend]  
-**Maintained By**: Database Platform Team
+**Maintained By**: the database maintainers
 ```
 
 **Why This Works**:
@@ -2515,16 +2515,16 @@ Use this to avoid all 10 anti-patterns:
 ---
 
 **Questions?**
-- Slack: #database-help
+- Chat: the team's chat channel
 - Dev Lead: Your dev lead for guidance
-- Emergency: @db-on-call
+- Emergency: the on-call DBA
 
 **Remember**: Mistakes happen. The goal is to learn and prevent them from reaching production.
 
 ---
 
 **Last Updated**: [This Weekend]  
-**Maintained By**: Database Platform Team
+**Maintained By**: the database maintainers
 ```
 
 **Why This Works**:

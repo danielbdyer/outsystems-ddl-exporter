@@ -230,7 +230,7 @@ question a person can answer.
 |---|---|---|
 | **Declared‑loss** (a drop / scoped delete) | `The IX_Order_Stale index will be dropped. No data is lost, but the drop is not auto‑reversible.` | `Approve the removal, or halt.` |
 | **Validate‑user‑map** (re‑key, pre‑write) | `User remapping cannot run until every identified user is mapped across both environments. 3 of 142 remain.` | `Map the 3 users, assign the system user, or halt.` |
-| **Declare‑every‑drop** (publication) | `2 objects the SSIS team depends on are dropped in this changelog.` | `Confirm each, so the change replays cleanly downstream.` |
+| **Declare‑every‑drop** (publication) | `2 objects the SSIS maintainers depends on are dropped in this changelog.` | `Confirm each, so the change replays cleanly downstream.` |
 | **Intent‑filter‑complete** (idempotent) | `14 real changes. 3 differences are excluded by named tolerances; each is listed.` | `Review the 3, or apply.` |
 | **Data‑compat** (narrowing) | `The Status column will be narrowed to 20 characters. 4 rows currently exceed that length.` | `Trim the 4 rows, widen the target, or halt.` |
 | **Provenance‑completeness** (eject) | `The history has one gap: run 7 was never recorded.` | `Record it, or freeze with the gap noted.` |
@@ -274,7 +274,7 @@ are illustrative.
 |---|---|---|
 | **P‑1/2 · Load to on‑prem** | `Ready to load Dev to on‑prem.` | curious → clear → loaded → settled |
 | **P‑3 · UAT with re‑key** | `Ready, once 3 users are mapped.` | careful → guided → mapped → confident |
-| **P‑4 · SSIS publication** | `The delta for the SSIS team, replayable from genesis.` | responsible → precise → handed off |
+| **P‑4 · SSIS publication** | `The delta for the SSIS maintainers, replayable from genesis.` | responsible → precise → handed off |
 | **P‑5 · Idempotent redeploy** | `Nothing to apply. The database is provably unchanged.` | reassured (the confirmed‑idempotent state) |
 | **P‑6 · In‑place migrate** | `14 changes, 1 to confirm.` | alert → consenting → verified → trusting |
 | **P‑7 · Eject / freeze** | `Frozen. Provenance complete from genesis to freeze, verified.` | deliberate → certain → terminal |

@@ -232,7 +232,7 @@ FK to the platform user table therefore has **dangling references** under V2 unl
 table is separately populated. **Nuance:** V1's bulk user-seed is environment-blind; V2's design
 (explicit `transfer --reconcile <UserTable>:<emailColumn>`) is *more correct* for a multi-env
 cutover but is **near-inert today** (the matching-strategy config was removed). State which path
-the org blesses and wire it before relying on user FKs.
+the team blesses and wire it before relying on user FKs.
 
 ### M-5 — Two `.sqlproj` build/deploy hazards
 *(personally verified V-3 (G5b) + empirical G5a; `bundle-g5a/g5b`, `sqlproj-C1/C2`)*

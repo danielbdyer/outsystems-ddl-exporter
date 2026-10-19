@@ -88,7 +88,7 @@ Several of the reviewers' concerns dissolve under harder thinking. The following
 
 ### R1. "Cutover is V1's job — what does V2 uniquely add?" (Appendix A §2, Appendix C §1)
 
-**Resolution.** V2's load-bearing differentiator is **the sibling chorus + verification**, not displacement of any single V1 surface. V2 emits multiple synchronized projections from a single Catalog × Policy × Profile triple — SSDT DDL (production deployment, promoted to Azure DevOps integration test), CDC-aware data inserts (`StaticSeeds` / `MigrationDependencies` / `Bootstrap`), DACPAC (fast iteration / baselining), refactor log, distributions. V1 hand-curates one surface; V2 emits the chorus and cross-validates it via T11. Two cutover demands explicitly require capabilities that V1's hand-curated SQL scripts cannot reach by incremental work:
+**Resolution.** V2's load-bearing differentiator is **the sibling chorus + verification**, not displacement of any single V1 surface. V2 emits multiple synchronized projections from a single Catalog × Policy × Profile triple — SSDT DDL (production deployment, promoted to the CI integration test), CDC-aware data inserts (`StaticSeeds` / `MigrationDependencies` / `Bootstrap`), DACPAC (fast iteration / baselining), refactor log, distributions. V1 hand-curates one surface; V2 emits the chorus and cross-validates it via T11. Two cutover demands explicitly require capabilities that V1's hand-curated SQL scripts cannot reach by incremental work:
 
 - **Refactor.log records.** SQL scripts cannot communicate "this column was renamed" to a target database. Every redeploy of a renamed column under a script DROPs and CREATEs — losing data and triggering CDC noise. The refactor.log mechanism is the SSDT-native way to carry rename intent so subsequent deploys ALTER instead.
 - **Idempotent diff-deploy across four environments on a repeatable cadence.** SQL scripts must be hand-ordered or templatized per environment; declarative artifacts (DACPAC and SSDT-with-refactor-log) let DacFx compute the diff against the current target state and only issue the deltas. This is what makes "schema and data evolve continuously; the extraction gets re-run regularly" tractable across four environments without bespoke per-environment work.
@@ -217,7 +217,7 @@ The document repeatedly leans on rhetoric that cannot be observed to fail:
 
 ### A.2. Forcing-function reality check — the cutover is V1's problem
 
-Per VISION.md line 19, V1 already does: "extraction; specializations; opinionated formatting; topologically-sorted two-phase inserts; user FK reflow between environments; profile interventions on the data; standalone domain record injection for legacy migration teams; environment promotion via Azure DevOps PRs."
+Per VISION.md line 19, V1 already does: "extraction; specializations; opinionated formatting; topologically-sorted two-phase inserts; user FK reflow between environments; profile interventions on the data; standalone domain record injection for legacy migration teams; environment promotion via pull requests."
 
 That is *the cutover*. Every load-bearing capability the cutover requires is named as already-shipping in V1 (78K LOC, vs. V2's 7K LOC of pure core with adapters and emitters still in flight). The vision concedes this, then pivots: "V1's correctness is implicit... V2 makes the correctness explicit, verifiable."
 
@@ -360,7 +360,7 @@ But there is no *rollback artifact*, no "diff the partial deploy and emit a reme
 
 V2 is "additive" (README.md:6-8, "V1 continues to operate, V2 is additive, every commit cherry-pick safe"). ADMIRE.md tracks per-component status (admiring → extracting → extracted) but **VISION.md and the canonical docs do not specify which system is canonical for which artifact at which moment** during the cutover. The phrase "V1 sunset" is post-cutover trajectory (VISION.md:117), not a cutover-window governance rule.
 
-Concrete split-brain risk: V1 emits a DACPAC, V2 emits a DACPAC, they disagree (different identity through the JSON-projection-lossiness path; different rename handling; different defaults), Azure DevOps merges whichever PR lands first. Nothing in V2's surfaces names "V1 ships X for the cutover; V2 ships Y; here is the override rule." The closed-DU-rigorous-extraction discipline ADMIRE tracks is *per-component algebraic placement*, not *per-artifact-type cutover ownership*.
+Concrete split-brain risk: V1 emits a DACPAC, V2 emits a DACPAC, they disagree (different identity through the JSON-projection-lossiness path; different rename handling; different defaults), the git host merges whichever PR lands first. Nothing in V2's surfaces names "V1 ships X for the cutover; V2 ships Y; here is the override rule." The closed-DU-rigorous-extraction discipline ADMIRE tracks is *per-component algebraic placement*, not *per-artifact-type cutover ownership*.
 
 This is the most under-specified risk in the vision relative to the operational scenario.
 
@@ -534,7 +534,7 @@ Chapter 4:
 
 VISION names no fallback. Propose:
 
-**V1-only path**: V1's existing extraction + topologically-sorted two-phase inserts + Azure DevOps PR pipeline runs the cutover. Trust mechanism is "implicit correctness verified by experience" (per VISION §"What V1 already does"). Loss: no canary; every emission is hand-verified; cross-version identity held by V1's existing SSKey discipline rather than V2's UUIDv5 + RefactorLog.
+**V1-only path**: V1's existing extraction + topologically-sorted two-phase inserts + the CI pipeline runs the cutover. Trust mechanism is "implicit correctness verified by experience" (per VISION §"What V1 already does"). Loss: no canary; every emission is hand-verified; cross-version identity held by V1's existing SSKey discipline rather than V2's UUIDv5 + RefactorLog.
 
 **V2-augmented path**: V1 still drives the cutover pipeline; V2 runs the canary as a verification-only sidecar — emit + deploy-ephemeral + read-back + compare-to-V1-output. If canary disagrees with V1's emission, the PR blocks. V2 owns no production write path; V2 owns the verification surface only. Lower risk than V2-as-driver; preserves V1's empirical trust while V2's algebra earns its keep on the verification axis.
 
@@ -773,7 +773,7 @@ When DacpacEmitter lands, an alternative `DacFxReadSide` may earn its place; the
 - The emitted SSDT directory (`SsdtEmitter.EmitAsync` → `<outDir>/Modules/...`, manifest at `<outDir>/manifest.json`). Path is operator-known via `BuildSsdtVerbOptions`.
 - `osm_model.json` from `SnapshotJsonBuilder` (already a `--snapshot` output of `extract-model` / `build-ssdt`).
 
-**No V1 code changes.** The Azure DevOps pipeline gains one step after `build-ssdt`: invoke `Projection.Pipeline verify --emitted <outDir> --snapshot <osm_model.json>`. If snapshot wasn't persisted in a given pipeline lane, add `--persist-snapshot` to V1 — that's the *only* V1 hook, and even that is optional (re-extract from DB in the canary if needed, since `SqlClientOutsystemsMetadataReader` is library-callable).
+**No V1 code changes.** The CI pipeline gains one step after `build-ssdt`: invoke `Projection.Pipeline verify --emitted <outDir> --snapshot <osm_model.json>`. If snapshot wasn't persisted in a given pipeline lane, add `--persist-snapshot` to V1 — that's the *only* V1 hook, and even that is optional (re-extract from DB in the canary if needed, since `SqlClientOutsystemsMetadataReader` is library-callable).
 
 ### F.4. Comparator
 

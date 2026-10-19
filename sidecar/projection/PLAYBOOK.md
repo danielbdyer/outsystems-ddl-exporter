@@ -857,7 +857,7 @@ Beyond the slice list each pre-scope provides — the *why* and *how to think ab
 
 ### Chapter 4.1.A — SSDT DDL emitter + Manifest
 
-**Strategic frame:** The production-deployment surface. Promoted into Azure DevOps integration-test lane. T11 cross-validates against DACPAC.
+**Strategic frame:** The production-deployment surface. Promoted into CI integration-test lane. T11 cross-validates against DACPAC.
 
 **Sequencing:** 10 slices in `CHAPTER_4_PRESCOPE_SSDT_DDL_EMITTER.md`. Most are inherited V1 conventions (per-table, naming, ordering, manifest). Slices 7-8 are gated on chapter 3.2 (IR widening for IsIdentity / Default / Description).
 

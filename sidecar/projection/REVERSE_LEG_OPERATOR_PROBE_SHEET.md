@@ -15,7 +15,7 @@
 > **WRITE-PROBES** are explicitly transactional and roll back — *nothing persists*.
 >
 > **There are two *classes* of TARGET** (and the engine must interact with each differently — see
-> `DATABASE_ARCHETYPES.md`): a **full-rights** database (on-prem SQL Server the migration team owns —
+> `DATABASE_ARCHETYPES.md`): a **full-rights** database (on-prem SQL Server the migration engineers own —
 > DDL + DML, receives the emitted schema and a copy of the migrated data) and a **managed-DML** database
 > (a platform-managed sink — DML-only, no DDL/`ALTER`/`IDENTITY_INSERT`). Parts A–D are
 > **archetype-agnostic** (they probe schema/data/capability shape regardless of class). **Part E**

@@ -103,7 +103,7 @@ This is where the Rosetta Stone, "I Used To / Now I", and "Feels Like / Actually
 
 **5.1 File Structure and Naming**
 - Standard layout
-- *Worked example: Tour of our actual project*
+- *Worked example: Tour of an estate's SSDT project*
 
 **5.2 What Lives Where**
 - Tables, views, procs, scripts
@@ -288,7 +288,7 @@ This is where the Rosetta Stone, "I Used To / Now I", and "Feels Like / Actually
 **12.4 UAT Strategy**
 - Communicate gaps
 - Gap logging
-- Client-facing messaging template
+- End-user messaging template
 
 **12.5 Production Strategy**
 - Dual-instance seamless transitions
@@ -693,20 +693,20 @@ This is where the Rosetta Stone, "I Used To / Now I", and "Feels Like / Actually
 ---
 
 ### 25. Escalation Paths *(was 23)*
-*Status: Not written — needs org-specific details*
+*Status: Not written — needs team-specific details*
 
 **25.1 When to Escalate**
 - Tier logic recap
 - Judgment call signals
 
 **25.2 How to Escalate**
-- Channels (Slack, PR, synchronous)
+- Channels (chat, PR, synchronous)
 - What to include
 
 **25.3 Who Owns What**
 - Dev lead roster
 - Principal coverage areas
-- Danny's role
+- The playbook owner's role
 
 ---
 
@@ -806,8 +806,8 @@ This is where the Rosetta Stone, "I Used To / Now I", and "Feels Like / Actually
 - SQL Server docs
 
 **31.2 Internal Links**
-- Azure DevOps project
-- Slack channels
+- Estate repository
+- team chat channels
 - Team roster
 
 **31.3 Training Materials**

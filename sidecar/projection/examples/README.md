@@ -68,15 +68,15 @@ fallback (cutover safety; live wins per `ModelResolution.chooseOrigin`).
 | `cloud-dev` | `direct` | `physical` | `managed-dml` | *(none)* | the development cloud cell — the **model source** (`model.env`) and the readiness **agreed shape** (the `readiness.schema` default) |
 | `cloud-qa` | `direct` | `physical` | `managed-dml` | `data` | the QA cloud cell — the `golden` **peer source** + the `synth` target |
 | `cloud-uat` | `direct` | `physical` | `managed-dml` | `data` | the managed-production cloud **sink** — cloud insertion (R6, DML-only); `golden` + `reverse` land here |
-| `on-prem-dev` | `bundle` → `./dist/on-prem-dev` (+ `conn`) | `logical` | `full-rights` | `schema+data` | on-prem SSDT delivery target (Octopus applies the bundle); its `conn` is a live **read** source. Carries a `store` (publish-with-provenance) |
+| `on-prem-dev` | `bundle` → `./dist/on-prem-dev` (+ `conn`) | `logical` | `full-rights` | `schema+data` | on-prem SSDT delivery target (the deployment tool applies the bundle); its `conn` is a live **read** source. Carries a `store` (publish-with-provenance) |
 | `on-prem-qa` | `bundle` → `./dist/on-prem-qa` (+ `conn`) | `logical` | `full-rights` | `schema+data` | on-prem SSDT delivery target — the **same** schema version, one tier on; also `conn`-readable |
 | `on-prem-uat` | `bundle` → `./dist/on-prem-uat` (+ `conn`) | `logical` | `full-rights` | `schema+data` | the live on-prem pre-prod — SSDT delivery target **and** the **reverse-leg read source** (via `conn`) |
 
 > **The write/read tension, resolved.** An on-prem environment is a real database: schema goes
-> **down** to it as an SSDT bundle (file production → Octopus, the `out` folder), and data is read
-> **up** from it live (the reverse leg, the `conn`). `access: bundle` governs the *write*; the
-> optional `conn` is the *read* connection. All three on-prem tiers carry both, so any of them can
-> be a reverse-leg source.
+> **down** to it as an SSDT bundle (file production → the deployment tool, the `out` folder), and
+> data is read **up** from it live (the reverse leg, the `conn`). `access: bundle` governs the
+> *write*; the optional `conn` is the *read* connection. All three on-prem tiers carry both, so any
+> of them can be a reverse-leg source.
 
 ### `rendition` and `archetype` — two renditions, two capability classes
 
@@ -103,7 +103,7 @@ fallback (cutover safety; live wins per `ModelResolution.chooseOrigin`).
     to a live managed cloud cell (R6). A schema-changing flow against a `data` target is
     refused loudly.
   - **`schema+data`** — DDL+DML; the on-prem **bundle** targets, where the SSDT files carry the
-    full create/alter for the Octopus pipeline to apply.
+    full create/alter for the deployment pipeline to apply.
 
 So in this estate, **schema travels DOWN the on-prem bundle path; data lands in the cloud via
 DML-only flows — and the reverse leg reads data back UP from on-prem live via its `conn`.**
@@ -115,10 +115,10 @@ channel). `conn` is always an `env:<VAR>` / `file:<path>` reference — never a 
 
 | Flow | from → to | What it is |
 |---|---|---|
-| `publish` | cloud-dev → on-prem-dev | emit the SSDT **bundle** — schema + static seeds + migration data + bootstrap, read live from cloud-dev's model — into `./dist/on-prem-dev` for the Octopus pipeline. `on-prem-dev` carries a `store`, so this fires the **publish-with-provenance** path (the full-export bundle + episode store). |
+| `publish` | cloud-dev → on-prem-dev | emit the SSDT **bundle** — schema + static seeds + migration data + bootstrap, read live from cloud-dev's model — into `./dist/on-prem-dev` for the deployment pipeline. `on-prem-dev` carries a `store`, so this fires the **publish-with-provenance** path (the full-export bundle + episode store). |
 | `publish-qa` | cloud-dev → on-prem-qa | the **same** schema version landing for the QA tier (the cloud cells are kept in sync, so one schema serves all three). |
 | `golden` | cloud-qa → cloud-uat | the **peer** producer (A→A): copy a `tables` subset, **re-keying user FKs** to UAT's own users — `reconcile: ["ServiceCenter.User:Email"]` matches by email (logical `Module.Entity:Col`, espace-safe), with `rekey` (a CSV map) for explicit overrides; `scope: data` (no schema), `strategy: replace`. |
-| `reverse` | on-prem-uat → cloud-uat | the **legacy B→A reverse leg** (cloud insertion): pipe the migration team's data up from the logical on-prem model — **read live via on-prem-uat's `conn`** — into the physical cloud. `scope: data` (the schema is mirrored ahead + validated at run time, then only data moves); `streaming` + a client-side `journal` (the journal IS the streaming realization's resume — `resumable` is the sink-resident marker a managed sink cannot host); `strategy: merge` (CDC-minimal). |
+| `reverse` | on-prem-uat → cloud-uat | the **legacy B→A reverse leg** (cloud insertion): pipe the migration engineers' data up from the logical on-prem model — **read live via on-prem-uat's `conn`** — into the physical cloud. `scope: data` (the schema is mirrored ahead + validated at run time, then only data moves); `streaming` + a client-side `journal` (the journal IS the streaming realization's resume — `resumable` is the sink-resident marker a managed sink cannot host); `strategy: merge` (CDC-minimal). |
 | `synth` | synthetic → cloud-qa | generate data matching **on-prem-uat**'s data profile and load it into the lower cloud cell — privacy-safe production-shaped data, no real rows cross. Tuned by the `synthetic` block (cardinality / preserve / synthesize / scale / seed) + a per-flow `correction` (per-column PII→Faker). (`../THE_DATA_PRODUCERS.md`; `../THE_SYNTHETIC_DATA_DESIGN.md` §11.) |
 
 Flow keys: `to` (required), `from` (an env name or `synthetic` / `none`), `profile` (the env to
@@ -170,7 +170,7 @@ durable **episode**. The provenance pair turns that into a changelog of what cha
 
 ```bash
 projection seal publish                # freeze "this is the published schema now" as an episode
-projection report publish              # the change since the last seal — the migration-team bundle
+projection report publish              # the change since the last seal — the migration bundle
 projection explain diff @<prior> @<new>  # ad-hoc: the schema delta between two recorded models
 ```
 

@@ -25,7 +25,7 @@ open Projection.Targets.SSDT  // LINT-ALLOW: cross-target dependency for ScriptD
 // programmatically or pass `MigrationDependencyContext.empty`.
 // ---------------------------------------------------------------------------
 
-/// One row of legacy-domain data the migration team is publishing
+/// One row of legacy-domain data the migration engineers are publishing
 /// for V2 to insert. Identity-keyed at every level (per A4); values
 /// are raw IR strings per the `RawValueCodec` contract (the renderer
 /// looks up the column's `PrimitiveType` from the kind's `Attribute`
@@ -51,7 +51,7 @@ type MigrationDependencyRow =
 
 /// Operator-published row inventory for the migration-dependency
 /// channel. Per pre-scope §2.2: "the context is environment-specific
-/// evidence the migration team supplies, structurally indistinguishable
+/// evidence the migration engineers supply, structurally indistinguishable
 /// from per-environment data the read-side might surface."
 type MigrationDependencyContext =
     {
@@ -371,6 +371,6 @@ module MigrationDependenciesEmitter =
     let registeredMetadata : RegisteredTransformMetadata =
         RegisteredTransformMetadata.emitter "migrationDependenciesEmitter" Data
             [ TransformSite.operatorIntent "migrationRowEmission" Insertion
-                "`MigrationDependencyContext.Rows` is operator-published legacy-domain row inventory (pre-scope §2.2: 'environment-specific evidence the migration team supplies'). Each row's `(KindKey, Identifier, Values)` is operator-supplied content that wouldn't be reachable from `Project(catalog, Policy.empty, profile)` — it lands via the operator-supplied context. OverlayAxis = Insertion (what content the catalog gains beyond source evidence). Note: identity-substitution within those rows landed at `DataLoadPlan.identitySubstitution` (the canonical site); this site classifies the *inclusion of the rows themselves*, not their value-rewriting."
+                "`MigrationDependencyContext.Rows` is operator-published legacy-domain row inventory (pre-scope §2.2: 'environment-specific evidence the migration engineers supply'). Each row's `(KindKey, Identifier, Values)` is operator-supplied content that wouldn't be reachable from `Project(catalog, Policy.empty, profile)` — it lands via the operator-supplied context. OverlayAxis = Insertion (what content the catalog gains beyond source evidence). Note: identity-substitution within those rows landed at `DataLoadPlan.identitySubstitution` (the canonical site); this site classifies the *inclusion of the rows themselves*, not their value-rewriting."
               TransformSite.dataIntent "deferredFkPhase2"
                 "Two-phase cycle-breaking parallel to `StaticSeedsEmitter` — Phase-1 emits MERGEs with deferred FK columns NULLed; Phase-2 UPDATEs populate them. Cycle membership is structural (topology-derived from `DataLoadPlan.Loads[i].DeferredFkColumns`); the deferral is the same algebra as the static-rows emitter. DataIntent because the cycle-resolution is structural, not operator-supplied." ]

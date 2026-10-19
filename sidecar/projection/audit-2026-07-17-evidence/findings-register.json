@@ -624,7 +624,7 @@
    "classification": "emission-aesthetic",
    "direction": "parity-confirmed",
    "severity": "cosmetic",
-   "outsystemsRelevant": "yes \u2014 the per-table files are the promoted Azure DevOps surface; framing parity holds where it matters",
+   "outsystemsRelevant": "yes \u2014 the per-table files are the promoted CI surface; framing parity holds where it matters",
    "empiricalCheck": "grep -c '^GO$' + tail-byte inspection across a v2 bundle: Modules/** never ends in GO, stream.sql and Schemas/* do",
    "confidence": "high",
    "_phase": "p2",

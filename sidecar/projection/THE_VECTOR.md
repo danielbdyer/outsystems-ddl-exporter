@@ -181,7 +181,7 @@ in their size; it is in *which* facet they cut.
 
 Start from the premise, because the premise forces everything. The engine is a **publication-and-provenance
 engine for an evolving relational model**, sourced today from an OutSystems estate, publishing schema and data
-to on-prem SQL Server and to an external team's SSIS jobs, accumulating an exact replayable provenance of every
+to on-prem SQL Server and to external SSIS jobs, accumulating an exact replayable provenance of every
 change, and **terminating one day at an eject** — after which there is no upstream to re-derive from.
 
 Read that last clause again, because it is the whole reason for the engine's character. OutSystems' own

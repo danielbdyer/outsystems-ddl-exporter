@@ -55,7 +55,7 @@ Closes the structural data-triumvirate signature.
 
 - **`UserRemapContext = Map<SsKey, Map<int64, int64>>`** — placeholder shape for chapter 4.2's `UserFkReflowPass`. Slice ζ MVP defaults to `Map.empty` pass-through.
 - **`BootstrapEmitter v0`** — structural stub returning empty no-op artifact for every kind (T11 preserved). Gives chapters 4.2/4.3 a fixed insertion point; the partition assertion can ask Bootstrap for its coverage rather than silently assuming it.
-- **`EmitError.OverlappingEmitterCoverage of (SsKey * emitters: string list)`** — new EmitError variant; surfaces when two or more sibling emitters both produce populated output for the same kind under the same `DataComposition` (e.g., a kind appearing both in `Modality.Static` AND in the migration team's pickup channel under `AllRemaining`).
+- **`EmitError.OverlappingEmitterCoverage of (SsKey * emitters: string list)`** — new EmitError variant; surfaces when two or more sibling emitters both produce populated output for the same kind under the same `DataComposition` (e.g., a kind appearing both in `Modality.Static` AND in the migration engineers' pickup channel under `AllRemaining`).
 - **Composer's `unionSiblings` rewritten** — replaced left-biased `pickFirstNonEmpty` with overlap-detection. Walks kinds in catalog order so the diagnostic is deterministic (same input → same first-overlap kind reported).
 - **`composeFull`** — explicit-both-contexts entry; chapter 4.2 wiring point.
 
@@ -153,7 +153,7 @@ Chapter 4.1.B's structural commitments that future chapters inherit:
 
 ### Migration adapter (NDJSON / CSV pickup directory)
 
-Per pre-scope §2.2 the adapter would read operator-published files into `MigrationDependencyContext`. **Deferred** at slice ε because no real ingestion path consumer surfaced. Trigger: a real migration-team workflow lands that requires file-format flexibility (NDJSON, CSV, or a different operator-supplied format).
+Per pre-scope §2.2 the adapter would read operator-published files into `MigrationDependencyContext`. **Deferred** at slice ε because no real ingestion path consumer surfaced. Trigger: a real migration workflow lands that requires file-format flexibility (NDJSON, CSV, or a different operator-supplied format).
 
 ### Bootstrap row sources (system users, default policies, profile-attached rows)
 

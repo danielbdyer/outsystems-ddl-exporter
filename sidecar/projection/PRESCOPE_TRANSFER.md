@@ -28,7 +28,7 @@
 **What the epic is.** A *Transfer* moves row data from one database
 substrate into another, governed by a single logical schema. The motivating
 instance: freeze the schema the pipeline already derives, hand the copy to
-the partner team **as usual**, and then use that *same* schema to pull rows
+the downstream team **as usual**, and then use that *same* schema to pull rows
 out of the staging SQL Server (today the *target* of emission) and load them
 **into a managed OutSystems environment** as a temporary, pre-eject preview.
 
@@ -90,8 +90,8 @@ one (**B**). A and B are not two times; they are **two realizations of one ident
 Realization name-space — `THE_USE_CASE_ONTOLOGY.md` §5.8, `WAVE_6_ALGEBRA.md` §1). The data crossing the
 boundary comes from one of three **producers** — `synthetic` (generated from a profile;
 `THE_SYNTHETIC_DATA_DESIGN.md`), `legacy` (the **B→A reverse leg** — the logical on-prem model the
-migration team populated, piped back up into the physical cloud; same model, *not* foreign schema —
-the foreign→logical mapping is the migration team's, upstream), and `peer` (a same-rendition
+migration engineers populated, piped back up into the physical cloud; same model, *not* foreign schema —
+the foreign→logical mapping is the migration engineers', upstream), and `peer` (a same-rendition
 cell — `golden`; sink-minted identity + email re-key suffices *because* the logical identities coincide
 across cells). The full catalogue, the `golden` user-exclusion-plus-re-key discipline, and the
 per-producer data canary live in **`THE_DATA_PRODUCERS.md`**; this prescope is the machinery they run on.
@@ -106,7 +106,7 @@ Today the pipeline runs one leg — Projection onto a staging substrate:
 OutSystems model ──Π (Projection)──▶ Catalog ──passes──▶ SSDT DDL + bootstrap + static seed ──▶ staging SQL Server
 ```
 
-The staging SQL Server is consumed by a partner team that maps to the
+The staging SQL Server is consumed by a downstream team that maps to the
 schema and runs SSIS ETL from a legacy application database. The staging
 DB is periodically refreshed with the current shape of the replacement
 OutSystems application. Three uses are in play:
@@ -116,12 +116,12 @@ OutSystems application. Three uses are in play:
 2. **Blank migration target** — a blank DB carrying the schema is handed to
    another team as the destination for production data coming from a legacy
    application the OutSystems project replaces.
-3. **Iterating staging DB** — the partner team practises SSIS ETL against an
+3. **Iterating staging DB** — the downstream team practises SSIS ETL against an
    intermediate staging DB, refreshed as the OutSystems app evolves. At
    "eject" time they run the migration tool for real against on-prem.
 
 **The ask.** Using the schema understanding the pipeline *already* derives
-during emission, freeze the schema and hand the copy to the team **as
+during emission, freeze the schema and hand the copy to the downstream team **as
 usual**, then — using that **same produced schema** as the `SchemaContract`
 — run a **Transfer**: ingest from the staging DB (today the *sink* of
 Projection, here re-bound as the **Source**) and project the rows into an
@@ -568,7 +568,7 @@ connection apparatus — not a from-scratch capability.
 
 ## 7. The `SchemaContract` problem (SsKey persistence)
 
-The operator's framing is "**freeze** the schema, copy it for the team, then
+The operator's framing is "**freeze** the schema, copy it for the downstream team, then
 use **that same produced schema** to drive the Transfer." Two sub-cases:
 
 - **Same-run Transfer** — the Ingestion happens in the same process that still

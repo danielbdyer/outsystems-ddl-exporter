@@ -1,10 +1,10 @@
 # Chapter 4.1.A pre-scope — `Projection.Targets.SSDT.Ddl.SsdtDdlEmitter`
 
-This document is the implementation-grade pre-scope for chapter 4.1.A: the production-deployment SSDT DDL emitter (sibling Π) that complements the DACPAC fast-iteration emitter (chapter 3.3) and feeds the Azure DevOps integration-test promoted lane. It assumes the reader has read the chapter-3 DACPAC pre-scope at `/home/user/outsystems-ddl-exporter/sidecar/projection/CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`; this document deliberately does not re-derive what that one already establishes. The CDC-aware data triumvirate (chapter 4.1.B) is a different pre-scope.
+This document is the implementation-grade pre-scope for chapter 4.1.A: the production-deployment SSDT DDL emitter (sibling Π) that complements the DACPAC fast-iteration emitter (chapter 3.3) and feeds the CI integration-test promoted lane. It assumes the reader has read the chapter-3 DACPAC pre-scope at `/home/user/outsystems-ddl-exporter/sidecar/projection/CHAPTER_3_PRESCOPE_DACPAC_EMITTER.md`; this document deliberately does not re-derive what that one already establishes. The CDC-aware data triumvirate (chapter 4.1.B) is a different pre-scope.
 
 ## §1 Scope and value
 
-Chapter 4.1.A delivers **the V2 SSDT DDL emitter** — a sibling Π whose output is per-table `.sql` files arranged exactly as V1 currently emits them at `<outDir>/Modules/<Module>/<Schema>.<Table>.sql`, plus a sibling `<outDir>/manifest.json`. The artifact is the production-deployment surface: an SSDT-style directory bundle promoted into the team's existing Azure DevOps pipeline (which already imports V1's output today).
+Chapter 4.1.A delivers **the V2 SSDT DDL emitter** — a sibling Π whose output is per-table `.sql` files arranged exactly as V1 currently emits them at `<outDir>/Modules/<Module>/<Schema>.<Table>.sql`, plus a sibling `<outDir>/manifest.json`. The artifact is the production-deployment surface: an SSDT-style directory bundle promoted into the team's existing CI pipeline (which already imports V1's output today).
 
 What this slice contributes that the DACPAC half does not:
 

@@ -54,7 +54,7 @@ And it held here: the backfill stamped both blank rows, the count read 0, and th
 still blocked with the column left nullable. On an empty table the same edit would have just
 applied.
 
-So with data in the table it can't ship as one publish — this pipeline (Azure DevOps → Octopus)
+So with data in the table it can't ship as one publish — this pipeline (CI → deployment tool)
 can't relax the data-loss guard. It ships as two releases. Release 1 keeps the model saying
 optional and does the work in a pre-deployment script: it fills the two blank emails and runs the
 `ALTER … NOT NULL` itself. Because the model still says optional, SSDT generates no data-loss step,

@@ -123,7 +123,7 @@ provenance of every change. One surface.
 ## The journeys — essence at every step, consent in plain words, proof on demand
 
 Every real workflow — laying a baseline, promoting to UAT with a re-key, evolving
-a live database, publishing to the SSIS team, ejecting to the frozen artifact,
+a live database, publishing to the SSIS maintainers, ejecting to the frozen artifact,
 catching drift — is the same rhythm: **Snapshot → Diff → Gate → realize → Measure
 → Verify → Record.** Two moments are where everyone lives, newcomer and master
 alike:

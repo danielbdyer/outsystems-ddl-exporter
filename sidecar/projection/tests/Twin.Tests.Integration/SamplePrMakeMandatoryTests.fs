@@ -72,6 +72,11 @@ type SamplePrMakeMandatoryTests (fixture: TwinSampleEstateFixture) =
     let rowCountSql = "SELECT COUNT(*) FROM [dbo].[OrderLine];"
     let nullNotesSql = "SELECT COUNT(*) FROM [dbo].[OrderLine] WHERE [Note] IS NULL;"
 
+    // The schema-derived evidence floor mints NULLs into a nullable column at
+    // its nominal rate; the proof needs a populated table with zero NULLs, so
+    // each mint's NULL notes are filled before the counts are read.
+    let fillNullNotesSql = "UPDATE [dbo].[OrderLine] SET [Note] = N'note' WHERE [Note] IS NULL;"
+
     interface IClassFixture<TwinSampleEstateFixture>
 
     member private _.Up () : Task<Result<Runs.UpOutcome>> =
@@ -129,12 +134,13 @@ type SamplePrMakeMandatoryTests (fixture: TwinSampleEstateFixture) =
             // ===== Phase 0 — materialize the BEFORE estate ================
             let! baseline = this.Converge "baseline" false
             Assert.True(baseline.SchemaPublished, "the first up publishes the estate schema")
+            let! _ = this.Exec fillNullNotesSql
             let! rowsBefore = this.Scalar rowCountSql
             let! nullBefore = this.Scalar nullNotesSql
             let! nullableBefore = this.Scalar isNullableSql
             Assert.True(rowsBefore > 0L, "OrderLine must hold rows for the proof")
             Assert.Equal(1L, nullableBefore)   // is_nullable = 1 (Note is optional)
-            Assert.Equal(0L, nullBefore)       // fresh mint fills every row — 0 NULLs
+            Assert.Equal(0L, nullBefore)       // every NULL filled — 0 NULLs
             record (sprintf "baseline: OrderLine rows=%d, Note IS NULL count=%d, is_nullable=%d, twin totalRows=%d"
                         rowsBefore nullBefore nullableBefore baseline.TotalRows)
 
@@ -165,6 +171,7 @@ type SamplePrMakeMandatoryTests (fixture: TwinSampleEstateFixture) =
             // ===== Reset to a clean POPULATED-with-0-NULLs table ==========
             fixture.Rewrite "Tables/dbo.OrderLine.sql" nullableOrderLine
             let! _ = this.Converge "reset" true    // force re-mint
+            let! _ = this.Exec fillNullNotesSql
             let! rowsClean = this.Scalar rowCountSql
             let! nullClean = this.Scalar nullNotesSql
             let! nullableClean = this.Scalar isNullableSql

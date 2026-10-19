@@ -71,7 +71,7 @@ Per pre-scope §8 + the strategic frame above, the chapter's slices are ordered 
 | β | `Profile.CdcAwareness` field + change-detection MERGE predicate | Dispatch per-kind: CDC-enabled → predicated MERGE; otherwise → V1-shape MERGE | ~60 src + ~80 test |
 | γ | CDC-silence-on-idempotent-redeploy property test (canary) | Docker-dependent canary that asserts the property under real SQL Server CDC | ~80 src + ~60 test |
 | δ | `DataInsertScript.Phase2Updates` + `DeferredFkSet` (cycle-breaking) | Two-phase insertion for kinds in FK cycles | ~50 src + ~50 test |
-| ε | `MigrationDependenciesEmitter v0` + adapter | Migration-team-published row pickup; adapter at boundary | ~120 src + ~80 test |
+| ε | `MigrationDependenciesEmitter v0` + adapter | Migration-published row pickup; adapter at boundary | ~120 src + ~80 test |
 | ζ | `BootstrapEmitter v0` (UserRemapContext = empty pass-through) | Bootstrap fills the remainder; `UserRemapContext` lands in chapter 4.2 | ~100 src + ~80 test |
 | η | `EmissionPolicy.DataComposition` DU + `DataEmissionComposer` dispatch | The composer reads Policy; emitters do not | ~80 src + ~60 test |
 | θ | `EmitError.OverlappingEmitterCoverage` + partition assertion | Composer asserts no two emitters cover the same kind | ~30 src + ~40 test |

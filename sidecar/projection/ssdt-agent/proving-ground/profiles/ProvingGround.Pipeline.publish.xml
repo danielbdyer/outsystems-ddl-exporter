@@ -4,7 +4,7 @@
   local proof can reproduce what the real deployment would do.
 
   Status: placeholder, not yet verified against the pipeline. The estate publishes through
-  Azure DevOps -> Octopus, and the DacFx flags are fixed in the pipeline's own XML. This file
+  its CI -> deployment-tool pipeline, and the DacFx flags are fixed in the pipeline's own XML. This file
   will hold those flags once someone records them from the pipeline (together with the DacFx
   version, pinned in ../../estate/toolchain.md). Until then it uses the production settings the
   Twin corpus already proved: the block and smart-default settings match the Strict profile,

@@ -290,8 +290,8 @@ short skill stack, and a pipeline — instead of 253 files and folklore.
 
 ## 7. What to do, in order
 
-1. **Run the Visual Studio pilot that is already written** (`copilot-package/ADOPTION.md`,
-   the six-step checklist) on one champion laptop. Nothing in the packaging is verified on
+1. **Run the Visual Studio trial that is already written** (`copilot-package/ADOPTION.md`,
+   the six-step checklist) on one developer's machine. Nothing in the packaging is verified on
    the team's actual build, and the riskiest assumption in the whole system is Copilot's
    instruction-following depth against these bodies. One afternoon converts assumption to
    fact and would re-rank everything below.
@@ -309,7 +309,7 @@ short skill stack, and a pipeline — instead of 253 files and folklore.
 
 And two things deliberately *not* to do: do not delete the op catalog or the sample-PR
 gallery wholesale (trim the gallery, keep the traps), and do not build more curriculum
-machinery until the cutover has stabilized and the pilot has produced its first real
+machinery until the cutover has stabilized and the first trial has produced its first real
 lessons — the existing Phase-2 plan already says this correctly.
 
 ---
@@ -332,7 +332,7 @@ schema-derived evidence floor (`Twin.Core/DerivedEvidence.fs` — zero-configura
 under every captured tier); the mint trust gate (`TwinDatabase.revalidateConstraints` —
 `WITH CHECK CHECK` over every user CHECK and foreign key after each mint, refusing with
 `twin.mint.constraintViolation` instead of handing over silently-untrusted data); the
-one-approver recalibration (the principal level retired by the owner's 2026-08-28 call —
+one-approver recalibration (a single dev-lead approver class, the owner's 2026-08-28 call —
 `THE_RECORD.md` §5's second finding is now *what the approving dev lead weighs*, recalibrated
 tree-wide with `estate/reviewers.md` rewritten for the single class); and two form-factor
 refactors from §6 — the one-door Copilot prompt (`#prompt:ssdt-schema-change`,
@@ -343,8 +343,8 @@ they encode); and the scale lane (`proving-ground/twin.scale.json` + `estate/sca
 Release-only FS3511 shapes, O(rows × pool) list indexing in σ's draws: 75 s → 5.9 s at 181k,
 a 13-minute wall → 28 s at 1.18M) and measured where the added-scrutiny line's teeth begin
 (the index build is the first engine cost visible over tool overhead, at ~1M rows; F20).
-Still owner-side: the Visual Studio pilot, the pipeline's DacFx
-pin, `twin evidence import` against real Dev, and the post-pilot trim decisions
+Still owner-side: the Visual Studio trial, the pipeline's DacFx
+pin, `twin evidence import` against real Dev, and the post-trial trim decisions
 (personas → phases, the register fold).
 
 ## 9. The one-line stance

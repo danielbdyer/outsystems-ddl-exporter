@@ -80,7 +80,7 @@ Key Results: {measurable outcomes if defined}
 ```
 ## Role Levels
 
-### Associate Software Engineer II
+### Associate Software Engineer
 - Scope: {typical scope}
 - Expectations: {what "meets" looks like at this level}
 - Promotion signal: {what "operating at next level" looks like}
@@ -199,7 +199,7 @@ Extends base schema with source attribution and anchor matching:
 |--------------------|----|-----------------------------------------|------------------------------------------------------------------|
 |Self-assessment     |S   |Free-form against objectives/competencies|Employee’s claims about own performance                           |
 |Peer feedback       |P   |3 buckets × 2-3 items                    |Effective behaviors, competency strengths, competency improvements|
-|Manager observations|M   |Unstructured (1:1s, email, ADO)          |Your observations, outcomes, artifacts                            |
+|Manager observations|M   |Unstructured (1:1s, email, work tracker)          |Your observations, outcomes, artifacts                            |
 |Historical          |H   |Prior review + goals                     |Baseline, trajectory                                              |
 
 -----
@@ -308,7 +308,7 @@ Extends base schema with source attribution and anchor matching:
 - Avoided: {phrases you don't use}
 
 ### Characteristic Phrasings
-{Danny-isms}
+{your signature phrasings}
 
 ### Coaching Language Patterns
 {how you frame invitations, growth edges}
@@ -724,7 +724,7 @@ Extends base schema with impact framing and visibility tracking:
   impact_level: "team" | "program" | "org" | "enterprise",
   visibility: "high" | "medium" | "low",
   evidence_type: "artifact" | "outcome" | "feedback" | "recollection",
-  citation: string | null,             // link, doc name, ADO item, email thread
+  citation: string | null,             // link, doc name, work item, email thread
   significance: string                 // why this mattered, one sentence
 }
 ```
@@ -757,7 +757,7 @@ Extends base schema with impact framing and visibility tracking:
 ┌─────────────────────────────────────────────────────────────────┐
 │  S-A1: evidence_sources.md                                      │
 │  Contents: raw material organized by quarter                    │
-│    - Q1: memories, artifacts, ADO, emails                       │
+│    - Q1: memories, artifacts, work items, emails                       │
 │    - Q2: ...                                                    │
 │    - Q3: ...                                                    │
 │    - Q4: ...                                                    │
@@ -911,7 +911,7 @@ Q4 (Oct-Dec):
 **Key instructions:**
 
 - Enforce temporal coverage (flag if any quarter underrepresented)
-- For each claim: “What did Danny *specifically* do?”
+- For each claim: “What did you *specifically* do?”
 - Require result - no claim without outcome
 - Require significance - no claim without “so what”
 - Flag low-visibility/high-impact work explicitly
@@ -1157,7 +1157,7 @@ where you're heading}
 
 -----
 
-## VIII. DANNY-SPECIFIC TRAPS
+## VIII. SELF-REVIEW TRAPS
 
 |Trap                  |What It Looks Like                                             |Counter                       |
 |----------------------|---------------------------------------------------------------|------------------------------|

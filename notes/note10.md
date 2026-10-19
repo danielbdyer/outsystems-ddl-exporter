@@ -30,7 +30,7 @@ If an entity changes shape >1–2 times per quarter **or** has fan-out to 3+ mod
 
 Adopt a view up front **only** if an entity hits **any two** of these:
 
-1. **Fan-out**: referenced by multiple modules/pods or public APIs.
+1. **Fan-out**: referenced by multiple modules/teams or public APIs.
 2. **Churn risk**: known renames/splits/semantic cleanup coming.
 3. **Security shaping**: PII needs masking/column-level ACLs.
 4. **Performance shaping**: you expect to denormalize/compute for hot paths.
@@ -74,9 +74,9 @@ This is the smallest process that works when you prefer concise, direct evolutio
 
 ### 4.1 Hard caps (stopblast)
 
-* **Scope**: direct bind is allowed only for **leaf** entities owned by a single pod.
+* **Scope**: direct bind is allowed only for **leaf** entities owned by a single team.
 * **Timebox**: every direct-bound entity has a 30-day expiry; at expiry you either (a) keep it direct and renew *explicitly*, or (b) promote it to a contract view.
-* **Fan-out rule**: the moment a second pod wants it, **promote** to a contract view.
+* **Fan-out rule**: the moment a second team wants it, **promote** to a contract view.
 
 ### 4.2 Daily refresh window
 

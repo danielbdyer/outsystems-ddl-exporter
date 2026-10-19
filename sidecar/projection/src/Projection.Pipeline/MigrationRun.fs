@@ -592,7 +592,7 @@ module MigrationRun =
     /// the rollback somehow left a residual — M21 as the envelope's fallback). The
     /// envelope is the §10 wrapper, fired for the local full-access case only
     /// (`DECISIONS 2026-06-16 M22`; `ATOMIC_ENVELOPE_VALIDATION.md`): production
-    /// schema is ADO/Octopus/SSDT-deployed (not direct-connect) and the managed
+    /// schema is deployed by the SSDT pipeline (not direct-connect) and the managed
     /// cloud is DML-only, so this DDL envelope is a LOCAL lever. The data leg's
     /// safety is the separate `--auto-revert` arm, NOT this transaction.
     /// `atomic = false` is byte-identical to the prior `execute` (M21 only).

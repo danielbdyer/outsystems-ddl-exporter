@@ -104,7 +104,7 @@ proofs are in `FINDINGS_AND_CHANGES.md`.
 - **D1 — can this pipeline toggle `BlockOnPossibleDataLoss` for this one deploy?**
   - **Yes** (not this estate) → `ONE_RELEASE_RELAXED`. One release, gate relaxed for that publish,
     logged.
-  - **No** (this estate: Azure DevOps → Octopus) → `TWO_RELEASE`:
+  - **No** (this estate: CI → deployment tool) → `TWO_RELEASE`:
     - **R1** — a pre-deploy (or one-time) script makes the change **physically**, with the model
       **unchanged**, so DacFx generates no data-loss step. The script is idempotent and safe over a
       partial state (a failed deploy leaves its pre-deploy work behind — `FINDINGS_AND_CHANGES.md`
