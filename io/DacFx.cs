@@ -211,8 +211,9 @@ public static class DacFx
     /// <summary>
     /// A deploy report's XML, read once into the kernel's DeployReport (§1 fact 4): each Alert's Issue as a PlanAlert, and each Operation's
     /// Item as a PlanOperation keyed as io/Ssdt.ReadModel keys the element, against the two element sets the plan compared (a renamed
-    /// column is in the source, a dropped table in the target); a serialized type the map does not hold keys as itself, with the note
-    /// plan.unlisted-type. XML of another shape than DacFx 170.5.96 writes is plan.report-unread, naming what was not expected.
+    /// column is in the source, a dropped table in the target), an unnamed constraint's item among them (<see cref="Keys.Unnamed"/>); a
+    /// serialized type the map does not hold keys as itself, with the note plan.unlisted-type. XML of another shape than DacFx 170.5.96
+    /// writes is plan.report-unread, naming what was not expected.
     /// </summary>
     internal static Result<(DeployReport Report, IReadOnlyList<Finding> Notes)> Report(string xml, SortedArray<Element> source,
         SortedArray<Element> target)
@@ -249,13 +250,15 @@ public static class DacFx
                 Name: (string?)item.Attribute("Value") ?? "",
                 Issues: SortedArray.Of(item.Elements(Dac + "Issue").Select(i => Number((string?)i.Attribute("Id"))).OfType<int>()))))
             .ToList();
-        return Result.All(items.Select(i => keys.Of(i.Type, i.Name).Map(key => new PlanOperation(i.Kind, key, i.Issues))))
+        var unnamed = keys.Unnamed([.. items.Select(i => (i.Kind, i.Type, i.Name))]);
+        return Result.All(items.Select((i, at) => (unnamed.Keys.TryGetValue(at, out var key) ? Result.Ok(key) : keys.Of(i.Type, i.Name))
+                .Map(key => new PlanOperation(i.Kind, key, i.Issues))))
             .Map(operations => (new DeployReport(SortedArray.Of(operations), SortedArray.Of(alerts)),
                 (IReadOnlyList<Finding>)[.. items.Select(i => i.Type).Distinct()
                 .Where(type => ModelTypes.Element(type) is null).Order(StringComparer.Ordinal)
                 .Select(type => Finding.Note("plan.unlisted-type", type,
                     "The deploy report names the type " + type
-                    + ", which dbchange's map of DacFx's types does not hold; its items are keyed by that name."))]));
+                    + ", which dbchange's map of DacFx's types does not hold; its items are keyed by that name.")), .. unnamed.Notes]));
 
         static Error Unread(string why) => new Error("plan.report-unread", "DacFx's deploy report is not one dbchange reads: " + why + ".",
             "Report this error with the DacFx release dbchange runs; the report's shape is DacFx's.");
@@ -406,6 +409,53 @@ public static class DacFx
                     ? ModelTypes.Key(type, parts[2..], home)
                 : ModelTypes.Key(type, parts, null);
         }
+
+        /// <summary>
+        /// The keys of the items that name an unnamed constraint, by the item's position. DacFx names one by its type and table alone
+        /// ("Check Constraint: unnamed constraint on [dbo].[T]", measured on DacFx 170.5.96), and io/Ssdt.ReadModel keys it under its
+        /// column or its table; so the items of one operation on one type and table take, in key order, the keys of the unnamed
+        /// constraints of that type on that table that the sets hold, when there are exactly as many: for a Create, those the source
+        /// alone holds, else all the source holds; for a Drop, those the target alone holds, else all the target holds; for any other
+        /// operation, all either holds. Items the counts leave open keep DacFx's name, with the note plan.unnamed-unmatched.
+        /// </summary>
+        public (Dictionary<int, ElementKey> Keys, IReadOnlyList<Finding> Notes) Unnamed(
+            IReadOnlyList<(PlanOperationKind Kind, string Type, string Name)> items)
+        {
+            var (keyed, notes) = (new Dictionary<int, ElementKey>(), new List<Finding>());
+            var unnamed = items.Select((item, at) => (At: at, Kind: item.Kind.Name, Type: ModelTypes.Element(item.Type) ?? item.Type,
+                Table: UnnamedOn(item.Name))).Where(i => i.Table is not null);
+            foreach (var group in unnamed.GroupBy(i => (i.Kind, i.Type, Path: string.Join('\u0001', i.Table!))))
+            {
+                var (kind, type, table) = group.Key;
+                List<ElementKey> On(SortedArray<Element> set) => [.. set.Where(e => e.Key.Type == type && e.Key.Parent is not null
+                    && e.Relationships.Any(r => r.Name == "Host" && r.Targets.Any(t => Path(t.Key) == table))).Select(e => e.Key)];
+                var (mine, theirs) = kind == "Drop" ? (On(target), On(source)) : (On(source), On(target));
+                List<ElementKey>[] sets = kind is "Create" or "Drop" ? [[.. mine.Except(theirs)], mine] : [[.. mine.Union(theirs)]];
+                if (sets.FirstOrDefault(s => s.Count == group.Count()) is { } chosen)
+                {
+                    foreach (var (item, key) in group.Zip(chosen.Order()))
+                    {
+                        keyed[item.At] = key;
+                    }
+
+                    continue;
+                }
+
+                var on = string.Join('.', group.First().Table!.Select(p => "[" + p.Replace("]", "]]", StringComparison.Ordinal) + "]"));
+                notes.Add(Finding.Note("plan.unnamed-unmatched", on, "The deploy report's " + kind + " operations name "
+                    + group.Count().ToString(CultureInfo.InvariantCulture) + " unnamed " + type + " objects on " + on
+                    + ", and the models hold a different number of them there; each item keeps DacFx's name, which keys no element."));
+            }
+
+            return (keyed, notes);
+        }
+
+        /// <summary>The name parts of the table DacFx's name for an unnamed constraint gives, or null for any other name.</summary>
+        private static string[]? UnnamedOn(string name) =>
+            (TSql.NameParts(name) ?? [name]) is [var only] && UnnamedName.Match(only) is { Success: true } match
+                && TSql.NameParts(match.Groups["table"].Value) is { Length: 2 } table ? table : null;
+
+        private static readonly Regex UnnamedName = new("^[^:]+: unnamed constraint on (?<table>.+)$", RegexOptions.CultureInvariant);
 
         /// <summary>A key's name parts, one level after another, joined by a character no name part holds.</summary>
         private static string Path(ElementKey key) =>

@@ -19,6 +19,7 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 | 3′ the model is complete | Models a serialization without lengths tags or counts would confuse fingerprint differently | `DbChange.Kernel.Tests.ElementTests.Models_a_serialization_without_lengths_tags_or_counts_would_confuse_fingerprint_differently` |
 | 3′ the model is complete | The fingerprint of a model is independent of the order its elements are given in | `DbChange.Kernel.Tests.ElementTests.The_fingerprint_of_a_model_is_independent_of_the_order_its_elements_are_given_in` |
 | 3′ the model is complete | Two models fingerprint equally exactly when their elements are equal | `DbChange.Kernel.Tests.ElementTests.Two_models_fingerprint_equally_exactly_when_their_elements_are_equal` |
+| 9 BlockOnPossibleDataLoss is data-blind | A populated table under BlockOnPossibleDataLoss predicts blocks however clean its rows | `DbChange.Kernel.Tests.OutcomeTests.A_populated_table_under_BlockOnPossibleDataLoss_predicts_blocks_however_clean_its_rows` |
 | a named environment cannot be written | No verb writes to a named environment | `DbChange.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
 | a named environment cannot be written | Nothing but LocalServer makes a Copy | `DbChange.Io.Tests.CapabilityTests.Nothing_but_LocalServer_makes_a_Copy` |
 | a named environment cannot be written | Permissive never reaches an environment | `DbChange.Io.Tests.CapabilityTests.Permissive_never_reaches_an_environment` |

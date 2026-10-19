@@ -67,6 +67,23 @@ internal static class ErrorPaths
         new("a model with two elements on one key", "model.duplicate-key", false, (_, _) =>
             Failed(Change.Between(SortedArray.Of(Made(Element.Of(Table, [], [])), Made(Element.Of(Table, [new("Nullable", new Value.Null())], []))), [], []))),
         new("a collation name with no case rule", "model.collation", false, (_, _) => Failed(Collation.Of("Latin1_General"))),
+        new("a column with no data type, as a computed column has none", "model.unresolved", false, (_, _) =>
+            Failed(DbChange.Kernel.ColumnType.Of(Made(Element.Of(Made(ElementKey.Of(Table, "Column", Made(Name.Of("Twice")))), [], []))))),
+        new("a foreign key the change creates naming no parent column", "model.unresolved", false, (_, _) =>
+        {
+            var column = Made(ElementKey.Of(Table, "Column", Made(Name.Of("Id"))));
+            var key = Made(ElementKey.Of("ForeignKeyConstraint", Made(Name.Of("dbo", "FK_Customer"))));
+            SortedArray<Element> after =
+                [Made(Element.Of(key, [], [Element.Relationship.Of("Columns", [column]), Element.Relationship.Of("Host", [Table])]))];
+            return Failed(Preconditions.Of([], after, Made(Change.Between([], after, [])), []));
+        }),
+        new("a precondition on a column the environment lacks and the change does not create", "plan.missing-object", false, (_, _) =>
+            Failed(Coordinates.Of(new Precondition(Table.Name, [Made(Name.Of("Nickname"))], new PreconditionKind.NotNull()),
+                new Change([], [], [], []), []))),
+        new("a site whose table the existing data holds no state for", "plan.uncounted", false, (_, _) =>
+            Failed(DbChange.Kernel.Outcome.Predict(new ExistingData([]),
+                [new BlockOnPossibleDataLossSite(Table.Name, "ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;")],
+                [], []))),
 
         new("DBCHANGE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),
         new("no tool folder anywhere", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), null, scratch))),
