@@ -66,12 +66,11 @@ refreshed only when the live existing data disagrees with the committed evidence
 
 ## 1. What was measured before writing this (2026-09-23)
 
-The plan rests on twelve facts. Ten were measured today in this repository's session container
-against SQL Server 2022 in Docker: facts 1 to 7 and 11 on DacFx 162.5.57 and again on 170.5.96 with
-the same results, facts 1 to 7 once more on the .NET 10 SDK (10.0.401) with DacFx 170.5.96's
-`net10.0` build, fact 10 on 162.5.57, and fact 12 on the container itself. Two were read from v2's
-source and from the package's documentation. The spike code is Appendix E, and it becomes M1's
-first tests.
+The plan rests on twelve facts. Ten were measured in this repository's session container against
+SQL Server 2022 in Docker: facts 1 to 7 and 11 on DacFx 162.5.57 and on 170.5.96 alike, facts 1 to 7
+again on the .NET 10 SDK (10.0.401) with DacFx 170.5.96's `net10.0` build, fact 10 on 162.5.57, and
+fact 12 on the container. Two were read from v2's source and the package's documentation. The spike
+code is Appendix E, which becomes M1's first tests.
 
 | # | The claim | How it was measured | Result |
 |---|---|---|---|
@@ -408,13 +407,13 @@ first; and a published tool folder that already builds a classic project.
 
 | WP | Lane | What | Done when |
 |---|---|---|---|
-| 0.1 | C | **Freeze and archive.** Tag `v2-final` at the commit v3 starts from. `git mv` the v1 trunk (`src/`, `tests/`, `config/`, `docs/`, `notes/`, `handbook/`, `ssdt-playbook/`, `schema/`, `tools/`, the solution, v1's root files and its `global.json`) into `archive/v1/`, and `sidecar/projection/` into `archive/v2/`. Re-path the six workflows so v2's lanes keep running from the archive until M8. Remove the `.claude/agents` and `.claude/skills` pointers, which point into v2's tree, with a `NEXT.md` line: M7 regenerates them from `knowledge/`. The same push carries WP 0.5's `.claude/settings.json` and hooks, because today's hooks read `sidecar/projection/global.json` and start SQL Server through `sidecar/projection/scripts/warm-sql.sh`, both of which this move relocates. Generate `archive/INDEX.md` (one line per document: path, date, status). The five root documents (`V3_ARCHITECTURE.md`, `V3_INSTRUCTION_ARCHITECTURE.md`, `LIFECYCLE_BACKPORT_PROMPT.md`, this file and `V3_BUILD_PROMPT.md`) stay at the root, each a manifest row (reader: the operator or the build session; moment: until M8; budget: its size at M0). | both archived solutions build and pass their fast suites with the counts they had before the move, recorded in the pull request |
+| 0.1 | C | **Freeze and archive.** Tag `v2-final` at the commit v3 starts from. `git mv` the v1 trunk (`src/`, `tests/`, `config/`, `docs/`, `notes/`, `handbook/`, `ssdt-playbook/`, `schema/`, `tools/`, the solution, v1's root files and its `global.json`) into `archive/v1/`, and `sidecar/projection/` into `archive/v2/`. Re-path the six workflows so v2's lanes keep running from the archive until M8. Remove the `.claude/agents` and `.claude/skills` pointers, which point into v2's tree, with a `NEXT.md` line: M7 regenerates them from `knowledge/`. The same push carries WP 0.5's `.claude/settings.json` and hooks, because today's hooks read `sidecar/projection/global.json` and start SQL Server through `sidecar/projection/scripts/warm-sql.sh`, both of which this move relocates. Generate `archive/INDEX.md` (one line per document: path, date, status). The five root documents (`V3_ARCHITECTURE.md`, `V3_INSTRUCTION_ARCHITECTURE.md`, `LIFECYCLE_BACKPORT_PROMPT.md`, this file and `V3_BUILD_PROMPT.md`) stay at the root, each a manifest row (reader: the operator or the build session; moment: until M8; budget: its size at M0). Superseded on 2026-10-19 (§4 row 16): the SessionStart hook runs `ci/sql.sh up`, which starts SQL Server 2022 Express natively, and no Docker or container. | both archived solutions build and pass their fast suites with the counts they had before the move, recorded in the pull request |
 | 0.2 | A | **The solution.** `DbChange.sln`; `kernel/` (references the BCL and `System.Collections.Immutable` only; implicit usings off), `io/` (kernel, DacFx 170.5.96, ScriptDom, `Microsoft.Data.SqlClient`, Bogus), `cli/` (assembly name `dbchange`), `tests/{Kernel.Tests, Io.Tests, Budgets.Tests}` (xUnit, CsCheck, NetArchTest). `net10.0` throughout; `global.json` on the .NET 10 SDK band, `rollForward: latestPatch`. `Directory.Build.props`: nullable, warnings as errors, deterministic, the culture and ordinal rules (CA1304, CA1305, CA1307, CA1309) as errors, `BannedApiAnalyzers` with `kernel/BannedSymbols.txt`: `System.IO`, `System.Net`, `DateTime.Now`, `DateTime.UtcNow`, `DateTimeOffset.Now`, `DateTimeOffset.UtcNow`, `Guid.NewGuid`, `Random`, `RandomNumberGenerator`, `Stopwatch`, `Environment`, `CultureInfo.CurrentCulture`, `Task`. `Directory.Packages.props` with lock files, locked restore in CI. `.editorconfig`; `.gitattributes` (LF for text). | each banned symbol, planted in `kernel/`, is a build error; the solution builds clean |
 | 0.3 | A | **The first kernel types.** `SortedArray<T>` (element-wise equality, ordinal-sorted construction), `Result<T>` and `Error` (code, message, remedy), `Name`, `Fingerprint` (SHA-256 over canonical bytes), and §3's `Provenance` with `DacFxVersion` and `Server`. | CsCheck properties for `SortedArray`'s equality and order and for `Fingerprint`'s stability across processes pass |
 | 0.4 | B | **The contract.** A verb table that generates `--help --json` and the schemas under `cli/schemas/`; the envelope (`schema`, `dacfx`, `server`, `pin`, `provenance`, `outcome`, `message`, `blockedBy`, `findings`, `exit`); the frozen exit table (0, 1, 2, 3, 4, 5, 6, 7, 9, 130) with a test that it never shrinks; `io/Write.cs` (UTF-8 without a BOM, LF, atomic replace, an existing file's declared line ending preserved). `cli` sets `DACFX_TELEMETRY_OPTOUT=1` and `DOTNET_CLI_TELEMETRY_OPTOUT=1` in its own process before DacFx loads. | `dbchange --help --json` validates against its schema; the writer's tests pass on both CI operating systems |
-| 0.5 | C | **The words.** `README.md`, `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md` and the hooks), `VALUES.md` (the instruction architecture's §4 with §4 above's re-pointing; each `Where` names the test a milestone will add, written `pending M<n>` or `pending W` until then), `DECISIONS.md` (opened with this plan's decisions: C#; lifecycle first; `predict` added and `knowledge` counted; the cutover tools; git as the only store; `net10.0`; DacFx 170.5.96 until the pin; Docker as the local server), `NEXT.md`, `ci/docs.manifest.json`, `ci/budgets.json` (Appendix F), `ci/packages.allow`, `.claude/settings.json` (the permissions as §4 redrafts them) and the two hooks. Start: install the .NET 10 SDK `global.json` names when it is absent (`dotnet-install.sh`), build `cli` into `.dbchange/bin/` when stale, in remote sessions only start Docker and the shared SQL Server container, and run `dbchange doctor`. End: `dbchange synthetic-copy down --if-idle`. The Docker step is an exception to "no hook starts a daemon" and gets its decision line. | the fast tests in 0.6 pass over them; a fresh cloud session reaches `dbchange doctor` with the .NET 10 SDK and SQL Server up |
+| 0.5 | C | **The words.** `README.md`, `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md` and the hooks), `VALUES.md` (the instruction architecture's §4 with §4 above's re-pointing; each `Where` names the test a milestone will add, written `pending M<n>` or `pending W` until then), `DECISIONS.md` (opened with this plan's decisions: C#; lifecycle first; `predict` added and `knowledge` counted; the cutover tools; git as the only store; `net10.0`; DacFx 170.5.96 until the pin; Docker as the local server), `NEXT.md`, `ci/docs.manifest.json`, `ci/budgets.json` (Appendix F), `ci/packages.allow`, `.claude/settings.json` (the permissions as §4 redrafts them) and the two hooks. Start: install the .NET 10 SDK `global.json` names when it is absent (`dotnet-install.sh`), build `cli` into `.dbchange/bin/` when stale, in remote sessions only start Docker and the shared SQL Server container, and run `dbchange doctor`. End: `dbchange synthetic-copy down --if-idle`. The Docker step is an exception to "no hook starts a daemon" and gets its decision line. Superseded on 2026-10-19 (§4 row 16): the local server is SQL Server 2022 Express run natively by `ci/sql.sh up`, which the hook runs in remote sessions, still that exception, and no local server runs SQL Server Agent. | the fast tests in 0.6 pass over them; a fresh cloud session reaches `dbchange doctor` with the .NET 10 SDK and SQL Server up |
 | 0.6 | C | **The fast tests.** `Budgets`, `Manifest`, `NoSkips`, `PackagesAllowlist`, `Decisions`, `Citations` (this repository's documents), `Register.Prose` (on `VALUES.md` first), `NoRestatedCounts`, the two dependency laws, and the archive exclusion. The root design documents are manifest rows but are excluded from `Register.Prose`, `Vocabulary`, `NoRestatedCounts` and `Citations` until M8, because they must name v1's and v2's retired terms, their counts, and verbs not yet built. `ValuesResolve` accepts `pending M<n>` until that milestone's exit and `pending W` until M8, and fails after. | green in the fast lane, under five minutes |
-| 0.7 | B | **The tool folder, the first fixture, CI.** `ci/publish.{ps1,sh}`: `dotnet publish cli` (`net10.0`, framework-dependent) into `dist/dbchange/`, then the `net10.0` `Microsoft.Data.Tools.Schema.SqlTasks.targets` from the DacFx package and the reference assemblies (§1 fact 1) beside it, size printed. `Io.Tests` share one SQL Server per run, with a registered database per test (`dbchange_<host>_<pid>_<rand>`) so concurrent agents never collide: a container from the pinned image (pulled when absent, SQL Server Agent enabled) on Ubuntu and in cloud sessions, LocalDB on Windows. `tests/Golden/classic-minimal/`: Appendix E's classic project. GitHub Actions, on both CI operating systems (Ubuntu with SQL Server in Docker; Windows with LocalDB): a fast lane, and a SQL lane running `Io.Tests` (the CDC tests on Ubuntu), one of whose jobs denies all outbound traffic except the SQL port once the image is present. | `dist/dbchange/dbchange --version` runs; the minimal classic project builds against `dist/dbchange/` on both operating systems; the outbound-deny job passes |
+| 0.7 | B | **The tool folder, the first fixture, CI.** `ci/publish.{ps1,sh}`: `dotnet publish cli` (`net10.0`, framework-dependent) into `dist/dbchange/`, then the `net10.0` `Microsoft.Data.Tools.Schema.SqlTasks.targets` from the DacFx package and the reference assemblies (§1 fact 1) beside it, size printed. `Io.Tests` share one SQL Server per run, with a registered database per test (`dbchange_<host>_<pid>_<rand>`) so concurrent agents never collide: a container from the pinned image (pulled when absent, SQL Server Agent enabled) on Ubuntu and in cloud sessions, LocalDB on Windows. `tests/Golden/classic-minimal/`: Appendix E's classic project. GitHub Actions, on both CI operating systems (Ubuntu with SQL Server in Docker; Windows with LocalDB): a fast lane, and a SQL lane running `Io.Tests` (the CDC tests on Ubuntu), one of whose jobs denies all outbound traffic except the SQL port once the image is present. Superseded on 2026-10-19 (§4 row 16): `ci/sql.sh up` runs SQL Server 2022 Express natively and `ci/sql.ps1 up` LocalDB, no image is pulled, and no local server runs SQL Server Agent, so no CDC test runs here. | `dist/dbchange/dbchange --version` runs; the minimal classic project builds against `dist/dbchange/` on both operating systems; the outbound-deny job passes |
 
 **Day-one spikes, each run where its fact can be measured.**
 
@@ -447,10 +446,9 @@ all archived with their trees.
 
 **Watch for.** The runtime. Everything targets `net10.0`, the LTS the design documents name. A
 machine that builds a `.sqlproj` needs the .NET 10 SDK, because MSBuild loads DacFx's `net10.0`
-build task into its own runtime. The hook installs it in cloud sessions, Visual Studio 2026 installs
-it on a laptop, and S6 confirms the hosted agents. The tool ships framework-dependent. Visual
-Studio's own MSBuild and SSDT targets are a fallback only if S1 finds the SSDT repository's project cannot
-build the committed way.
+build task into its own runtime. The hook installs it in cloud sessions, Visual Studio 2026 on a
+laptop, and S6 confirms the hosted agents. The tool ships framework-dependent. Visual Studio's own
+MSBuild and SSDT targets are a fallback only if S1 finds the SSDT project cannot build this way.
 
 ---
 
@@ -503,7 +501,9 @@ show 5; `DoctorTests` and `DriftTests` show 6, where `read` and `diff` carry the
 **Retires.** v2's read side as the lifecycle's read path. It stays in the archive as the reference
 output for M3's typed `Schema`.
 
-**Watch for.** S1 and S3 are this milestone's first work. DacFx's own catalog queries are not ours to allowlist; the principal and the extended-events session check them, and the query log checks ours.
+**Watch for.** S1 and S3 are this milestone's first work. DacFx's own catalog queries are not ours
+to allowlist; the principal and the extended-events session check them, and the query log checks
+ours.
 
 **A check constraint written with `IN`** (the operator's ruling, 2026-10-19). SQL Server stores a check written as `CHECK ([Status] IN ('A','B'))` as a chain of `OR`ed equalities, one per value, so every plan from the package drops and re-creates the check, on both DacFx releases (found by spike S11's scout). `check drift` stays strict and law 2′ is unchanged: the check is reported as differing, and the finding names the cause and the remedy, to write the check in the `OR` form SQL Server stores, which `sys.check_constraints.definition` shows. WP 3.5's identity step reports it the same way, and WP 7.2 writes the authoring rule into `knowledge/`.
 
@@ -511,7 +511,9 @@ output for M3's typed `Schema`.
 
 ## 8. M2 — Predict (days 4–5)
 
-**Outcome.** A developer asks, before anything is published anywhere, whether their branch would block or apply on Dev, and why. A dev lead asks the same of QA and UAT and pastes one block into the pull request. Nothing is written, and no value leaves an environment.
+**Outcome.** A developer asks, before anything is published anywhere, whether their branch would
+block or apply on Dev, and why. A dev lead asks the same of QA and UAT and pastes one block into the
+pull request. Nothing is written, and no value leaves an environment.
 
 **Started 2026-10-19** on the operator's go, with WP 2.1's first slice; WP 2.4 runs beside it, and WP 2.2 waits on spike S2 run on both DacFx releases.
 
@@ -573,8 +575,7 @@ with Bogus for shape-tier values; the shape and scale tiers of `synthetic-copy u
 `dbchange/evidence.shape.json` with `profile --commit` and `check evidence`; and the seed policy.
 
 WPs 3.1, 3.8, 3.4 and 3.5 land by day 6, because M4 proves on copies planted at an environment's
-existing data. The planter's plan (3.1, 3.8) needs only M0; `synthetic-copy up` (3.5) needs M1's
-build.
+existing data. The planter's plan (3.1, 3.8) needs only M0; `synthetic-copy up` (3.5), M1's build.
 
 | WP | Lane | What | Done when |
 |---|---|---|---|
@@ -748,8 +749,7 @@ authoring path whose every step is a verb, one reviewing path, one page for the 
 description, the operation catalog with its recognition patterns, and instructions generated for
 each agent from one tree.
 
-Work runs in the order the instruction architecture fixes (its §11): citations first, deletions
-last.
+Work runs in the order the instruction architecture fixes (its §11): citations first, deletions last.
 
 | WP | What | Done when |
 |---|---|---|
@@ -869,7 +869,7 @@ requirements alone.
 | 17 | A service account holding every reader group's read access and the metamodel's, for a self-hosted agent | the owners of the directory groups | the gate predicting QA and UAT itself (the backport prompt's prerequisite 7) | the lead's pasted block is the prediction of record |
 | 18 | The first real Dev deploy of a declarative foreign key, read back | the team, at their next such change | turns law 10 from a copy's fact into the environments' | `check drift` and the trust query (`is_not_trusted`) after that deploy; the result recorded in `knowledge/findings.md` with its provenance |
 | 19 | The SQL Server version and compatibility level the environments run (S8) | the dev leads | the SQL Server version the local server must meet | SQL Server 2022 (16.x), the major version of the package's platform Sql160 (R5), until S8 answers |
-| 20 | The re-cut of M3: the existing-data tier planted by the Facsimile's planter; the generator's port, the shape and scale tiers, the evidence file and the seed policy off the critical path until a trigger (§9) | the operator | M3's scope; R5 to R8 as both implementations read them | settled 2026-10-19: the operator confirmed the re-cut, and `VALUES.md` D6, P1, P2 and P3 moved to their planted forms (WP 3.8 and WP 3.5) in #705. On the trigger, WPs 3.2 and 3.3 return as this file described them at `138e037` |
+| 20 | The re-cut of M3: the existing-data tier planted by the Facsimile's planter; the generator's port, the shape and scale tiers, the evidence file and the seed policy off the critical path until a trigger (§9) | the operator | M3's scope; R5 to R8 as both implementations read them | settled 2026-10-19: the operator confirmed the re-cut, and `VALUES.md` D6, P1, P2 and P3 moved to their planted forms (WP 3.8, WP 3.5 and WP 3.7) in #705. On the trigger, WPs 3.2 and 3.3 return as this file described them at `138e037` |
 | 21 | A login holding `VIEW DEFINITION` alone, on Prod, and on QA and UAT for any unattended reader: it reads the schema, scripts the plan and reads `sys.partitions`, so it predicts every `TableEmpty` site without granting a row. Violation counts still need `SELECT` | the owners of the directory groups | a prediction for Prod; the gate predicting by itself (item 17) | Prod proved `--assume prod=worst`; ask for the login by that exact grant, since a login holding `db_datareader` alone is refused by Extract and Script |
 | 22 | Whether a package feed exists for the tool | whoever manages the machines | distribution only | the committed tool folder (§4 row 10) |
 | 23 | A code for the agent's next step: a missing object, an authored script to look at, a witness to declare, a failed acceptance (the Facsimile's exit 5; v3's 5 means *differs*) | the operator | M4's stops | settled 2026-10-19: `8 needs-input`, added to `cli/exits.frozen` by the change that first raises one and not before; until then such a stop is exit 9, naming its next step |
@@ -996,7 +996,7 @@ the prompt's own check, so the mapping holds for the backport and for v3 alike (
 | Five inputs fix an outcome | `Provenance` carries the five inputs and names a missing one; law 5′ | M0 (the type); M1 to M5 (filled and tested) |
 | A proof applies only under equal inputs | `ExistingData`; `AppliesTo` over existing data, DacFx version, server and publish profile; law T; a proof at each environment's existing data | M2, M4 |
 | The read-only closure | `EnvironmentDatabase` has no `Publish`; `Copy` only from the registry; `SqlServer.Measure`'s allowlist; the read-only principal; the extended-events log | M1, M2 |
-| The privacy closure | integer-only aggregate queries; withheld error messages; disclosure classes; vocabulary only from environments confirmed synthetic; the planted-value scan across the whole chain | M1, M2, M3, M6 |
+| The privacy closure | aggregate queries that return integers, and one allowlist form that returns a column's character-class signatures with their counts, the rare ones folded (§17 item 24); withheld error messages; disclosure classes; vocabulary only from environments confirmed synthetic; the planted-value scan across the whole chain | M1, M2, M3, M6 |
 | Provenance, then reproduction | the gate recomputes from the same inputs and compares the author's provenance with its own; a disagreement is a finding | M5 |
 | One test for a deployed environment | the empty plan under the pipeline's profile (§1 fact 4), before the deploy and after it | M1, M6 |
 | Two locks | `check inflight` for windows; `classify`'s rename findings (column, table, schema move), enforced by the gate before any proof; the refactorlog writer | M2, M4, M5 |

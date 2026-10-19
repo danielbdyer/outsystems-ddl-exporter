@@ -140,10 +140,10 @@ nb 'archive/v2/src/**/*.fs' 'archive/v2/src/*.fs'               # v2 tests: 'arc
 nb 'kernel/**/*.cs' 'kernel/*.cs' 'io/**/*.cs' 'io/*.cs' 'cli/**/*.cs' 'cli/*.cs'
 ```
 
-One tenth is about 18,000 product lines and 15,000 test lines. `V3_MILESTONES.md` budgets 14,900
-product lines for kernel, io and cli, about 11,400 of them planned after the re-cut of M3, and no
-MCP yet. Its test ceiling is 20,000, above one tenth, and v3's tests stood at 13,002 when M1
-closed: the blueprint says whether that ceiling holds, and why. The Facsimile's specification adds
+One tenth is about 18,000 product lines and 15,000 test lines. On 2026-10-19 `ci/budgets.json` held
+26,600 product lines for kernel, io and cli, about 11,400 of them planned after the re-cut of M3, and
+no MCP yet; its test ceiling, 43,100, is above one tenth, and v3's tests stood at 13,002 when M1
+closed: the blueprint says whether those ceilings hold, and why. The Facsimile's specification adds
 about 19,600 non-blank lines of Markdown, most of them a case catalog, a suite written as data that
 the plan moves to `tests/Cases/` under a budget of its own (WP 2.6).
 

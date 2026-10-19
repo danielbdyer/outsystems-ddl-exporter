@@ -1737,7 +1737,7 @@ downloads it. Five laws, five tests (§13).
 
 *Amended 2026-10-19.* `V3_MILESTONES.md` already replaced the bake and the restore with a copy
 derived locally (its §4 row 5). It now re-cuts this verb around the Facsimile, the Twin's
-successor (`archive/v2/ssdt-agent/facsimile/`), pending the operator (its §17 item 20). A proof's
+successor (`archive/v2/ssdt-agent/facsimile/`), confirmed by the operator on 2026-10-19 (its §17 item 20). A proof's
 copy is planted, one synthetic witness row for each precondition an environment answers yes, and
 none is generated from a distribution. The copy reproduces the environment's trust state rather
 than forcing every constraint trusted. The evidence verbs, the scenarios and the shape and scale
@@ -2997,7 +2997,7 @@ that number decided the disposition: **KEEP** · **KEEP-SIMPLIFIED** · **FOLD-I
 
 *Amended 2026-10-19.* The Facsimile's `ARCHITECTURE.md` §2 disposes of each Twin responsibility
 again, each with a parity or retirement case. Where it differs from this table and from D.6's σ
-row, it governs, pending the operator (`V3_MILESTONES.md` §17 item 20). The σ mint, the evidence
+row, it governs, confirmed by the operator on 2026-10-19 (`V3_MILESTONES.md` §17 item 20). The σ mint, the evidence
 tiers, the scenarios' weights and windows, and the bake retire. The post-generation trust gate is
 inverted: a copy reproduces the environment's trust state. Kept are `twin.json`'s closed
 configuration, its scenario pins (as declared witnesses), convergence and determinism.
