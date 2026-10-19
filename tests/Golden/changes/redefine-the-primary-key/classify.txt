@@ -1,0 +1,2 @@
+define-pk PrimaryKeyConstraint [dbo].[PK_OrderLine]
+drop-pk PrimaryKeyConstraint [dbo].[PK_OrderLine_Id]

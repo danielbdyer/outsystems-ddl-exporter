@@ -1,0 +1,2 @@
+delete-attribute Column [dbo].[Product].[LegacyCode]
+narrow Column [dbo].[Customer].[Email]

@@ -1,0 +1,17 @@
+# temporal-convert
+
+An existing table made system-versioned: the GENERATED ALWAYS AS ROW START and ROW END columns added, a history table
+named, and SYSTEM_VERSIONING turned on. DacFx rebuilds the table, and every existing row takes the conversion's time as
+its ROW START unless a pre-deploy step writes another. A history table the change declares is a create-entity of its
+own.
+
+Measured on DacFx 170.5.96: a table without system versioning holds RetentionUnit -2, and a system-versioned one with
+infinite retention -1.
+
+```text
+recognize:
+  match: altered Table Columns TemporalSystemVersioningHistoryTable RetentionUnit:-2→-1
+  match: created Column GeneratedAlwaysType=ColumnGeneratedAlwaysType.GeneratedAlwaysAsRowStart
+  match: created Column GeneratedAlwaysType=ColumnGeneratedAlwaysType.GeneratedAlwaysAsRowEnd
+  ships: several releases on a populated table: the period columns backfilled, then SYSTEM_VERSIONING on
+```
