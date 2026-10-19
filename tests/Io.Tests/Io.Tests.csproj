@@ -36,5 +36,6 @@
     <Compile Include="../Budgets.Tests/Programs.cs" Link="Programs.cs" />
     <!-- The ways to every error, which Register.Errors reads for the register and "no output contains Password=" plants a password in. -->
     <Compile Include="../Budgets.Tests/Register/ErrorPaths.cs" Link="ErrorPaths.cs" />
+    <Compile Include="../Budgets.Tests/Register/ErrorPaths.Inputs.cs" Link="ErrorPaths.Inputs.cs" />
   </ItemGroup>
 </Project>
