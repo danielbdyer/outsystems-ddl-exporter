@@ -51,6 +51,22 @@ public sealed class PackagesAllowlist
             && ((string?)e.Attribute("Condition") ?? "").Contains("$(CI)", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// One version per package holds for every v3 project but one (DECISIONS.md, 2026-10-19): tests/DacFx162/ runs DacFx 162.5.57,
+    /// the release the pipeline is presumed to run, beside the committed one, and no other MSBuild file overrides a central version.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Value", "X3")]
+    public void Only_the_DacFx_162_runner_overrides_a_central_package_version()
+    {
+        var overrides = Repository.MsBuildFiles.SelectMany(f => Repository.Xml(f).Descendants()
+            .Where(e => e.Attribute("VersionOverride") is not null)
+            .Select(e => f + ": " + ((string?)e.Attribute("Include") ?? "") + " " + (string?)e.Attribute("VersionOverride")));
+
+        Assert.Equal(["tests/DacFx162/DacFx162.csproj: Microsoft.SqlServer.DacFx 162.5.57"], overrides);
+    }
+
     private static string[] Named(string msbuildFile, params string[] items) => Repository.Xml(msbuildFile).Descendants()
         .Where(e => items.Contains(e.Name.LocalName))
         .Select(e => (string?)e.Attribute("Include") ?? (string?)e.Attribute("Update") ?? "")

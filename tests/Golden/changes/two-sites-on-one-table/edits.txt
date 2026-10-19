@@ -1,0 +1,6 @@
+=== Modules/Customer.sql
+--- Email           NVARCHAR(256)   NULL,
++++ Email           NVARCHAR(256)   NOT NULL,
+=== Modules/Customer.sql
+--- ContactPhone    NVARCHAR(40)    NULL,
++++ ContactPhone    NVARCHAR(20)    NULL,

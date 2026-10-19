@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    DacFx 162.5.57 beside the committed 170.5.96: a console the fixture tests start as a child process (spikes S2, S9, S10 and S11),
+    the one v3 project that overrides a central package version (DECISIONS.md, 2026-10-19). It references no project and no project
+    references it, so 162.5.57 reaches no other project's graph. NuGet resolves the package's lib/net8.0, which runs under .NET 10.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>DbChange.DacFx162</AssemblyName>
+    <RootNamespace>DbChange.DacFx162</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- Cultures on: Microsoft.Data.SqlClient refuses globalization-invariant mode. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SqlServer.DacFx" VersionOverride="162.5.57" />
+  </ItemGroup>
+</Project>

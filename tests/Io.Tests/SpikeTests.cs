@@ -54,13 +54,8 @@ public sealed class SpikeTests(PublishedGoldenProject project) : IClassFixture<P
     public async Task Fact_3_the_data_loss_check_is_found_at_state_127_and_its_predicate_returns_1_as_the_read_only_login()
     {
         var (script, _) = project.Plan(project.Mandatory);
-        var body = string.Join('\n', script.Split('\n').Where(l => !l.TrimStart().StartsWith(':')));
-        var parsed = new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(body), out var errors);
-        var checks = new List<QueryExpression>();
-        parsed.Accept(new BlockOnPossibleDataLossChecks(checks));
 
-        Assert.Empty(errors);
-        new Sql160ScriptGenerator().GenerateScript(Assert.Single(checks), out var predicate);
+        new Sql160ScriptGenerator().GenerateScript(Assert.Single(BlockOnPossibleDataLossChecks.Checks(script)).Predicate, out var predicate);
         Assert.Contains("[dbo].[Customer]", predicate, StringComparison.Ordinal);
         Assert.Equal(1,
             await SqlServerFixture.ScalarAsync(project.Reader.ConnectionString,
@@ -164,22 +159,6 @@ public sealed class SpikeTests(PublishedGoldenProject project) : IClassFixture<P
                let pair = (Before: column.GetProperty(property), After: heads[column.Name.ToString()].GetProperty(property))
                where !Equals(pair.Before, pair.After)
                select (column.Name.ToString(), property.Name, pair.Before, pair.After);
-    }
-
-    /// <summary>DacFx's BlockOnPossibleDataLoss check, IF EXISTS (…) RAISERROR (…, 16, 127); the script's other IF EXISTS blocks check
-    /// database options.</summary>
-    private sealed class BlockOnPossibleDataLossChecks(List<QueryExpression> found) : TSqlFragmentVisitor
-    {
-        public override void ExplicitVisit(IfStatement node)
-        {
-            if (node.Predicate is ExistsPredicate exists
-                && node.ThenStatement is RaiseErrorStatement { ThirdParameter: IntegerLiteral { Value: "127" } })
-            {
-                found.Add(exists.Subquery.QueryExpression);
-            }
-
-            base.ExplicitVisit(node);
-        }
     }
 }
 
