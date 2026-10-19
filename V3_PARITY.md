@@ -294,13 +294,13 @@ v3 is complete when every row above is held, retired, or waits only on the cutov
 exit of M0 to M7 that can run here is green. What remains, in the order the work can move:
 
 **Now, needing no person.**
-1. Done: the pre-M2 code the rulings of 2026-09-25 call for is in the code; round two's finding DF-5 and a test for an environment that names no host remain (`NEXT.md`, *Next*).
+1. Done: the pre-M2 code the rulings of 2026-09-25 call for, with DF-5 (`Io.Tests: SsdtTests`) and an environment that names no host (`Io.Tests: PublishProfilesTests`).
 2. Spikes in CI: S2 is done (the check forms and the vocabulary's statement shapes on both DacFx releases, in
    `Io.Tests: BlockOnPossibleDataLossCheckTests` against `tests/Golden/data-loss-checks/`); S4 (CREATE, RESTORE and DROP timed in
    LocalDB 16.x), and S9 to S11 (trust state through a schema read; constraint validation after the post-deploy script on 162.x;
    system-named constraints through a publish), which run DacFx 162.5.57 as S2 does, through the child process `tests/DacFx162/`.
-3. WP 3.1 (`Schema`, `Order`), WP 3.4 (`LocalServer` completed) and WP 3.5's first step (the base
-   built, published and backed up), then WP 3.8 (`Witness`), now that the re-cut is confirmed.
+3. WP 3.4 (`LocalServer` completed) and WP 3.5's first step (the base built, published and backed up), then WP 3.8
+   (`Witness`), now that the re-cut is confirmed; WP 3.1 (`Schema`, `Order`) is done.
 4. Lane C's WP 7.1 (citations rewritten), which waits on nothing.
 
 **Decided by the operator, 2026-10-19.** M2 has started, and with it PAR-016, 020, 021, 023, 119, 132, 201 and 215
