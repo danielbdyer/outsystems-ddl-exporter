@@ -308,6 +308,17 @@ internal static partial class ErrorPaths
         return dacpac;
     }
 
+    /// <summary>The first refusal Classify raises between two models built in memory, as the error it carries.</summary>
+    private static Error Refusal(string[] before, string[] after, Classify.Inputs? inputs = null)
+    {
+        using var was = Model(before);
+        using var now = Model(after);
+        var (from, to) = (Made(Ssdt.ReadModel(was)), Made(Ssdt.ReadModel(now)));
+        var refusal = Classify.Of(from, to, Made(Change.Between(from, to, [])), [], inputs ?? Classify.Inputs.None).Findings
+            .FirstOrDefault(f => f.Severity == Severity.Error) ?? throw new InvalidOperationException("Classify refused nothing");
+        return new Error(refusal.Code, refusal.Message, refusal.Remedy!);
+    }
+
     /// <summary>A model built in memory, each script added as its own source, as io/Ssdt.ReadModel reads one.</summary>
     private static TSqlModel Model(params string[] scripts)
     {

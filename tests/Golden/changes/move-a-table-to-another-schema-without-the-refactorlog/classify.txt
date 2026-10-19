@@ -1,0 +1,2 @@
+unclassified change: prove it, created Schema [sales]
+error rename.schema-move-without-entry Table [sales].[CustomerAddress]

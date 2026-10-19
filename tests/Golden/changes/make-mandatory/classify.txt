@@ -1,0 +1,1 @@
+make-mandatory Column [dbo].[Customer].[Email]

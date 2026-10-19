@@ -1,0 +1,8 @@
+create-entity Table [dbo].[Measured]
+unclassified change: prove it, created Role [MeasuredReader]
+unclassified change: prove it, created DataType [dbo].[Code]
+unclassified change: prove it, created TableValuedFunction [dbo].[Inline]
+unclassified change: prove it, created TableType [dbo].[Lines]
+unclassified change: prove it, created Permission [dbo].[Measured].[Grant.Select.Object].[MeasuredReader].[dbo]
+unclassified change: prove it, created TableValuedFunction [dbo].[Multi]
+unclassified change: prove it, created Procedure [dbo].[WithParameter]

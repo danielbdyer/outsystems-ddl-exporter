@@ -1,0 +1,6 @@
+=== Modules/ProductLegacy.sql
+--- -- Intentionally no schema object. The columns live in Modules/Product.sql.
++++ CREATE SCHEMA sales;
+=== Modules/CustomerAddress.sql
+--- CREATE TABLE dbo.CustomerAddress
++++ CREATE TABLE sales.CustomerAddress
