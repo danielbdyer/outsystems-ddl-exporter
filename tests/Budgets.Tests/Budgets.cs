@@ -12,7 +12,8 @@ namespace DbChange.Budgets.Tests;
 /// Code, tests and the corpus stay under the ceilings in ci/budgets.json, counted in physical lines over each budget's
 /// include globs, less its exclude globs and neverCounted (bin/ and obj/). A red budget names its ceiling and its
 /// largest files; the fix is to shorten a file, or to raise the ceiling with a DECISIONS.md line. Each C# file also
-/// holds the ceilings of eachFile: its group's ceiling in physical lines, and widthCeiling in characters on every line.
+/// holds its eachFile group's ceiling in physical lines, and a file of a group that carries a widthCeiling holds it in
+/// characters on every line: the code does, the tests do not (the operator's ruling of 2026-10-19).
 /// </summary>
 public sealed class Budgets
 {
@@ -24,6 +25,10 @@ public sealed class Budgets
     public static TheoryData<string> Packages => new(Data["budgets"]!.AsObject().Select(b => b.Key));
 
     public static TheoryData<string> FileGroups => new(Data["eachFile"]!["groups"]!.AsObject().Select(g => g.Key));
+
+    /// <summary>The eachFile groups that carry a widthCeiling; a group without one is held to its line ceiling alone.</summary>
+    public static TheoryData<string> WidthGroups =>
+        new(Data["eachFile"]!["groups"]!.AsObject().Where(g => g.Value!["widthCeiling"] is not null).Select(g => g.Key));
 
     [Theory]
     [Trait("Category", "fast")]
@@ -75,24 +80,27 @@ public sealed class Budgets
     }
 
     /// <summary>
-    /// Every line of a C# file of a group holds widthCeiling, 140 characters; a red group names each line over it as its
-    /// path:line and its width, widest first.
+    /// Every line of a C# file of a group that carries a widthCeiling holds it: 140 characters for kernel/, io/ and cli/;
+    /// a red group names each line over it as its path:line and its width, widest first.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Value", "L3")]
-    [MemberData(nameof(FileGroups))]
+    [MemberData(nameof(WidthGroups))]
     public void Every_line_of_a_file_of_a_group_holds_the_width_ceiling(string group)
     {
-        var width = (int)Data["eachFile"]!["widthCeiling"]!;
-        var wide = Counted(Data["eachFile"]!["groups"]![group]!)
+        var data = Data["eachFile"]!["groups"]![group]!;
+        var width = (int)data["widthCeiling"]!;
+        var files = Counted(data);
+        var wide = files
             .SelectMany(f => PhysicalLines(Repository.Read(f.Path)).Select((line, i) => (f.Path, Line: i + 1, Width: line.Length)))
             .Where(l => l.Width > width)
             .OrderByDescending(l => l.Width).ThenBy(l => l.Path, StringComparer.Ordinal).ThenBy(l => l.Line)
             .ToList();
 
-        var message = string.Create(CultureInfo.InvariantCulture, $"ci/budgets.json eachFile.widthCeiling: the ceiling is {width} ")
-            + string.Create(CultureInfo.InvariantCulture, $"characters; lines of eachFile.groups.{group} over it, {wide.Count}. ")
+        Assert.True(files.Count > 0, "ci/budgets.json eachFile.groups." + group + " counts no file: its include globs are wrong");
+        var message = string.Create(CultureInfo.InvariantCulture, $"ci/budgets.json eachFile.groups.{group}.widthCeiling: the ceiling ")
+            + string.Create(CultureInfo.InvariantCulture, $"is {width} characters; lines of the group over it, {wide.Count}. ")
             + "Break each without changing what it means, or raise the ceiling with a DECISIONS.md line. "
             + Listed("Widest", wide.Select(l => l.Path + ":" + Number(l.Line) + " " + Number(l.Width)), wide.Count);
         Assert.True(wide.Count == 0, message);
