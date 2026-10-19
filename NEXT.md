@@ -4,11 +4,13 @@ LocalDB and a native SQL Server Express; the operator's rulings of 2026-10-19 ar
 
 ## The operator's actions
 - Run the laptop check against Dev (M1 exit 1, spikes S1 and S3) with the tool folder built at the branch head: in the
-  v3 clone, `git switch claude/v3-architecture-design-sl95mx`, `git pull` and `ci/publish.ps1`; then, in the SSDT repository's clone and with `dist\dbchange\dbchange.exe`
-  as `dbchange`, `dbchange check drift --target env:dev --at <Dev's deployed tag> --json` and
-  `dbchange read --from env:dev --json`, and Dev's collation with
+  v3 clone, `git switch claude/v3-architecture-design-sl95mx`, `git pull` and `ci/publish.ps1`; then, in the SSDT
+  repository's clone and with `<v3 clone>\dist\dbchange\dbchange.exe` as `dbchange`, run
+  `dbchange check drift --target env:dev --at <Dev's deployed tag> --json` and `dbchange read --from env:dev --json`,
+  and read Dev's collation with
   `sqlcmd -S <Dev's server> -d <Dev's database> -E -Q "SELECT collation_name FROM sys.databases WHERE name = DB_NAME()"`.
-  Report on the review page check drift's `elapsedMs`, the read's `elapsedMs` and the `collation_name`.
+  Report on the review page check drift's exit code and its whole JSON answer, which carries its `elapsedMs`, the
+  read's `elapsedMs` and the `collation_name`: M1 exit 1 passes on exit 0, or 5 naming each differing object, in a minute.
 - At M0, install the SessionStart and SessionEnd hooks in `.claude/hooks/` as `CLAUDE.md` describes them; no agent may edit them.
 - Answer the cards still open in round two of the M1 review (linked in #704's description).
 - Move or delete the v2 worktrees under archive/v2/.claude/worktrees (3.6 GB), which Visual Studio and Copilot scan.
@@ -19,8 +21,6 @@ LocalDB and a native SQL Server Express; the operator's rulings of 2026-10-19 ar
   of 2026-10-19 carried into `V3_MILESTONES.md`, `VALUES.md` and `V3_PARITY.md`.
 
 ## Next
-- Left from the pre-M2 pass, which is otherwise in the code: round two's finding DF-5 (the system dacpacs in the
-  tool folder, which the operator marked fix), and a test for an environment whose reference names no host.
 - WP 3.1, WP 2.4, and spike S2 run with the second DacFx release; then WP 2.2, WP 2.3, WP 3.8 and spikes S9 to S11;
   then WP 3.4's remainder with spike S4, WP 2.5, WP 2.6, WP 3.5 and WP 7.1. WP 2.6 moves the Facsimile's case catalog
   to `tests/Cases/` (not held yet: WP 2.6). `ParityResolves` prints where the ledger stands.

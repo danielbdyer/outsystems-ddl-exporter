@@ -463,8 +463,8 @@ public sealed partial class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// The local server named by a ~/.dbchange/sql.env whose port nothing listens on, as after the container stopped: creating a copy
-    /// is refused as a server that does not answer, with the remedy that starts the container, and the row written before the CREATE
+    /// The local server named by a ~/.dbchange/sql.env whose port nothing listens on, as after ci/sql.sh down: creating a copy is
+    /// refused as a server that does not answer, with the remedy ci/sql.sh up, and the row written before the CREATE
     /// DATABASE is taken out of the registry again. A closed port answers at once, so no server is needed.
     /// </summary>
     [Fact]

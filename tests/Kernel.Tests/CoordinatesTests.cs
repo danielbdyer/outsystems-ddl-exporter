@@ -65,6 +65,25 @@ public sealed class CoordinatesTests
     }
 
     /// <summary>
+    /// Decision 2.26: under a case-insensitive collation a difference in letter case alone is no difference, so an environment that spells
+    /// [dbo].[CUSTOMER] holds the change's [dbo].[Customer], and each place names the object as the environment spells it, which WP 2.3's
+    /// queries name. Under a case-sensitive collation the same environment holds no [dbo].[Customer], and the precondition is refused.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Under_a_case_insensitive_collation_an_object_the_environment_spells_in_other_letter_case_is_counted_under_its_spelling()
+    {
+        var c = Cases["QST-104"];
+        var shouted = c.Base.MoveTable("Customer", "dbo", "CUSTOMER").Elements;
+
+        Assert.Equal(new Coordinates.Counted(NotNull("Customer.Nickname"), SortedArray.Of(
+            [new Place(Model.TableKey("Customer"), Model.TableKey("CUSTOMER"), null),
+                new Place(Model.ColumnKey("Customer.Nickname"), Model.ColumnKey("CUSTOMER.Nickname"), null)])),
+            Ok(Coordinates.Of(NotNull("Customer.Nickname"), c.Change, shouted, CaseInsensitive)));
+        Expect.Failed(Coordinates.Of(NotNull("Customer.Nickname"), c.Change, shouted, Collation.CaseSensitive), "plan.missing-object");
+    }
+
+    /// <summary>
     /// Over generated edits, with the environment at the model before them: a precondition is answered exactly when the change creates its
     /// table; each object a counted one reads is held under the key it had before the change, renamed or moved, or is a column the change
     /// creates with the default the edit gave it; and an environment lacking any held object refuses the precondition, naming it.

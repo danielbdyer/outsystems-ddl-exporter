@@ -311,8 +311,9 @@ public sealed class DoctorTests : IDisposable
     }
 
     /// <summary>
-    /// The doctor reaches a server at the TCP port its data source names, as SqlClient reads it (1433 for a host alone), and does not
-    /// reach one over another transport or a named instance without a port, whose port SQL Server Browser gives.
+    /// The doctor reaches a server at the TCP port its data source names, as SqlClient reads it (1433 for a host alone, and localhost,1433
+    /// for an empty data source, as LocalServer.ServerName spells it), and does not reach one over another transport or a named instance
+    /// without a port, whose port SQL Server Browser gives.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -320,6 +321,7 @@ public sealed class DoctorTests : IDisposable
     [InlineData(@"Server=127.0.0.1,11434", "127.0.0.1", 11434)]
     [InlineData(@"Server=db-host", "db-host", 1433)]
     [InlineData(@"Server=.,1433", "localhost", 1433)]
+    [InlineData(@"Server=", "localhost", 1433)]
     [InlineData(@"Server=db-host\sql2022,51000", "db-host", 51000)]
     [InlineData(@"Server=db-host\sql2022", null, 0)]
     [InlineData(@"Server=np:\\db-host\pipe\sql\query", null, 0)]
@@ -339,10 +341,16 @@ public sealed class DoctorTests : IDisposable
         var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
         listener.Start();
         var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         var open = Doctor.Listening("127.0.0.1", port, CancellationToken.None);
+        var opened = clock.Elapsed;
         listener.Stop();
+        clock.Restart();
+        var closed = Doctor.Listening("127.0.0.1", port, CancellationToken.None);
 
-        Assert.Equal((true, false), (open, Doctor.Listening("127.0.0.1", port, CancellationToken.None)));
+        Assert.Equal((true, false), (open, closed));
+        Assert.All((TimeSpan[])[opened, clock.Elapsed], took => Assert.True(took < TimeSpan.FromSeconds(5),
+            took + " for a loopback answer, against a probe timeout of " + Command.ProbeTimeout));
     }
 
     /// <summary>
@@ -361,13 +369,13 @@ public sealed class DoctorTests : IDisposable
             return true;
         }
 
-        var container = Value(LocalServer.Choice(null, SqlEnv(), Installed));
+        var named = Value(LocalServer.Choice(null, SqlEnv(), Installed));
         var variable = Value(LocalServer.Choice("Server=db", null, Installed));
         var beforeLocalDb = asked;
         var localDb = Value(LocalServer.Choice(null, machine.Under("no-sql.env"), Installed));
 
         Assert.Equal(("the SQL Server ~/.dbchange/sql.env names", "DBCHANGE_SQL", "LocalDB MSSQLLocalDB"),
-            (container.ToString(), variable.ToString(), localDb.ToString()));
+            (named.ToString(), variable.ToString(), localDb.ToString()));
         Assert.Equal((0, 1), (beforeLocalDb, asked));
     }
 

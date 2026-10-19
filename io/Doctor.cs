@@ -18,11 +18,10 @@ namespace DbChange.Io;
 /// <summary>
 /// Can this machine do the work, read-only (V3_ARCHITECTURE.md §8.12): the .NET SDK in the band global.json names and the .NET 10 runtime;
 /// git at 2.24 or later (rev-parse --end-of-options); the committed tool folder and its DacFx against the SSDT repository's toolchain
-/// ledger; the build route; the local server dbchange would use, in LocalServer's order (DBCHANGE_SQL, the SQL Server
-/// ~/.dbchange/sql.env names, LocalDB); and Git LFS. Each item
-/// missing carries its remedy. Every program runs through io/Command for at most <see cref="Command.ProbeTimeout"/>, and a program that
-/// does not answer in time is named as such, never as absent. The machine is read once (<see cref="Machine.Here"/>) and given to
-/// <see cref="Examine"/>, so a test describes a machine instead of setting variables.
+/// ledger; the build route; the local server dbchange would use, in LocalServer's order (DBCHANGE_SQL, the SQL Server ~/.dbchange/sql.env
+/// names, LocalDB); and Git LFS. Each item missing carries its remedy. Every program runs through io/Command for at most
+/// <see cref="Command.ProbeTimeout"/>, and a program that does not answer in time is named as such, never as absent. The machine is
+/// read once (<see cref="Machine.Here"/>) and given to <see cref="Examine"/>, so a test describes a machine instead of setting variables.
 /// </summary>
 public static class Doctor
 {
@@ -339,15 +338,20 @@ public static class Doctor
 
     /// <summary>
     /// The host and TCP port a connection's data source reaches, as SqlClient reads it: tcp: or no protocol, the port after the comma,
-    /// or 1433 for a host alone. None for a named pipe (np:, \\host\pipe), shared memory (lpc:), LocalDB, or a named instance without a
-    /// port, whose port SQL Server Browser gives.
+    /// or 1433 for a host alone; localhost,1433 for an empty data source, as LocalServer.ServerName spells it. None for a named pipe (np:,
+    /// \\host\pipe), shared memory (lpc:), LocalDB, or a named instance without a port, whose port SQL Server Browser gives.
     /// </summary>
     internal static (string Host, int Port)? Endpoint(string connection)
     {
         var source = new SqlConnectionStringBuilder(connection).DataSource.Trim();
         source = source.StartsWith("tcp:", StringComparison.OrdinalIgnoreCase) ? source[4..]
             : source.StartsWith("admin:", StringComparison.OrdinalIgnoreCase) ? source[6..] : source;
-        if (source.Length == 0 || source.StartsWith('\\') || ((string[])["np:", "lpc:", "(localdb)"]).Any(
+        if (source.Length == 0)
+        {
+            return ("localhost", 1433);
+        }
+
+        if (source.StartsWith('\\') || ((string[])["np:", "lpc:", "(localdb)"]).Any(
             other => source.StartsWith(other, StringComparison.OrdinalIgnoreCase)))
         {
             return null;

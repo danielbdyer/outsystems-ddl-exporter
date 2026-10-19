@@ -201,9 +201,8 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     /// R1 and DECISIONS.md, 2026-09-25: a drift's provenance holds the fingerprint of the target's schema, its elements as the copy
     /// extracts, and of the deploy report, the change the claim is about; neither is the package's. It names the committed DacFx and the
     /// copy's server, its product version, edition and compatibility level as SQL Server reports them, and lacks only the existing data;
-    /// the stamp says
-    /// UNPINNED while the ledger's row does, and until S7 lands the Octopus step's profile, a note says the profile is not verified against
-    /// it (§17 item 15).
+    /// the stamp says UNPINNED while the ledger's row does, and until S7 lands the Octopus step's profile, a note says the profile is not
+    /// verified against it (§17 item 15).
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
@@ -339,7 +338,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         Assert.True(readExit == 0, read);
         // the session saw the run: dbchange's own first statement
         Assert.Contains(sent, s => s.Text.Contains("HAS_PERMS_BY_NAME", StringComparison.Ordinal));
-        // The container's SQL Server shows DacFx's catalog batch masked (*encrypt---); the Windows runner's LocalDB shows it as written
+        // SQL Server Express on Linux shows DacFx's catalog batch masked (*encrypt---); the Windows runner's LocalDB shows it as written
         // but cut off, and Writes reads it token by token. A masked text is admitted only as DacFx's sp_executesql, one per read at most:
         // the two checks and the read.
         var masked = sent.Where(s => ReadOnlyLoginTrace.Masked(s.Text)).ToList();

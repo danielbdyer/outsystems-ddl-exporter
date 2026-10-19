@@ -6,6 +6,8 @@ Microsoft.Data.SqlClient
 Microsoft.NET.Test.Sdk
 Microsoft.NETFramework.ReferenceAssemblies.net472
 Microsoft.SqlServer.DacFx
+Microsoft.SqlServer.Dacpacs.Master
+Microsoft.SqlServer.Dacpacs.Msdb
 Microsoft.SqlServer.TransactSql.ScriptDom
 NetArchTest.Rules
 System.Security.Cryptography.Pkcs

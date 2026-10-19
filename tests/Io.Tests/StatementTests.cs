@@ -191,7 +191,7 @@ public sealed class StatementTests : IDisposable
     }
 
     /// <summary>
-    /// The local server's own login refused, as after ~/.dbchange/sql.env names a password the container no longer has: a denial whose
+    /// The local server's own login refused, as after ~/.dbchange/sql.env names a password the server no longer has: a denial whose
     /// remedy names sql.env rather than a lead, and no row in the registry. On LocalDB, which authenticates Windows identities alone, a
     /// SQL login is refused as untrusted (Msg 18452), a denial too.
     /// </summary>
