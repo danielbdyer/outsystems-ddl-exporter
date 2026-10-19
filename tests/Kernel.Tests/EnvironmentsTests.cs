@@ -8,8 +8,8 @@ using Xunit;
 namespace DbChange.Kernel.Tests;
 
 /// <summary>
-/// dbchange/environments.json as data (WP 1.5, §4 row 14): the environments it names, each once and each with the host its server runs on, a
-/// publish profile's path inside the repository, and the local server it prefers; a reference is env:NAME or file:path and prints as
+/// dbchange/environments.json as data (WP 1.5, §4 row 14): the environments it names, each once and each with the host its server runs on,
+/// a publish profile's path inside the repository, and the local server it prefers; a reference is env:NAME or file:path and prints as
 /// itself, and no connection string passes as a path; an environment is real until a named lead's dated confirmation says synthetic;
 /// and a SQLCMD value is a literal or a reference, read through Match, and a name shaped like a credential never holds a literal.
 /// No error quotes the value it rejected.
@@ -87,7 +87,8 @@ public sealed class EnvironmentsTests
     public void A_confirmation_is_a_named_lead_and_a_calendar_date_as_written(string? lead, string? on) =>
         Expect.Failed(Confirmation.Of(Where, lead, on), "environments.confirmation");
 
-    /// <summary>The date is data, as the lead committed it: a date after today is taken as written, since nothing here reads a clock.</summary>
+    /// <summary>The date is data, as the lead committed it: a date after today is taken as written, since nothing here reads a
+    /// clock.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_confirmation_dated_after_today_is_taken_as_written() =>
@@ -159,7 +160,8 @@ public sealed class EnvironmentsTests
 
     /// <summary>
     /// The duplicate check compares neighbours in the sorted variables, so it relies on the order putting two spellings of one name side by
-    /// side: Tag, Version and tag sort Tag, tag, Version under the kernel's case-insensitive order, and Tag, Version, tag under an ordinal one.
+    /// side: Tag, Version and tag sort Tag, tag, Version under the kernel's case-insensitive order, and Tag, Version, tag under an ordinal
+    /// one.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -170,7 +172,8 @@ public sealed class EnvironmentsTests
         Expect.Failed(Environment("dev", sqlCmd: [Literal("Tag", "a"), Literal("Version", "b"), Literal("tag", "c")]), "environments.sqlcmd-repeated");
     }
 
-    /// <summary>The environments file names each environment once; one environment is found by its name, and another name finds none.</summary>
+    /// <summary>The environments file names each environment once; one environment is found by its name, and another name finds
+    /// none.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void The_environments_file_names_each_environment_once_and_finds_one_by_its_name()
@@ -184,7 +187,8 @@ public sealed class EnvironmentsTests
         Expect.Failed(Environments.Of("dbchange/environments.json", [dev, qa, Expect.Value(Environment("dev", profile: "dbchange/other.publish.xml"))], null), "environments.environment-name");
     }
 
-    /// <summary>The profile a copy is planned under when no --profile names one: the one every environment names, else none (cli/Check.cs).</summary>
+    /// <summary>The profile a copy is planned under when no --profile names one: the one every environment names, else none
+    /// (cli/Check.cs).</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void The_shared_profile_is_the_one_path_every_environment_names_and_else_none()

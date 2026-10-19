@@ -5,7 +5,8 @@ using Xunit;
 
 namespace DbChange.Kernel.Tests;
 
-/// <summary>kernel/LineEndings: CRLF and a lone CR become LF, and nothing else changes, so a fingerprint sees one text whatever wrote its line breaks.</summary>
+/// <summary>kernel/LineEndings: CRLF and a lone CR become LF, and nothing else changes, so a fingerprint sees one text whatever wrote its
+/// line breaks.</summary>
 public sealed class LineEndingsTests
 {
     [Theory]

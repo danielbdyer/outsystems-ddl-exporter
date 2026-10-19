@@ -5,12 +5,14 @@ using Xunit;
 
 namespace DbChange.Kernel.Tests;
 
-/// <summary>An error is a code of a closed category, a message and a remedy; one without a remedy, or of a category the set lacks, cannot be constructed.</summary>
+/// <summary>An error is a code of a closed category, a message and a remedy; one without a remedy, or of a category the set lacks, cannot
+/// be constructed.</summary>
 public sealed class ErrorTests
 {
     private static readonly Gen<ErrorCategory> Member = Gen.OneOfConst(Enum.GetValues<ErrorCategory>());
 
-    /// <summary>A word of the code grammar: runs of lowercase letters and digits joined by single hyphens, as local-server and too-long are.</summary>
+    /// <summary>A word of the code grammar: runs of lowercase letters and digits joined by single hyphens, as local-server and too-long
+    /// are.</summary>
     private static readonly Gen<string> Word = Gen.Char["az09"].Array[1, 3].Select(cs => new string(cs)).Array[1, 3].Select(runs => string.Join('-', runs));
 
     /// <summary>A member's word, then one to three words of detail: every code the grammar admits under a category the set holds.</summary>
@@ -35,7 +37,8 @@ public sealed class ErrorTests
         Gen.Select(Code, Blank, Text).Sample((code, message, remedy) =>
             Assert.Throws<ArgumentException>("message", () => new Error(code.Code, message!, remedy)));
 
-    /// <summary>Over the whole grammar, hyphenated words and digits included, a code under a member's word constructs, and the error reads that member as its category.</summary>
+    /// <summary>Over the whole grammar, hyphenated words and digits included, a code under a member's word constructs, and the error reads
+    /// that member as its category.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Every_code_the_grammar_admits_under_a_member_s_word_constructs_an_error_of_that_category() =>
@@ -63,7 +66,8 @@ public sealed class ErrorTests
     public void An_error_code_is_a_category_and_a_detail_in_lowercase_words(string code) =>
         Assert.Throws<ArgumentException>("code", () => new Error(code, "Failed.", "Do the other thing."));
 
-    /// <summary>The category set is closed: a well-formed code whose first word no member writes as cannot be made into an error, and the error names the word.</summary>
+    /// <summary>The category set is closed: a well-formed code whose first word no member writes as cannot be made into an error, and the
+    /// error names the word.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void An_error_of_a_category_the_set_lacks_cannot_be_constructed_and_the_exception_names_the_category()

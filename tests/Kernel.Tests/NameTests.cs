@@ -12,7 +12,8 @@ namespace DbChange.Kernel.Tests;
 /// </summary>
 public sealed class NameTests
 {
-    /// <summary>A part of 1 to 128 code units drawn from the whole BMP: control characters (U+0000 to U+001F, U+007F to U+009F), white space and the rest.</summary>
+    /// <summary>A part of 1 to 128 code units drawn from the whole BMP: control characters (U+0000 to U+001F, U+007F to U+009F), white
+    /// space and the rest.</summary>
     private static readonly Gen<string> Part = Gen.OneOf(
         Gen.Char['\u0000', '￿'].Array[1, 128].Select(cs => new string(cs)),
         Gen.Char[" \t\r\n\u0000\u001B\u007F\u0085  　"].Array[1, 8].Select(cs => new string(cs)));
@@ -60,7 +61,8 @@ public sealed class NameTests
         Assert.Equal("[a]]b].[c.d]", N("a]b", "c.d").ToString());
     }
 
-    /// <summary>Under a case-insensitive collation two spellings match as SQL Server's usual collation reads them, in each part; under a case-sensitive one they match exactly, and equality stays ordinal under either.</summary>
+    /// <summary>Under a case-insensitive collation two spellings match as SQL Server's usual collation reads them, in each part; under a
+    /// case-sensitive one they match exactly, and equality stays ordinal under either.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Names_match_ignoring_case_under_a_case_insensitive_collation_alone()

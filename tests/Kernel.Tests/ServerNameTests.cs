@@ -15,7 +15,8 @@ public sealed class ServerNameTests
 {
     private const string Machine = "DEV-PC";
 
-    /// <summary>A data source in each form SqlClient reads: a protocol or none, a host by name or address or this machine, then a port or an instance or neither, in any case and spacing.</summary>
+    /// <summary>A data source in each form SqlClient reads: a protocol or none, a host by name or address or this machine, then a port or
+    /// an instance or neither, in any case and spacing.</summary>
     private static readonly Gen<string> DataSource = Gen.Select(
         Gen.OneOf(Gen.Const(""), Gen.Const("tcp:"), Gen.Const("TCP:"), Gen.Const("np:"), Gen.Const("lpc:"), Gen.Const("admin:")),
         Gen.OneOf(
@@ -35,7 +36,8 @@ public sealed class ServerNameTests
         Assert.Equal(ServerName.Of("dev-sql\\pipe\\sql\\query", Machine), ServerName.Of(ServerName.Of("np:\\\\DEV-SQL\\pipe\\sql\\query", Machine).ToString(), Machine));
     }
 
-    /// <summary>The spellings .dbchange/copies.json rows and R15 used before the kernel held the type (io/Substrate.cs and io/SqlServer.cs at ffaf717c), each pinned.</summary>
+    /// <summary>The spellings .dbchange/copies.json rows and R15 used before the kernel held the type (io/Substrate.cs and io/SqlServer.cs
+    /// at ffaf717c), each pinned.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("127.0.0.1,11433", "localhost,11433", "localhost")]
@@ -69,7 +71,8 @@ public sealed class ServerNameTests
         Assert.Equal(Host.LocalDb, ServerName.Of("(localdb)\\v11.0", Machine).Host);
     }
 
-    /// <summary>A host as dbchange/environments.json names an environment's: the host alone, since a port, an instance, a protocol or white space belongs to a connection's data source.</summary>
+    /// <summary>A host as dbchange/environments.json names an environment's: the host alone, since a port, an instance, a protocol or white
+    /// space belongs to a connection's data source.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("DEV-SQL.corp.example", "dev-sql.corp.example")]

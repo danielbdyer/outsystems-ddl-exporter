@@ -42,7 +42,8 @@ public abstract record Value : IComparable<Value>
         _ => Rank(this).CompareTo(Rank(other)),
     };
 
-    /// <summary>Culture-free: <c>true</c>, <c>-12</c>, <c>'it''s'</c>, <c>SqlDataType.NVarChar</c>, a script as its text quoted, <c>NULL</c>.</summary>
+    /// <summary>Culture-free: <c>true</c>, <c>-12</c>, <c>'it''s'</c>, <c>SqlDataType.NVarChar</c>, a script as its text quoted,
+    /// <c>NULL</c>.</summary>
     public sealed override string ToString() => Match(
         b => b ? "true" : "false",
         n => n.ToString(CultureInfo.InvariantCulture),
@@ -109,14 +110,16 @@ public sealed record ElementKey : IComparable<ElementKey>
 
     public override string ToString() => Type + " " + Path;
 
-    /// <summary>Whether two keys name one object under <paramref name="collation"/>: the same type at every level, the same depth, and each level's name matching.</summary>
+    /// <summary>Whether two keys name one object under <paramref name="collation"/>: the same type at every level, the same depth, and each
+    /// level's name matching.</summary>
     public bool Matches(ElementKey other, Collation collation)
     {
         var (mine, theirs) = (Chain(this), Chain(other));
         return mine.Length == theirs.Length && mine.Zip(theirs).All(pair => pair.First.Type == pair.Second.Type && pair.First.Name.Matches(pair.Second.Name, collation));
     }
 
-    /// <summary>Keys as one under <paramref name="collation"/>, for a dictionary or a set: equality by <see cref="Matches"/>, and a hash that agrees with it.</summary>
+    /// <summary>Keys as one under <paramref name="collation"/>, for a dictionary or a set: equality by <see cref="Matches"/>, and a hash
+    /// that agrees with it.</summary>
     public static IEqualityComparer<ElementKey> Comparer(Collation collation) => collation.IsCaseSensitive ? EqualityComparer<ElementKey>.Default : new IgnoringCase(collation);
 
     /// <summary>This key, moved under <paramref name="parent"/> as the rename of an ancestor moves it.</summary>
@@ -187,7 +190,8 @@ public sealed record Element : IComparable<Element>
     /// <summary>The package's post-deploy script, with the text the build inlined as its Text property.</summary>
     public static Element PostDeploy(string text) => Script(PostDeploymentScript, "PostDeploy", text);
 
-    /// <summary>A refactorlog entry: keyed by its operation key, with the properties the file gives it (ElementName, ElementType, ParentElementName, NewName).</summary>
+    /// <summary>A refactorlog entry: keyed by its operation key, with the properties the file gives it (ElementName, ElementType,
+    /// ParentElementName, NewName).</summary>
     public static Result<Element> RefactorLogEntry(string operationKey, IEnumerable<Property> properties) =>
         Name.Of(operationKey).Bind(name => ElementKey.Of(RefactorLogOperation, name)).Bind(key => Of(key, properties, []));
 

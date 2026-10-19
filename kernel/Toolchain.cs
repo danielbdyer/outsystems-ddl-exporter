@@ -54,7 +54,8 @@ public abstract record Pin
     {
     }
 
-    /// <summary>A pin from the ledger's release and the release before it: each a DacFx release version, the one before older than the pin.</summary>
+    /// <summary>A pin from the ledger's release and the release before it: each a DacFx release version, the one before older than the
+    /// pin.</summary>
     public static Result<Pin> Of(string release, string? before) => DacFxVersion.Of(release).Bind(pin => before is null
         ? Result.Ok<Pin>(new Pinned(pin, null))
         : DacFxVersion.Of(before).Bind(prior => prior.CompareTo(pin) < 0
@@ -71,7 +72,8 @@ public abstract record Pin
         _ => throw new UnreachableException(),
     };
 
-    /// <summary>The rejection of the committed DacFx outside the window, toolchain.outside-window, or null when the pin admits it.</summary>
+    /// <summary>The rejection of the committed DacFx outside the window, toolchain.outside-window, or null when the pin admits
+    /// it.</summary>
     public Error? Rejects(DacFxVersion committed) => Match(
         _ => null,
         pin => committed == pin.Release || committed == pin.Before ? null : new Error(
@@ -85,7 +87,8 @@ public abstract record Pin
         public override string ToString() => "UNPINNED";
     }
 
-    /// <summary>The pinned release, and the release immediately before it, which the window also admits; null when the ledger names none.</summary>
+    /// <summary>The pinned release, and the release immediately before it, which the window also admits; null when the ledger names
+    /// none.</summary>
     public sealed record Pinned(DacFxVersion Release, DacFxVersion? Before) : Pin
     {
         public override string ToString() => Release.ToString();

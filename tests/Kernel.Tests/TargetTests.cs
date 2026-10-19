@@ -9,13 +9,15 @@ namespace DbChange.Kernel.Tests;
 /// <summary>
 /// The target grammar (V3_MILESTONES.md WP 1.4): env:, copy:, synthetic-copy, ref: and dacpac:, each read into its case of a closed
 /// type and written back as it was read. An environment's name and a copy's name each have one grammar, the copy's the ruled
-/// dbchange_&lt;host&gt;_&lt;pid&gt;_&lt;hex&gt; (DECISIONS.md, 2026-09-25), and a text either grammar refuses is refused without being quoted.
+/// dbchange_&lt;host&gt;_&lt;pid&gt;_&lt;hex&gt; (DECISIONS.md, 2026-09-25), and a text either grammar refuses is refused without being
+/// quoted.
 /// </summary>
 public sealed class TargetTests
 {
     private const string Subject = "--target";
 
-    /// <summary>A text an environment's name may or may not be: lowercase and uppercase letters, digits, a hyphen and an underscore, up to 34 characters.</summary>
+    /// <summary>A text an environment's name may or may not be: lowercase and uppercase letters, digits, a hyphen and an underscore, up to
+    /// 34 characters.</summary>
     private static readonly Gen<string> NameLike = Gen.Char["abcxyzABC019-_"].Array[0, 34].Select(cs => new string(cs));
 
     [Theory]
@@ -38,7 +40,8 @@ public sealed class TargetTests
         Assert.Equal(target, Expect.Value(Target.Parse(target.ToString(), Subject)));
     }
 
-    /// <summary>An env: target is read exactly when its name is an environment's name, the one grammar the environments file's keys also answer to.</summary>
+    /// <summary>An env: target is read exactly when its name is an environment's name, the one grammar the environments file's keys also
+    /// answer to.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void An_env_target_is_read_exactly_when_its_name_is_an_environment_s_name() =>
@@ -80,7 +83,8 @@ public sealed class TargetTests
         planted.AbsentFrom(Expect.Failed(Target.Parse(form + planted, Subject)));
     }
 
-    /// <summary>The names dbchange gives copies read back as themselves, whatever the machine is called, the process's id and the eight hexadecimal digits.</summary>
+    /// <summary>The names dbchange gives copies read back as themselves, whatever the machine is called, the process's id and the eight
+    /// hexadecimal digits.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_copy_name_dbchange_makes_reads_back_as_itself() =>
@@ -98,7 +102,8 @@ public sealed class TargetTests
     public void A_copy_is_named_for_its_machine_in_lower_case_and_its_process(string machine, int pid, uint suffix, string name) =>
         Assert.Equal(name, CopyName.Make(machine, pid, suffix).ToString());
 
-    /// <summary>A name the loose grammar [a-z0-9_]{1,128} of io/SqlServer.cs accepted before the ruling of 2026-09-25, which dbchange never gives a copy.</summary>
+    /// <summary>A name the loose grammar [a-z0-9_]{1,128} of io/SqlServer.cs accepted before the ruling of 2026-09-25, which dbchange never
+    /// gives a copy.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("dbchange_host")]

@@ -15,7 +15,8 @@ namespace DbChange.Kernel;
 /// </summary>
 public abstract record SqlCmdVariable : IComparable<SqlCmdVariable>
 {
-    /// <summary>A variable's name as sqlcmd reads one: a letter or '_', then up to 127 letters, digits, '_' and '-'; io/SchemaText reads a placeholder by it too.</summary>
+    /// <summary>A variable's name as sqlcmd reads one: a letter or '_', then up to 127 letters, digits, '_' and '-'; io/SchemaText reads a
+    /// placeholder by it too.</summary>
     public const string NamePattern = "[A-Za-z_][A-Za-z0-9_-]{0,127}";
 
     private static readonly Regex Used = new(@"\$\((?<name>" + NamePattern + @")\)", RegexOptions.CultureInvariant);

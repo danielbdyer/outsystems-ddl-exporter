@@ -88,13 +88,15 @@ public sealed class ChangeTests
             Assert.Equal(Mirror(insensitive), Ok(Change.Between(f.After, f.Before, [], CaseInsensitive)));
         }, print: f => f.Flip.ToString(), iter: 500);
 
-    /// <summary>The mirror property under a case-insensitive collation, over case-distinct sets: the case-only pairs invert with the rest.</summary>
+    /// <summary>The mirror property under a case-insensitive collation, over case-distinct sets: the case-only pairs invert with the
+    /// rest.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void The_change_between_case_distinct_models_under_a_case_insensitive_collation_mirrors_back() =>
         Gen.Select(CaseDistinctSets, CaseDistinctSets).Sample((a, b) => Mirror(Ok(Change.Between(a, b, [], CaseInsensitive))) == Ok(Change.Between(b, a, [], CaseInsensitive)));
 
-    /// <summary>A model holding two keys that differ in letter case alone is refused under a case-insensitive collation, which reads them as one name, and read under a case-sensitive one.</summary>
+    /// <summary>A model holding two keys that differ in letter case alone is refused under a case-insensitive collation, which reads them
+    /// as one name, and read under a case-sensitive one.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Two_elements_whose_keys_differ_in_case_alone_are_one_key_under_a_case_insensitive_collation()

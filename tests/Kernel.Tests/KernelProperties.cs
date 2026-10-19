@@ -23,7 +23,8 @@ internal static class KernelProperties
         Gen.Select(TopKey, Gen.Select(Gen.OneOfConst("Column", "Index"), Word).Array[0, 3]).Array[0, 5]
             .Select(tops => tops.SelectMany(t => t.Item2.Select(c => Key(t.Item1, c.Item1, c.Item2)).Prepend(t.Item1)).Distinct().ToArray());
 
-    /// <summary>A value of every case; a text and a script draw from one alphabet, so a serialization that tagged them alike would fingerprint two unequal models alike.</summary>
+    /// <summary>A value of every case; a text and a script draw from one alphabet, so a serialization that tagged them alike would
+    /// fingerprint two unequal models alike.</summary>
     public static readonly Gen<Value> Values = Gen.OneOf(
         Gen.Const<Value>(new Value.Null()),
         Gen.Bool.Select(b => (Value)new Value.Boolean(b)),
@@ -94,7 +95,8 @@ internal static class KernelProperties
     /// <summary>One edit: its kind, the set after it, the change it makes, and the renames that explain it.</summary>
     public sealed record Edit(string Kind, SortedArray<Element> After, Change Expected, SortedArray<Rename> Renames);
 
-    /// <summary>The value of a kernel result, as tests of the kernel read one: Expect.Value under the name every builder here uses.</summary>
+    /// <summary>The value of a kernel result, as tests of the kernel read one: Expect.Value under the name every builder here
+    /// uses.</summary>
     public static T Ok<T>(Result<T> result) => Expect.Value(result);
 
     public static ElementKey Key(string type, string schema, string name) => Ok(ElementKey.Of(type, Ok(Name.Of(schema, name))));
@@ -135,7 +137,8 @@ internal static class KernelProperties
             SortedArray.Of(a.Relationships.Select(r => new Change.Relationship(r.Name, r.After, r.Before)))))),
         SortedArray.Of(c.CaseOnlyRenamed.Select(r => r.Inverted())));
 
-    /// <summary>The comparer of keys under a case-insensitive collation, and the sets whose keys are distinct under it: what a case-insensitive database can hold.</summary>
+    /// <summary>The comparer of keys under a case-insensitive collation, and the sets whose keys are distinct under it: what a
+    /// case-insensitive database can hold.</summary>
     public static readonly Collation CaseInsensitive = Ok(Collation.Of("SQL_Latin1_General_CP1_CI_AS"));
 
     public static readonly Gen<SortedArray<Element>> CaseDistinctSets = Sets.Where(set => set.Select(e => e.Key).Distinct(ElementKey.Comparer(CaseInsensitive)).Count() == set.Count);

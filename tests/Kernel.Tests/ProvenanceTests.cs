@@ -15,7 +15,8 @@ public sealed class ProvenanceTests
 
     private static readonly DateTimeOffset At = new(2026, 9, 25, 10, 15, 44, TimeSpan.Zero);
 
-    /// <summary>DECISIONS.md, 2026-09-25: a drift claim's change is the deploy report's fingerprint and its schema the target's, which cli/Check.cs once swapped.</summary>
+    /// <summary>DECISIONS.md, 2026-09-25: a drift claim's change is the deploy report's fingerprint and its schema the target's, which
+    /// cli/Check.cs once swapped.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_drift_claim_holds_the_deploy_report_as_its_change_and_the_target_s_elements_as_its_schema()
@@ -41,7 +42,8 @@ public sealed class ProvenanceTests
         Assert.Empty((onCopy with { ExistingData = Fingerprint.Of("the existing data") }).Lacking);
     }
 
-    /// <summary>R1: a claim transfers between servers of one major version and compatibility level, whatever their build or image.</summary>
+    /// <summary>R1: a claim transfers between servers of one major version and compatibility level, whatever their build or
+    /// image.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Two_servers_are_at_one_level_exactly_when_their_major_version_and_compatibility_level_agree()
@@ -75,7 +77,8 @@ public sealed class ProvenanceTests
         Assert.Equal("SQL Server 16.0.4295.3, compatibility level 150", Server("16.0.4295.3", 150, null).ToString());
     }
 
-    /// <summary>R13's window: the committed DacFx is the pin or the release immediately before it; anything else, newer included, is rejected.</summary>
+    /// <summary>R13's window: the committed DacFx is the pin or the release immediately before it; anything else, newer included, is
+    /// rejected.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("170.5.96", true)]
@@ -94,7 +97,8 @@ public sealed class ProvenanceTests
         Assert.Equal(inside ? null : "toolchain.outside-window", error?.Code);
     }
 
-    /// <summary>R13: while the ledger's row reads UNPINNED, every DacFx is inside the window; DriftTests holds that each answer then says so.</summary>
+    /// <summary>R13: while the ledger's row reads UNPINNED, every DacFx is inside the window; DriftTests holds that each answer then says
+    /// so.</summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Value", "R1")]

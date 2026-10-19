@@ -30,7 +30,8 @@ public sealed record Provenance
         PublishProfile,
     }
 
-    /// <summary>The fingerprint of the change claimed: for drift, the deploy report; for a prediction and a proof, the Change from base to head.</summary>
+    /// <summary>The fingerprint of the change claimed: for drift, the deploy report; for a prediction and a proof, the Change from base to
+    /// head.</summary>
     public Fingerprint Change { get; init; }
 
     /// <summary>The fingerprint of the target's schema, its elements as read.</summary>
@@ -51,7 +52,8 @@ public sealed record Provenance
 
     public DateTimeOffset At { get; init; }
 
-    /// <summary>The inputs this claim lacks, in the order of <see cref="Input"/>: its existing data and its server where each is null.</summary>
+    /// <summary>The inputs this claim lacks, in the order of <see cref="Input"/>: its existing data and its server where each is
+    /// null.</summary>
     public IReadOnlyList<Input> Lacking => [.. ((Input?[])[ExistingData is null ? Input.ExistingData : null, Server is null ? Input.Server : null]).OfType<Input>()];
 
     /// <summary>
@@ -112,7 +114,8 @@ public sealed record Server
         + (Image is { } image ? ", image " + Sha256 + image : "");
 }
 
-/// <summary>A SQL Server's major version and a database's compatibility level: what a claim made on one server says about another.</summary>
+/// <summary>A SQL Server's major version and a database's compatibility level: what a claim made on one server says about
+/// another.</summary>
 public readonly record struct ServerLevel(int Major, int CompatibilityLevel);
 
 /// <summary>
@@ -121,5 +124,6 @@ public readonly record struct ServerLevel(int Major, int CompatibilityLevel);
 /// </summary>
 public sealed record Stamp(DacFxVersion DacFx, Pin? Pin = null, Server? Server = null);
 
-/// <summary>A verb's result with the stamp its work reached, whether the result holds its value or an error; null where the work failed before DacFx's release was named.</summary>
+/// <summary>A verb's result with the stamp its work reached, whether the result holds its value or an error; null where the work failed
+/// before DacFx's release was named.</summary>
 public sealed record Stamped<T>(Stamp? Stamp, Result<T> Result);

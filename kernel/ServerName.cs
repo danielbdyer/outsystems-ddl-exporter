@@ -20,7 +20,8 @@ public readonly record struct Host : IComparable<Host>
 
     internal Host(string text) => _text = text;
 
-    /// <summary>This machine: every spelling SqlClient reads as the local server (none, localhost, 127.0.0.1, ::1, '.', (local), the machine's own name).</summary>
+    /// <summary>This machine: every spelling SqlClient reads as the local server (none, localhost, 127.0.0.1, ::1, '.', (local), the
+    /// machine's own name).</summary>
     public static Host Localhost { get; } = new("localhost");
 
     /// <summary>SQL Server Express LocalDB, which runs on this machine and takes no host name.</summary>
@@ -66,7 +67,8 @@ public readonly record struct ServerName : IComparable<ServerName>
     /// <summary>The machine the server runs on.</summary>
     public Host Host { get; }
 
-    /// <summary>The server <paramref name="dataSource"/> names, read on the machine named <paramref name="machineName"/>, whose own name, in any case, is localhost.</summary>
+    /// <summary>The server <paramref name="dataSource"/> names, read on the machine named <paramref name="machineName"/>, whose own name,
+    /// in any case, is localhost.</summary>
     public static ServerName Of(string dataSource, string machineName)
     {
         var bare = Protocol.Replace(dataSource.Trim(), "", 1);

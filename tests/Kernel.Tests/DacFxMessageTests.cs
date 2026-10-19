@@ -27,7 +27,8 @@ public sealed class DacFxMessageTests
     [InlineData("")]
     public void A_line_that_is_no_message_parses_to_nothing(string line) => Assert.Null(DacFxMessage.Parse(line));
 
-    /// <summary>SQL72014 quotes the SQL Server error a publish's statement raised, whose number routes the failure as a SqlException's would.</summary>
+    /// <summary>SQL72014 quotes the SQL Server error a publish's statement raised, whose number routes the failure as a SqlException's
+    /// would.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_message_quoting_a_SQL_Server_error_carries_its_number()

@@ -42,7 +42,8 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
 {
     public bool IsEmpty => Created.Count + Dropped.Count + Renamed.Count + Altered.Count == 0;
 
-    /// <summary>The change from <paramref name="before"/> to <paramref name="after"/> with names compared ordinally, as the kernel compares them: the comparison that follows no database.</summary>
+    /// <summary>The change from <paramref name="before"/> to <paramref name="after"/> with names compared ordinally, as the kernel compares
+    /// them: the comparison that follows no database.</summary>
     public static Result<Change> Between(SortedArray<Element> before, SortedArray<Element> after, SortedArray<Rename> renames) =>
         Between(before, after, renames, Collation.CaseSensitive);
 
@@ -89,7 +90,8 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
             next = renames.ToLookup(r => r.Before, r => r.After, comparer);
         }
 
-        /// <summary>The key <paramref name="key"/> holds after, spelled as the after model spells it where the after model holds it.</summary>
+        /// <summary>The key <paramref name="key"/> holds after, spelled as the after model spells it where the after model holds
+        /// it.</summary>
         public ElementKey Image(ElementKey key) => Locate(key).Image;
 
         public Claim Claimed(ElementKey key) => Locate(key).Claim;
@@ -141,11 +143,13 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
             return places[key] = place with { Held = [.. held.SelectMany(Recorded).Distinct()] };
         }
 
-        /// <summary>Where a key is after, every key the refactorlog may name it by (each key it held, under each key its parent held), and how it claims its image.</summary>
+        /// <summary>Where a key is after, every key the refactorlog may name it by (each key it held, under each key its parent held), and
+        /// how it claims its image.</summary>
         private sealed record Place(ElementKey Image, ElementKey?[] Held, Claim Claim);
     }
 
-    /// <summary>How a before key claims the after key it maps to: at its own key under the collation with no rename, through the refactorlog's renames, or not at all.</summary>
+    /// <summary>How a before key claims the after key it maps to: at its own key under the collation with no rename, through the
+    /// refactorlog's renames, or not at all.</summary>
     private enum Claim
     {
         None,
@@ -181,7 +185,8 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
             SortedArray.Of(pairs.Where(p => images.Claimed(p.Was.Key) == Claim.Live && p.Was.Key.Name != p.Now.Key.Name).Select(p => new Rename(p.Was.Key, p.Now.Key))));
     }
 
-    // How an element is altered from the one it continues as, its old targets read through the renames and compared under the collation; null when alike.
+    // How an element is altered from the one it continues as, its old targets read through the renames and compared under the collation;
+    // null when alike.
     private static Alteration? AlterationOf(Element was, Element now, Func<ElementKey, ElementKey> image, IEqualityComparer<ElementKey> comparer)
     {
         var properties = SortedArray.Of(was.Properties.Select(p => p.Name).Union(now.Properties.Select(p => p.Name))
@@ -200,7 +205,8 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
     private static SortedArray<Element.Relationship.Target> Targets(Element element, string name) =>
         element.Relationships.FirstOrDefault(r => r.Name == name)?.Targets ?? default;
 
-    // Two elements of one model with one key under the collation: a SortedArray sorts elements by key, so two elements with one ordinal key sit side by side, and a case-only pair is found by the set.
+    // Two elements of one model with one key under the collation: a SortedArray sorts elements by key, so two elements with one ordinal key
+    // sit side by side, and a case-only pair is found by the set.
     private static Error? Duplicate(SortedArray<Element> model, IEqualityComparer<ElementKey> comparer, Collation collation)
     {
         var seen = new HashSet<ElementKey>(comparer);

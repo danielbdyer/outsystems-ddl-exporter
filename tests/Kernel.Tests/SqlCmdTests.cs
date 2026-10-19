@@ -63,7 +63,8 @@ public sealed class SqlCmdTests
         Assert.Equal(script, SqlCmdVariable.Unset(script, []));
     }
 
-    /// <summary>What is left of a script once sqlcmd's own lines go: every line whose first non-blank character is ':' (:setvar, :r, :on error, :connect) goes, and every other line stays, GO included.</summary>
+    /// <summary>What is left of a script once sqlcmd's own lines go: every line whose first non-blank character is ':' (:setvar, :r, :on
+    /// error, :connect) goes, and every other line stays, GO included.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_script_with_its_sqlcmd_commands_removed_keeps_its_statements_and_GO_and_drops_each_sqlcmd_line()

@@ -22,7 +22,8 @@ public sealed record Environments
     /// <summary>The local server the environments file prefers, the key localServer; null when it names none.</summary>
     public LocalServerKind? LocalServer { get; }
 
-    /// <summary>The environments given, or environments.environment-name when two share a name; the error leads with <paramref name="subject"/>.</summary>
+    /// <summary>The environments given, or environments.environment-name when two share a name; the error leads with
+    /// <paramref name="subject"/>.</summary>
     public static Result<Environments> Of(string subject, IEnumerable<NamedEnvironment> environments, LocalServerKind? localServer)
     {
         var all = SortedArray.Of(environments);
@@ -34,13 +35,14 @@ public sealed record Environments
     /// <summary>The environment the environments file names by <paramref name="name"/>, or null.</summary>
     public NamedEnvironment? Named(EnvironmentName name) => All.FirstOrDefault(e => e.Name == name);
 
-    /// <summary>The publish profile every environment names, which a copy is planned under when no profile is named for it; null when two differ or none is named.</summary>
+    /// <summary>The publish profile every environment names, which a copy is planned under when no profile is named for it; null when two
+    /// differ or none is named.</summary>
     public PublishProfilePath? SharedProfile => All.Select(e => e.Profile).Distinct().ToList() is [var shared] ? shared : null;
 }
 
 /// <summary>
-/// Which SQL Server the environments file prefers to hold copies (VALUES.md O1): Docker, the dbchange-sql container; or LocalDb, where Docker cannot
-/// run. The key localServer, written docker or localdb. The cases are closed.
+/// Which SQL Server the environments file prefers to hold copies (VALUES.md O1): Docker, the dbchange-sql container; or LocalDb, where
+/// Docker cannot run. The key localServer, written docker or localdb. The cases are closed.
 /// </summary>
 public abstract record LocalServerKind
 {
@@ -72,11 +74,12 @@ public abstract record LocalServerKind
 }
 
 /// <summary>
-/// An environment as dbchange/environments.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name; the host its SQL Server runs on, which
-/// R15 compares with the local server's whether or not the environment's reference resolves on this machine (DECISIONS.md,
+/// An environment as dbchange/environments.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name; the host its SQL Server runs on,
+/// which R15 compares with the local server's whether or not the environment's reference resolves on this machine (DECISIONS.md,
 /// 2026-09-25); its classification and reader groups (the groups that may read it); the reference its connection resolves from; its publish
-/// profile's path; its SQLCMD values; and, where the environments file names one, the metamodel's reference. Data only (§2.1 rule 3), holding no
-/// value a reference names. Each error leads with the subject its caller gives, where in the environments file the value sits, and quotes no value.
+/// profile's path; its SQLCMD values; and, where the environments file names one, the metamodel's reference. Data only (§2.1 rule 3),
+/// holding no value a reference names. Each error leads with the subject its caller gives, where in the environments file the value sits,
+/// and quotes no value.
 /// </summary>
 public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 {
@@ -107,7 +110,8 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 
     public SecretReference? Metamodel { get; }
 
-    /// <summary>An environment of the values given, or the error of a reader group blank or given twice, or of a SQLCMD variable given twice in any case.</summary>
+    /// <summary>An environment of the values given, or the error of a reader group blank or given twice, or of a SQLCMD variable given
+    /// twice in any case.</summary>
     public static Result<NamedEnvironment> Of(string subject, EnvironmentName name, Host host, Classification classification, IEnumerable<string> readerGroups,
         SecretReference connection, PublishProfilePath profile, IEnumerable<SqlCmdVariable> sqlCmd, SecretReference? metamodel)
     {
@@ -127,9 +131,9 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 }
 
 /// <summary>
-/// A publish profile's path as the environments file gives it, from the repository root: '/' between parts, none empty, '.' or '..', no ':', '\' or
-/// control character, not led by '/', ending in .publish.xml; so it names a file inside the repository on every operating system.
-/// default(PublishProfilePath) is not a path.
+/// A publish profile's path as the environments file gives it, from the repository root: '/' between parts, none empty, '.' or '..', no
+/// ':', '\' or control character, not led by '/', ending in .publish.xml; so it names a file inside the repository on every operating
+/// system. default(PublishProfilePath) is not a path.
 /// </summary>
 public readonly record struct PublishProfilePath : IComparable<PublishProfilePath>
 {
@@ -154,8 +158,8 @@ public readonly record struct PublishProfilePath : IComparable<PublishProfilePat
 
 /// <summary>
 /// Where a value the repository must never hold lives: an environment variable (env:NAME) or a file outside git (file:path), which
-/// io/SqlServer reads only when git ignores it or it is in no repository, and, on Linux and macOS, when its owner alone can read it. It holds
-/// and prints the reference, never the value, which io resolves where it connects; anything else, a connection string or a password,
+/// io/SqlServer reads only when git ignores it or it is in no repository, and, on Linux and macOS, when its owner alone can read it. It
+/// holds and prints the reference, never the value, which io resolves where it connects; anything else, a connection string or a password,
 /// file: before it or not, is refused unquoted, since a path holds no '=' or ';'. A class, as Error is: a struct's default would
 /// be a reference to nothing.
 /// </summary>
@@ -185,7 +189,8 @@ public sealed record SecretReference : IComparable<SecretReference>
     public override string ToString() => Text;
 }
 
-/// <summary>A named lead's dated confirmation of an environment's classification: data the environments file commits, never a clock read.</summary>
+/// <summary>A named lead's dated confirmation of an environment's classification: data the environments file commits, never a clock
+/// read.</summary>
 public sealed record Confirmation
 {
     private Confirmation(string lead, DateOnly on) => (Lead, On) = (lead, on);

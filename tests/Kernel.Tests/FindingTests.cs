@@ -4,7 +4,8 @@ using Xunit;
 
 namespace DbChange.Kernel.Tests;
 
-/// <summary>A finding is a code, a severity, a subject and a message; one of severity error carries a remedy, which its factory cannot be given blank.</summary>
+/// <summary>A finding is a code, a severity, a subject and a message; one of severity error carries a remedy, which its factory cannot be
+/// given blank.</summary>
 public sealed class FindingTests
 {
     private static readonly Gen<string> Text = Gen.String.Where(s => !string.IsNullOrWhiteSpace(s));

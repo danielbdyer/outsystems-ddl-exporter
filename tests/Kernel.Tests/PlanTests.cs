@@ -60,7 +60,8 @@ public sealed class PlanTests
         });
     }
 
-    /// <summary>DacFx's deploy report is not documented as closed: a name outside the measured list is kept as written, dbchange writes it unlisted, and nothing refuses it.</summary>
+    /// <summary>DacFx's deploy report is not documented as closed: a name outside the measured list is kept as written, dbchange writes it
+    /// unlisted, and nothing refuses it.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void An_operation_name_DacFx_adds_later_is_kept_verbatim_and_refuses_nothing()
@@ -103,7 +104,8 @@ public sealed class PlanTests
         });
     }
 
-    /// <summary>DF-8: SQL Server keeps a computed column's text as it normalized it, so a column differing from its package in Expression alone is no drift, and one differing in more keeps the rest.</summary>
+    /// <summary>DF-8: SQL Server keeps a computed column's text as it normalized it, so a column differing from its package in Expression
+    /// alone is no drift, and one differing in more keeps the rest.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_computed_column_s_normalized_expression_is_no_drift()

@@ -52,7 +52,8 @@ public sealed class ElementTests
         Assert.NotEqual(Fingerprint.Of(before), Fingerprint.Of(after));
     }
 
-    // Pairs that run together without the mechanism each names: lengths, value tags, counts, UTF-16 code units. The label names the case in the runner's output.
+    // Pairs that run together without the mechanism each names: lengths, value tags, counts, UTF-16 code units. The label names the case in
+    // the runner's output.
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Law", "3′ the model is complete")]
@@ -169,7 +170,8 @@ public sealed class ElementTests
         Assert.Equal("element.child-name", Code(ElementKey.Of(t, "Column", Ok(Name.Of("dbo", "c")))));
     }
 
-    /// <summary>One text gives two different script elements, one per deploy script; an entry renders as RefactorLogOperation [key] and carries only the properties given.</summary>
+    /// <summary>One text gives two different script elements, one per deploy script; an entry renders as RefactorLogOperation [key] and
+    /// carries only the properties given.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void The_deploy_scripts_and_a_refactorlog_entry_are_elements_of_their_own_types()

@@ -4,7 +4,8 @@ using System.Text.RegularExpressions;
 
 namespace DbChange.Kernel;
 
-/// <summary>How DacFx rates a message it writes, as its DacMessageType does: an error, a warning, or a message (a status line, or a deployment script's PRINT output).</summary>
+/// <summary>How DacFx rates a message it writes, as its DacMessageType does: an error, a warning, or a message (a status line, or a
+/// deployment script's PRINT output).</summary>
 public enum DacFxMessageType
 {
     Error,
@@ -45,7 +46,8 @@ public sealed record DacFxMessage : IComparable<DacFxMessage>
     /// <summary>The number of the SQL Server error the text quotes as "Msg 2627", or null when it quotes none.</summary>
     public int? SqlServerNumber { get; }
 
-    /// <summary>The message a line of DacFx's text holds, "Error SQL71501: text" or "Warning SQL71502: text"; null for any other line, such as "Altering Table [dbo].[T]...".</summary>
+    /// <summary>The message a line of DacFx's text holds, "Error SQL71501: text" or "Warning SQL71502: text"; null for any other line, such
+    /// as "Altering Table [dbo].[T]...".</summary>
     public static DacFxMessage? Parse(string line) => Line.Match(line) is { Success: true } m
         ? new DacFxMessage(Enum.Parse<DacFxMessageType>(m.Groups["type"].Value), m.Groups["prefix"].Value, int.Parse(m.Groups["number"].Value, CultureInfo.InvariantCulture), m.Groups["text"].Value, null)
         : null;

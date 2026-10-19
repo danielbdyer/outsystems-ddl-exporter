@@ -7,11 +7,11 @@ using System.Text.RegularExpressions;
 namespace DbChange.Kernel;
 
 /// <summary>
-/// Where a verb reads or writes, as an argument names it (V3_MILESTONES.md WP 1.4): env:&lt;name&gt;, an environment dbchange/environments.json
-/// names; copy:&lt;name&gt;, a copy .dbchange/copies.json holds; synthetic-copy, the synthetic copy; ref:&lt;git ref&gt;, the project at a ref;
-/// and dacpac:&lt;path&gt;, a package. The first three are databases and the last two are packages. The cases are closed, and each
-/// prints as the argument that names it. A literal connection string where a target goes is refused in io, which reads SqlClient's
-/// grammar.
+/// Where a verb reads or writes, as an argument names it (V3_MILESTONES.md WP 1.4): env:&lt;name&gt;, an environment
+/// dbchange/environments.json names; copy:&lt;name&gt;, a copy .dbchange/copies.json holds; synthetic-copy, the synthetic copy; ref:&lt;git
+/// ref&gt;, the project at a ref; and dacpac:&lt;path&gt;, a package. The first three are databases and the last two are packages. The
+/// cases are closed, and each prints as the argument that names it. A literal connection string where a target goes is refused in io, which
+/// reads SqlClient's grammar.
 /// </summary>
 public abstract record Target : IComparable<Target>
 {
@@ -20,8 +20,8 @@ public abstract record Target : IComparable<Target>
     }
 
     /// <summary>
-    /// The target <paramref name="text"/> names, read for the argument <paramref name="subject"/>: copy: before a name dbchange never gives a
-    /// copy is copy.unregistered; any other text in no form of the grammar, env: before a name no environment can have included, is
+    /// The target <paramref name="text"/> names, read for the argument <paramref name="subject"/>: copy: before a name dbchange never gives
+    /// a copy is copy.unregistered; any other text in no form of the grammar, env: before a name no environment can have included, is
     /// target.unknown. Neither quotes the text.
     /// </summary>
     public static Result<Target> Parse(string text, string subject) =>
@@ -78,7 +78,8 @@ public readonly record struct EnvironmentName : IComparable<EnvironmentName>
 
     private EnvironmentName(string text) => _text = text;
 
-    /// <summary>The name <paramref name="text"/> gives, or environments.environment-name led by <paramref name="subject"/>, the text unquoted.</summary>
+    /// <summary>The name <paramref name="text"/> gives, or environments.environment-name led by <paramref name="subject"/>, the text
+    /// unquoted.</summary>
     public static Result<EnvironmentName> Of(string subject, string? text) => text is not null && Grammar.IsMatch(text) ? new EnvironmentName(text)
         : new Error("environments.environment-name", subject + " names an environment in other than 1 to 32 lowercase letters, digits and hyphens.",
             "Rename it with lowercase letters, digits and hyphens from a letter, such as dev or uat.");
@@ -90,10 +91,10 @@ public readonly record struct EnvironmentName : IComparable<EnvironmentName>
 }
 
 /// <summary>
-/// A copy's database name, as dbchange makes one and copy: names one (DECISIONS.md, 2026-09-25): dbchange_&lt;host&gt;_&lt;pid&gt;_&lt;hex&gt;, the
-/// name of the machine that made it in lowercase letters, digits and '_' (1 to 40), the id of the process that made it, and eight
-/// hexadecimal digits. The machine and the process let a later run drop the copies of a process that ended on this machine. The one
-/// grammar of the name. default(CopyName) is not a name.
+/// A copy's database name, as dbchange makes one and copy: names one (DECISIONS.md, 2026-09-25):
+/// dbchange_&lt;host&gt;_&lt;pid&gt;_&lt;hex&gt;, the name of the machine that made it in lowercase letters, digits and '_' (1 to 40), the
+/// id of the process that made it, and eight hexadecimal digits. The machine and the process let a later run drop the copies of a process
+/// that ended on this machine. The one grammar of the name. default(CopyName) is not a name.
 /// </summary>
 public readonly record struct CopyName : IComparable<CopyName>
 {
@@ -109,7 +110,8 @@ public readonly record struct CopyName : IComparable<CopyName>
     /// <summary>The id of the process that made the copy.</summary>
     public int Pid { get; }
 
-    /// <summary>The name <paramref name="text"/> gives, or copy.unregistered led by <paramref name="subject"/>, the text unquoted: .dbchange/copies.json holds no copy by a name dbchange never gives one.</summary>
+    /// <summary>The name <paramref name="text"/> gives, or copy.unregistered led by <paramref name="subject"/>, the text unquoted:
+    /// .dbchange/copies.json holds no copy by a name dbchange never gives one.</summary>
     public static Result<CopyName> Of(string subject, string? text) =>
         text is not null && Grammar.Match(text) is { Success: true } match && int.TryParse(match.Groups["pid"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var pid)
             ? new CopyName(text, match.Groups["machine"].Value, pid)
