@@ -10,10 +10,16 @@ namespace DbChange.Io;
 /// </summary>
 public static class Standing
 {
-    /// <summary>The stamp of the committed DacFx alone, for an answer refused before the standing is asked (arguments dbchange cannot read); null when the release cannot be named.</summary>
+    /// <summary>
+    /// The stamp of the committed DacFx alone, for an answer refused before the standing is asked (arguments dbchange cannot read); null
+    /// when the release cannot be named.
+    /// </summary>
     public static Stamp? Committed => DacFx.Version.Match<Stamp?>(dacfx => new Stamp(dacfx), _ => null);
 
-    /// <summary>The ledger's pin, stamped with the committed DacFx and the pin; or toolchain.dacfx-version, the ledger's own error, or toolchain.outside-window.</summary>
+    /// <summary>
+    /// The ledger's pin, stamped with the committed DacFx and the pin; or toolchain.dacfx-version, the ledger's own error, or
+    /// toolchain.outside-window.
+    /// </summary>
     public static Stamped<Pin> Of(Checkout checkout) => DacFx.Version.Match(
         dacfx => Doctor.Toolchain(checkout.Root, checkout.Version).Match(
             pin => new Stamped<Pin>(new Stamp(dacfx, pin), pin.Rejects(dacfx) is { } outside ? outside : Result.Ok(pin)),

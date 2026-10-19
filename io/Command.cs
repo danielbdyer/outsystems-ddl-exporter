@@ -10,9 +10,13 @@ using System.Threading;
 
 namespace DbChange.Io;
 
-#pragma warning disable RS0030 // Process and ProcessStartInfo are banned in io (io/BannedSymbols.txt): this file is the one place that starts a program.
+// Process and ProcessStartInfo are banned in io (io/BannedSymbols.txt): this file is the one place that starts a program.
+#pragma warning disable RS0030
 
-/// <summary>How a command's outcome is delivered: <see cref="Command.Run(Command, CancellationToken)"/>, or a test's stand-in for a program or for an outcome.</summary>
+/// <summary>
+/// How a command's outcome is delivered: <see cref="Command.Run(Command, CancellationToken)"/>, or a test's stand-in for a program or for
+/// an outcome.
+/// </summary>
 public delegate Ran Runner(Command command, CancellationToken cancel);
 
 /// <summary>
@@ -63,7 +67,8 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
             return new Ran.NotFound(Program, why);
         }
 
-        var start = new ProcessStartInfo(file) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = Directory ?? "" };
+        var start = new ProcessStartInfo(file) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true,
+            RedirectStandardError = true, WorkingDirectory = Directory ?? "" };
         foreach (var argument in Arguments)
         {
             start.ArgumentList.Add(argument);
@@ -95,7 +100,8 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
         {
             process.StandardInput.Close();
             var (output, errors) = (new Captured(process.StandardOutput.BaseStream), new Captured(process.StandardError.BaseStream));
-            using var interrupted = Interruptible ? CancellationTokenSource.CreateLinkedTokenSource(cancel, Interruption.RunToken) : CancellationTokenSource.CreateLinkedTokenSource(cancel);
+            using var interrupted = Interruptible ? CancellationTokenSource.CreateLinkedTokenSource(cancel, Interruption.RunToken)
+                : CancellationTokenSource.CreateLinkedTokenSource(cancel);
             bool exited;
             try
             {
@@ -104,7 +110,8 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
             catch (AggregateException e) when (e.InnerException is OperationCanceledException)
             {
                 Ended(process);
-                throw new OperationCanceledException("The run was interrupted while " + this + " ran.", e.InnerException, Interrupter(cancel));
+                throw new OperationCanceledException("The run was interrupted while " + this + " ran.",
+                    e.InnerException, Interrupter(cancel));
             }
 
             if (interrupted.Token.IsCancellationRequested)
@@ -130,7 +137,8 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
     public override string ToString() => Program + (Arguments.Count == 0 ? "" : " " + string.Join(' ', Arguments));
 
     /// <summary>The token that interrupted a run: the caller's when it is cancelled, else the run's.</summary>
-    private static CancellationToken Interrupter(CancellationToken cancel) => cancel.IsCancellationRequested ? cancel : Interruption.RunToken;
+    private static CancellationToken Interrupter(CancellationToken cancel) =>
+        cancel.IsCancellationRequested ? cancel : Interruption.RunToken;
 
     /// <summary>A duration as a message writes it: 10 minutes, 20 seconds, 200 milliseconds.</summary>
     internal static string Written(TimeSpan duration) => duration switch
@@ -140,7 +148,8 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
         _ => Counted(duration.TotalMilliseconds, "millisecond"),
     };
 
-    private static string Counted(double count, string unit) => count.ToString("0.##", CultureInfo.InvariantCulture) + " " + unit + (count == 1 ? "" : "s");
+    private static string Counted(double count, string unit) =>
+        count.ToString("0.##", CultureInfo.InvariantCulture) + " " + unit + (count == 1 ? "" : "s");
 
     /// <summary>The file that runs for a program's name, or why none does.</summary>
     internal static (string? File, string Why) Resolved(string program, string? directory)
@@ -151,15 +160,19 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
             return (program, "");
         }
 
-        if (program.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal) || program.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+        if (program.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || program.Contains(Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
         {
-            return (Path.GetFullPath(program, directory is null ? System.IO.Directory.GetCurrentDirectory() : Path.GetFullPath(directory)), "");
+            return (Path.GetFullPath(program,
+                directory is null ? System.IO.Directory.GetCurrentDirectory() : Path.GetFullPath(directory)), "");
         }
 
         var extension = Path.GetExtension(program);
-        if (windows && (extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase) || extension.Equals(".bat", StringComparison.OrdinalIgnoreCase)))
+        if (windows && (extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".bat", StringComparison.OrdinalIgnoreCase)))
         {
-            return (null, "'" + program + "' is a .cmd or .bat program, which dbchange never runs by name, since cmd.exe re-parses its arguments.");
+            return (null, "'" + program
+                + "' is a .cmd or .bat program, which dbchange never runs by name, since cmd.exe re-parses its arguments.");
         }
 
         var name = windows && extension.Length == 0 ? program + ".exe" : program;
@@ -175,7 +188,9 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
         return (null, "'" + program + "' is on no folder of the PATH (" + string.Join(Path.PathSeparator, folders) + ").");
     }
 
-    /// <summary>The folders a bare name is looked for in: the running program's, then each absolute PATH entry; never the working directory.</summary>
+    /// <summary>
+    /// The folders a bare name is looked for in: the running program's, then each absolute PATH entry; never the working directory.
+    /// </summary>
     private static List<string> Searched()
     {
         var folders = new List<string>();
@@ -184,13 +199,17 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
             folders.Add(own);
         }
 
-        folders.AddRange((System.Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator).Select(entry => entry.Trim().Trim('"')).Where(Path.IsPathFullyQualified));
+        folders.AddRange((System.Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator)
+            .Select(entry => entry.Trim().Trim('"')).Where(Path.IsPathFullyQualified));
         return folders;
     }
 
-    /// <summary>Whether a file found by name may run: any file on Windows; on Linux and macOS one with an execute bit, as execvp requires.</summary>
+    /// <summary>
+    /// Whether a file found by name may run: any file on Windows; on Linux and macOS one with an execute bit, as execvp requires.
+    /// </summary>
     private static bool Executable(string file) =>
-        OperatingSystem.IsWindows() || (File.GetUnixFileMode(file) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
+        OperatingSystem.IsWindows()
+            || (File.GetUnixFileMode(file) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
 
     /// <summary>The program and every process it started, killed, and waited for briefly so its id is free.</summary>
     private static void Ended(Process process)
@@ -234,7 +253,10 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
             }
         }
 
-        /// <summary>Waits up to five seconds for the stream to end; a descendant that inherited the pipe can hold it longer, and what was read stands.</summary>
+        /// <summary>
+        /// Waits up to five seconds for the stream to end; a descendant that inherited the pipe can hold it longer, and what was read
+        /// stands.
+        /// </summary>
         public void Drained() => reading.Join(Drain);
 
         private void Read(Stream stream)
@@ -267,7 +289,10 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
     }
 }
 
-/// <summary>What running a program came to: it exited with a code, its program was not found or could not start, or it ran past its timeout and was killed.</summary>
+/// <summary>
+/// What running a program came to: it exited with a code, its program was not found or could not start, or it ran past its timeout and was
+/// killed.
+/// </summary>
 public abstract record Ran
 {
     private Ran()
@@ -288,6 +313,8 @@ public abstract record Ran
     /// <summary>No program ran: <see cref="Why"/> says which folders were searched, or why the file found cannot be started.</summary>
     public sealed record NotFound(string Program, string Why) : Ran;
 
-    /// <summary>The program ran past <see cref="Timeout"/> and was killed with every process it started; what each stream carried by then.</summary>
+    /// <summary>
+    /// The program ran past <see cref="Timeout"/> and was killed with every process it started; what each stream carried by then.
+    /// </summary>
     public sealed record TimedOut(TimeSpan Timeout, string Output, string Errors) : Ran;
 }

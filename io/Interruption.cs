@@ -12,14 +12,16 @@ namespace DbChange.Io;
 /// every program io starts (Command) and every lock it waits for (FileLock) watches <see cref="RunToken"/> beside the token its caller
 /// passes, so a verb stops at its next program or lock wait and cli answers interrupted at exit 130. The first interruption is taken
 /// (a signal's Cancel = true); a signal after it, the timeout included, is left to the runtime's default handling, which ends the
-/// process at once, so a person can always stop dbchange. Listen registers the signals; Quiet registers none, for tests and for a run inside another process.
+/// process at once, so a person can always stop dbchange. Listen registers the signals; Quiet registers none, for tests and for a run
+/// inside another process.
 /// </summary>
 public sealed class Interruption : IDisposable
 {
     private static readonly AsyncLocal<Interruption?> Current = new();
 
     private static readonly (PosixSignal Signal, string Name)[] Signals =
-        [(PosixSignal.SIGINT, "Ctrl-C"), (PosixSignal.SIGQUIT, "Ctrl-Break"), (PosixSignal.SIGTERM, "SIGTERM"), (PosixSignal.SIGHUP, "SIGHUP")];
+        [(PosixSignal.SIGINT, "Ctrl-C"), (PosixSignal.SIGQUIT, "Ctrl-Break"), (PosixSignal.SIGTERM, "SIGTERM"),
+            (PosixSignal.SIGHUP, "SIGHUP")];
 
     private readonly CancellationTokenSource source = new();
     private readonly Interruption? outer;
@@ -31,7 +33,8 @@ public sealed class Interruption : IDisposable
     {
         outer = Current.Value;
         Current.Value = this;
-        registrations = listening ? Array.ConvertAll(Signals, s => PosixSignalRegistration.Create(s.Signal, context => Signalled(context, s.Name))) : [];
+        registrations = listening
+            ? Array.ConvertAll(Signals, s => PosixSignalRegistration.Create(s.Signal, context => Signalled(context, s.Name))) : [];
     }
 
     /// <summary>The current run's token; a token never cancelled outside any run.</summary>

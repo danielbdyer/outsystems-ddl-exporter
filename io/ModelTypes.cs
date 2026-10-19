@@ -31,14 +31,19 @@ internal static class ModelTypes
         : null;
 
     /// <summary>
-    /// A key from name parts: under <paramref name="home"/>, each part a level down; with no home, the first one or two parts at the top and
-    /// each further part a level down, the type given at each level.
+    /// A key from name parts: under <paramref name="home"/>, each part a level down; with no home, the first one or two parts at the top
+    /// and each further part a level down, the type given at each level.
     /// </summary>
     public static Result<ElementKey> Key(string type, string[] parts, ElementKey? home) => parts.Skip(home is null ? 2 : 0).Aggregate(
-        home is not null ? Result.Ok(home) : (parts.Length > 1 ? Name.Of(parts[0], parts[1]) : Name.Of(parts.FirstOrDefault() ?? "")).Bind(name => ElementKey.Of(type, name)),
+        home is not null ? Result.Ok(home)
+            : (parts.Length > 1 ? Name.Of(parts[0], parts[1]) : Name.Of(parts.FirstOrDefault() ?? ""))
+            .Bind(name => ElementKey.Of(type, name)),
         (key, part) => key.Bind(parent => Name.Of(part).Bind(name => ElementKey.Of(parent, type, name))));
 
-    /// <summary>A name's parts less the run of its parent's name parts (ignoring case) where that run leaves one or more; else all of them.</summary>
+    /// <summary>
+    /// A name's parts less the run of its parent's name parts (ignoring case) where that run leaves one or more; else all of them.
+    /// </summary>
     public static string[] Beneath(string[] own, string[] home) => Enumerable.Range(0, Math.Max(0, own.Length - home.Length + 1))
-        .Where(i => own.Skip(i).Take(home.Length).SequenceEqual(home, StringComparer.OrdinalIgnoreCase)).Select(i => (string[])[.. own[..i], .. own[(i + home.Length)..]]).FirstOrDefault(rest => rest.Length > 0) ?? own;
+        .Where(i => own.Skip(i).Take(home.Length).SequenceEqual(home, StringComparer.OrdinalIgnoreCase))
+            .Select(i => (string[])[.. own[..i], .. own[(i + home.Length)..]]).FirstOrDefault(rest => rest.Length > 0) ?? own;
 }

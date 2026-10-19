@@ -21,8 +21,8 @@ internal static class ConnectionString
     internal static readonly Regex Password = new(@"(?:password|pwd)\s*=", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     /// <summary>
-    /// The connection string <paramref name="text"/> is, as SqlClient reads it; else connection.malformed, led by <paramref name="subject"/>,
-    /// quoting nothing of the text, with <paramref name="remedy"/>, which names where the text is written.
+    /// The connection string <paramref name="text"/> is, as SqlClient reads it; else connection.malformed, led by
+    /// <paramref name="subject"/>, quoting nothing of the text, with <paramref name="remedy"/>, which names where the text is written.
     /// </summary>
     internal static Result<SqlConnectionStringBuilder> Parse(string subject, string text, string remedy)
     {
@@ -36,12 +36,17 @@ internal static class ConnectionString
         }
     }
 
-    /// <summary>Whether a text is a literal connection string: it sets a password, or SqlClient's grammar reads one of its keywords from it (Server, User ID).</summary>
+    /// <summary>
+    /// Whether a text is a literal connection string: it sets a password, or SqlClient's grammar reads one of its keywords from it (Server,
+    /// User ID).
+    /// </summary>
     internal static bool IsConnection(string text)
     {
         try
         {
-            return Password.IsMatch(text) || new DbConnectionStringBuilder { ConnectionString = text }.Keys.Cast<string>().Any(new SqlConnectionStringBuilder().ContainsKey);
+            return Password.IsMatch(text)
+                || new DbConnectionStringBuilder { ConnectionString = text }.Keys.Cast<string>()
+                .Any(new SqlConnectionStringBuilder().ContainsKey);
         }
         catch (ArgumentException)
         {
@@ -62,7 +67,8 @@ internal static class ConnectionString
     /// </summary>
     internal static string WithDefaults(SqlConnectionStringBuilder connection)
     {
-        if (!connection.ShouldSerialize("Integrated Security") && connection.UserID.Length == 0 && connection.Authentication == SqlAuthenticationMethod.NotSpecified)
+        if (!connection.ShouldSerialize("Integrated Security") && connection.UserID.Length == 0
+            && connection.Authentication == SqlAuthenticationMethod.NotSpecified)
         {
             connection.IntegratedSecurity = true;
         }
@@ -80,23 +86,32 @@ internal static class ConnectionString
         return connection.ConnectionString;
     }
 
-    /// <summary>A copy's connection: the local server's, to the copy's database <paramref name="catalog"/>, with dbchange's defaults.</summary>
-    internal static string OfDatabase(string server, string catalog) => WithDefaults(new SqlConnectionStringBuilder(server) { InitialCatalog = catalog });
+    /// <summary>
+    /// A copy's connection: the local server's, to the copy's database <paramref name="catalog"/>, with dbchange's defaults.
+    /// </summary>
+    internal static string OfDatabase(string server, string catalog) =>
+        WithDefaults(new SqlConnectionStringBuilder(server) { InitialCatalog = catalog });
 
     /// <summary>
     /// The connection one statement dbchange sends opens: to <paramref name="catalog"/> when one is named (master, for CREATE and DROP
     /// DATABASE), and from SqlClient's pool unless <paramref name="pooled"/> is false.
     /// </summary>
     internal static string ForStatement(string connection, string? catalog, bool pooled) => catalog is null && pooled ? connection
-        : new SqlConnectionStringBuilder(connection) { InitialCatalog = catalog ?? CatalogOf(connection), Pooling = pooled }.ConnectionString;
+        : new SqlConnectionStringBuilder(connection) { InitialCatalog = catalog ?? CatalogOf(connection),
+            Pooling = pooled }.ConnectionString;
 
     /// <summary>The database a connection dbchange made names.</summary>
     internal static string CatalogOf(string connection) => new SqlConnectionStringBuilder(connection).InitialCatalog;
 
     /// <summary>The server a connection string names, as this machine spells it (kernel/ServerName.cs).</summary>
-    internal static ServerName ServerOf(SqlConnectionStringBuilder connection) => ServerName.Of(connection.DataSource, Environment.MachineName);
+    internal static ServerName ServerOf(SqlConnectionStringBuilder connection) =>
+        ServerName.Of(connection.DataSource, Environment.MachineName);
 
-    /// <summary>The dbchange-sql container's connection: SQL Server on the loopback address at the port ~/.dbchange/sql.env gives, as sa, trusting the certificate SQL Server generated for itself.</summary>
+    /// <summary>
+    /// The dbchange-sql container's connection: SQL Server on the loopback address at the port ~/.dbchange/sql.env gives, as sa, trusting
+    /// the certificate SQL Server generated for itself.
+    /// </summary>
     internal static string Container(string port, string password) =>
-        new SqlConnectionStringBuilder { DataSource = "127.0.0.1," + port, UserID = "sa", Password = password, TrustServerCertificate = true }.ConnectionString;
+        new SqlConnectionStringBuilder { DataSource = "127.0.0.1," + port, UserID = "sa", Password = password,
+            TrustServerCertificate = true }.ConnectionString;
 }

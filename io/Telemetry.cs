@@ -20,6 +20,7 @@ public static class Telemetry
     }
 
     [ModuleInitializer]
-    [SuppressMessage("Usage", "CA2255:The 'ModuleInitializer' attribute should not be used in libraries", Justification = "The opt-out must precede every host's first DacFx load, and io is the library every host loads before DacFx.")]
+    [SuppressMessage("Usage", "CA2255:The 'ModuleInitializer' attribute should not be used in libraries",
+        Justification = "The opt-out must precede every host's first DacFx load, and io is the library every host loads before DacFx.")]
     internal static void Initialize() => OptOut();
 }
