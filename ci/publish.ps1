@@ -23,7 +23,9 @@ if (-not $dacfx -or -not $referenceAssemblies -or -not $master -or -not $msdb) {
 if (Test-Path $out) { Remove-Item -Recurse -Force $out }
 dotnet publish (Join-Path $root 'cli/cli.csproj') -c Release -f net10.0 --no-self-contained -o $out -nologo -v q
 
-# The restore that publish ran put both packages in the global packages folder; ask NuGet where that is.
+# The restore that publish ran put the four packages this script copies from (DacFx, the .NET Framework 4.7.2 reference
+# assemblies, Microsoft.SqlServer.Dacpacs.Master and Microsoft.SqlServer.Dacpacs.Msdb) in the global packages folder; ask NuGet
+# where that is.
 $packages = ((dotnet nuget locals global-packages --list) -replace '^global-packages:\s*', '').Trim()
 Copy-Item (Join-Path $packages "microsoft.sqlserver.dacfx/$dacfx/lib/net10.0/Microsoft.Data.Tools.Schema.SqlTasks*.targets") $out
 $from = Join-Path $packages "microsoft.netframework.referenceassemblies.net472/$referenceAssemblies/build/.NETFramework/v4.7.2"

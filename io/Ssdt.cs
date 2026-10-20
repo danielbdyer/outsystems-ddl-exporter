@@ -31,9 +31,10 @@ public static partial class Ssdt
     public sealed record Built(string Path, Fingerprint Inputs, BuildTargets Targets);
 
     /// <summary>
-    /// The tool folder's build files a package depends on besides the project (§1 fact 1): the fingerprint of the SqlTasks targets and of
-    /// the build task's assembly, and the DacFx release that task is. A package built by another release's task is not the one dbchange
-    /// reads with its own DacFx, so <see cref="Of(string)"/> refuses a folder whose task is not the running release.
+    /// The tool folder's build files a package depends on besides the project (§1 fact 1): the fingerprint of the SqlTasks targets, of
+    /// the build task's assembly and of the master.dacpac and msdb.dacpac a system database reference reads, and the DacFx release that
+    /// task is. A package built by another release's task is not the one dbchange reads with its own DacFx, so <see cref="Of(string)"/>
+    /// refuses a folder whose task is not the running release.
     /// </summary>
     public sealed record BuildTargets(Fingerprint Fingerprint, DacFxVersion TaskVersion)
     {
@@ -42,6 +43,10 @@ public static partial class Ssdt
 
         /// <summary>The targets a classic project imports from the tool folder.</summary>
         public const string Targets = "Microsoft.Data.Tools.Schema.SqlTasks.targets";
+
+        /// <summary>The folder of SQL Server 2022's master.dacpac and msdb.dacpac, which a project's reference to either system database
+        /// reads through DacPacRootPath (DF-5).</summary>
+        public const string SystemDatabases = "Extensions/Microsoft/SQLDB/Extensions/SqlServer/160/SqlSchemas";
 
         /// <summary>The tool folder's build files, checked against the DacFx dbchange runs.</summary>
         public static Result<BuildTargets> Of(string toolFolder) => Of(toolFolder, DacFx.Version);
@@ -64,7 +69,8 @@ public static partial class Ssdt
                 ? new Error("toolchain.targets-mismatch", mismatch,
                     "Run ci/publish.sh, or ci/publish.ps1 on Windows, so the tool folder and dbchange carry one DacFx.")
                 : released!.Map(version => new BuildTargets(Fingerprint.Of(string.Join('\n',
-                    ((string[])[Targets, Task]).Where(file => File.Exists(System.IO.Path.Combine(toolFolder, file)))
+                    ((string[])[Targets, Task, SystemDatabases + "/master.dacpac", SystemDatabases + "/msdb.dacpac"])
+                    .Where(file => File.Exists(System.IO.Path.Combine(toolFolder, file)))
                     .Select(file => file + " " + Fingerprint.Of(File.ReadAllBytes(System.IO.Path.Combine(toolFolder, file)))))), version));
         });
     }

@@ -35,11 +35,13 @@ public sealed class ReadSideTests(PlannerCopy copy, ITestOutputHelper output) : 
         }
 
         output.WriteLine(v2 is null ? "v2's read side did not run: DBCHANGE_READSIDE is unset; v3 was compared with the committed facts."
-            : "v2's read side ran; v3 and v2 were each compared with the committed facts.");
+            : "v2's read side ran; v3 and v2 were each compared with the committed facts, and the committed file with the bytes Bless"
+                + " writes for v2's.");
         Assert.Equal(ReadSideFacts.Committed(PlannerCopy.Change), v3);
         if (v2 is not null)
         {
             Assert.Equal(ReadSideFacts.Committed(PlannerCopy.Change), v2);
+            Assert.Equal(ReadSideFacts.Written(v2.Value), ReadSideFacts.Text(PlannerCopy.Change));
         }
     }
 

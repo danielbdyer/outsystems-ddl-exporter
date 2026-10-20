@@ -4,7 +4,7 @@
 # container and no image. It has no SQL Server Agent, so CDC is never proven here. Its SA password is generated once per machine
 # and kept only in ~/.dbchange/sql.env, mode 0600, beside the port; nothing here prints it. ci/sql.ps1 starts LocalDB on Windows.
 #   ci/sql.sh up     install the pinned package where mssql-server is absent (an installed SQL Server 16 or later is kept, an
-#                    older one refused, and one installed or running without sql.env refused as set up by something else),
+#                    older one refused, and one installed or running without sql.env refused, its password unknown),
 #                    start sqlservr when it is not running, wait until it answers sa with sql.env's password
 #   ci/sql.sh down   stop sqlservr; the databases and the password stay for the next up
 #   ci/sql.sh conn   a command that sets DBCHANGE_SQL, for eval "$(ci/sql.sh conn)"; it names the file, never the password
@@ -118,23 +118,23 @@ start() {
 
 up() {
   lock
-  # A SQL Server installed or running while sql.env holds no password was set up by something else, with an SA password and a port
-  # this script does not know; writing a new password would not change its sa login, and up would wait three minutes to say so.
+  # A SQL Server installed or running while sql.env holds no password has an SA password and a port this script does not know;
+  # writing a new password would not change its sa login, and up would wait three minutes to say so.
   local had found
   had="$(installed)"
   if [ -n "$had" ]; then found="mssql-server $had is installed"; else found="sqlservr is running"; fi
   if [ -z "$(value MSSQL_SA_PASSWORD)" ] && { [ -n "$had" ] || running; }; then
-    fail "$found and $env holds no SA password, so this script did not\
- set that server up: set DBCHANGE_SQL to a connection string for it, or stop and remove it (apt-get purge mssql-server)\
- and run ci/sql.sh up again"
+    fail "$found and $env holds no SA password for it, so its sa login's password and its port are not known here:\
+ set DBCHANGE_SQL to a connection string for it, or stop and remove it (apt-get purge mssql-server) and run ci/sql.sh up again"
   fi
-  install
+  # sql.env is written before install, so a first run killed after dpkg configured mssql-server leaves the password for the next.
   if [ -z "$(value MSSQL_SA_PASSWORD)" ]; then
     # umask sets the mode of a new file; chmod sets that of one an earlier run wrote, so its owner alone reads it either way.
     (umask 077; printf 'MSSQL_SA_PASSWORD=%s\nDBCHANGE_SQL_PORT=%s\n' "Est!$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')" \
       "${DBCHANGE_SQL_PORT:-11434}" > "$env")
   fi
   chmod 600 "$env"
+  install
   running || start
   for _ in $(seq 1 90); do
     if answers; then

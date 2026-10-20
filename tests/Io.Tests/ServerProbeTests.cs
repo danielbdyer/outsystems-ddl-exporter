@@ -2,6 +2,7 @@ using System;
 using System.Data;
 using System.IO;
 using DbChange.Kernel;
+using Microsoft.SqlServer.Dac;
 using DbChange.Tests;
 using Xunit;
 
@@ -19,8 +20,8 @@ public sealed class ServerProbeTests : IDisposable
 
     /// <summary>
     /// DacFx 170.5.96's call (ReliableConnectionHelper.GetServerPropertiesFromConnection) and the other ways a command calls xp_msver
-    /// alone, a batch's first statement without EXEC among them, are refused; xp_instance_regread, sp_executesql, a SELECT that quotes the name, a procedure whose name merely contains it and
-    /// a batch that holds a second statement pass unchanged.
+    /// alone, a batch's first statement without EXEC among them, are refused; xp_instance_regread, sp_executesql, a SELECT that quotes the name,
+    /// a procedure whose name merely contains it and a batch that holds a second statement pass unchanged.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -55,7 +56,7 @@ public sealed class ServerProbeTests : IDisposable
         Assert.Equal(refused, ServerProbe.Refuses(type, text));
 
     /// <summary>
-    /// DacFx 170.5.96 catches the refusal and plans without the host's figures; a release that lets it escape fails the read as
+    /// DacFx 170.5.96 catches the refusal and reads and plans without the host's figures; a release that lets it escape fails the read as
     /// dacfx.failed, the message naming xp_msver and the reason, never as internal.unexpected and never silently.
     /// </summary>
     [Fact]
@@ -69,5 +70,32 @@ public sealed class ServerProbeTests : IDisposable
 
         Assert.Contains("refused DacFx's EXEC of xp_msver before SqlClient sent it", error.Message, StringComparison.Ordinal);
         Assert.Contains("sends no EXEC", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A release that wraps the refusal, in a DacServicesException that carries DacFx's own messages or in an exception type Guard does not
+    /// list, still fails as dacfx.failed naming xp_msver rather than quoting DacFx's messages alone, and its remedy keeps the DacFx pin
+    /// until io/ServerProbe is revisited, since no change to the project or the publish profile clears it.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_refusal_wrapped_by_DacFx_is_dacfx_failed_naming_xp_msver_with_the_remedy_that_keeps_the_DacFx_pin()
+    {
+        var copy = new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa", scratch);
+        var wrapped = DacFx.Failure(
+            [new DacMessage(DacMessageType.Error, 72018, "The server's properties could not be read.", "SQL", null)],
+            new DacServicesException("An error occurred while the deployment plan was generated.", ServerProbe.Refusal()));
+
+        var quoted = DacFx.Failed(copy, wrapped);
+        var unlisted = Expect.Failed(DacFx.Guard<int>(() => throw new Exception("DacFx stopped.", ServerProbe.Refusal()),
+            failure => DacFx.Failed(copy, failure)), "dacfx.failed");
+
+        foreach (var error in new[] { quoted, unlisted })
+        {
+            Assert.Equal("dacfx.failed", error.Code);
+            Assert.Contains("refused DacFx's EXEC of xp_msver before SqlClient sent it", error.Message, StringComparison.Ordinal);
+            Assert.Contains("170.5.96", error.Remedy, StringComparison.Ordinal);
+            Assert.Contains("io/ServerProbe", error.Remedy, StringComparison.Ordinal);
+        }
     }
 }

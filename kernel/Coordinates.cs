@@ -26,7 +26,8 @@ public abstract record Coordinates
         _ => throw new UnreachableException(),
     };
 
-    /// <summary>Where <paramref name="precondition"/> is answered, with names compared ordinally, as the kernel compares them.</summary>
+    /// <summary>Where <paramref name="precondition"/> is answered, with names compared under a case-sensitive collation; a caller
+    /// planning against an environment of another collation passes it to the four-argument form.</summary>
     public static Result<Coordinates> Of(Precondition precondition, Change change, SortedArray<Element> environment) =>
         Of(precondition, change, environment, Collation.CaseSensitive);
 

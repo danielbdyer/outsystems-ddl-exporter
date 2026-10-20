@@ -450,6 +450,32 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         Assert.Contains("ci/publish.sh", older.Remedy, StringComparison.Ordinal);
     }
 
+    /// <summary>A project that references master or msdb builds against the tool folder's SqlSchemas packages (DF-5), so a change to
+    /// either changes the build targets' fingerprint, and an unchanged project is built again rather than reused.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_build_targets_fingerprint_covers_the_master_and_msdb_packages_the_tool_folder_carries()
+    {
+        var folder = Path.Combine(scratch, "schemas");
+        Directory.CreateDirectory(Path.Combine(folder, Ssdt.BuildTargets.SystemDatabases));
+        foreach (var file in (string[])[Ssdt.BuildTargets.Targets, Ssdt.BuildTargets.Task])
+        {
+            File.Copy(Path.Combine(tool.Folder, file), Path.Combine(folder, file));
+        }
+
+        string Fingerprint() => Ok(Ssdt.BuildTargets.Of(folder)).Fingerprint.ToString();
+        var bare = Fingerprint();
+        File.WriteAllBytes(Path.Combine(folder, Ssdt.BuildTargets.SystemDatabases, "master.dacpac"), [1]);
+        var master = Fingerprint();
+        File.WriteAllBytes(Path.Combine(folder, Ssdt.BuildTargets.SystemDatabases, "master.dacpac"), [2]);
+        var repinned = Fingerprint();
+        File.WriteAllBytes(Path.Combine(folder, Ssdt.BuildTargets.SystemDatabases, "msdb.dacpac"), [1]);
+        var msdb = Fingerprint();
+
+        Assert.Equal(4, new[] { bare, master, repinned, msdb }.Distinct().Count());
+        Assert.True(File.Exists(Path.Combine(tool.Folder, Ssdt.BuildTargets.SystemDatabases, "master.dacpac")));
+    }
+
     /// <summary>The command the build runs: dotnet build from the project's folder, for ten minutes, telemetry and the SDK's first-run
     /// actions off, English, UTF-8, no MSBuild server, DBCHANGE_SQL withheld.</summary>
     [Fact]

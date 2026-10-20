@@ -118,17 +118,23 @@ public sealed class OrderTests
             return Enumerable.Range(0, g.Count).Any(t => reach[t, t]) || (order.Deferred.Count == 0 && order.Cycles.Count == 0);
         });
 
-    /// <summary>D1: the order reads the schema and nothing else, so a schema built again from its tables and references given in the
-    /// opposite order orders alike.</summary>
+    /// <summary>D1: the order of a fixed schema with ties, pinned, since a change in how ties break changes WP 3.8's planted rows.
+    /// Account and Customer reference each other through nullable columns and Status references nothing, so all three are ready at
+    /// once: the component whose smallest name is Account goes first, its tables in name order, then Status, then Order, which
+    /// references Customer and Status through NOT NULL columns, then Note, which references Order.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Order_is_a_function_of_the_schema_alone() =>
-        Graphs.Sample(g =>
-        {
-            var again = new Schema(SortedArray.Of(g.Schema.Tables.Reverse()
-                .Select(t => t with { References = SortedArray.Of(t.References.Reverse()) })));
-            return Order.Of(again) == Order.Of(g.Schema);
-        });
+    public void Ready_tables_are_placed_smallest_name_first_and_a_cycle_s_tables_in_name_order_at_its_place()
+    {
+        var order = Order.Of(Schema(("Order", "CustomerId", "Customer", false), ("Order", "StatusId", "Status", false),
+            ("Customer", "AccountId", "Account", true), ("Account", "CustomerId", "Customer", true), ("Note", "OrderId", "Order", false)));
+
+        Assert.Equal([new Order.Step(0, Table("Account")), new Order.Step(1, Table("Customer")), new Order.Step(2, Table("Status")),
+            new Order.Step(3, Table("Order")), new Order.Step(4, Table("Note"))], order.Tables);
+        Assert.Equal([new Order.Deferral(Table("Account"), ForeignKey("Account", "CustomerId")),
+            new Order.Deferral(Table("Customer"), ForeignKey("Customer", "AccountId"))], order.Deferred);
+        Assert.Empty(order.Cycles);
+    }
 
     /// <summary>PLT-57: a NOT NULL self-reference, Employee.ManagerId to Employee.Id, needs a declared row.</summary>
     [Fact]
@@ -154,7 +160,7 @@ public sealed class OrderTests
         var cycle = Assert.Single(order.Cycles);
         Assert.Equal([Table("Dept"), Table("Person")], cycle.Members);
         Assert.Equal("synthetic-copy.cycle", cycle.Error.Code);
-        Assert.Contains("([dbo].[Dept] → [dbo].[Person] → [dbo].[Dept])", cycle.Error.Message, System.StringComparison.Ordinal);
+        Assert.Contains("([dbo].[Dept] → [dbo].[Person] → [dbo].[Dept];", cycle.Error.Message, System.StringComparison.Ordinal);
         Assert.StartsWith("[dbo].[Dept] and [dbo].[Person] reference one another", cycle.Error.Message, System.StringComparison.Ordinal);
         Assert.Equal([Table("Dept"), Table("Person")], order.Tables.Select(s => s.Table));
     }
@@ -207,7 +213,26 @@ public sealed class OrderTests
         Assert.Equal("synthetic-copy.cycle", cycle.Error.Code);
         Assert.StartsWith("[dbo].[Chick], [dbo].[Egg] and [dbo].[Hen] reference one another", cycle.Error.Message,
             System.StringComparison.Ordinal);
-        Assert.Contains("([dbo].[Chick] → [dbo].[Hen] → [dbo].[Chick])", cycle.Error.Message, System.StringComparison.Ordinal);
+        Assert.Contains("([dbo].[Chick] → [dbo].[Hen] → [dbo].[Chick];", cycle.Error.Message, System.StringComparison.Ordinal);
+    }
+
+    /// <summary>PLT-57's stop names the foreign key, so a reader told to make a column of one nullable knows which: a table with two
+    /// NOT NULL self-references names both, and a pair of tables names the key each step of the path follows.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_cycle_s_error_names_every_NOT_NULL_foreign_key_its_path_follows()
+    {
+        var self = Assert.Single(Order.Of(Schema(("Employee", "ManagerId", "Employee", false),
+            ("Employee", "MentorId", "Employee", false))).Cycles);
+        var pair = Assert.Single(Order.Of(Schema(("Dept", "HeadId", "Person", false), ("Person", "DeptId", "Dept", false),
+            ("Person", "BadgeId", "Badge", false))).Cycles);
+
+        Assert.Equal([ForeignKey("Employee", "ManagerId"), ForeignKey("Employee", "MentorId")], self.Keys);
+        Assert.Contains("([dbo].[Employee] → [dbo].[Employee]; foreign keys [dbo].[FK_Employee_ManagerId] and "
+            + "[dbo].[FK_Employee_MentorId])", self.Error.Message, System.StringComparison.Ordinal);
+        Assert.Equal([ForeignKey("Dept", "HeadId"), ForeignKey("Person", "DeptId")], pair.Keys);
+        Assert.Contains("([dbo].[Dept] → [dbo].[Person] → [dbo].[Dept]; foreign keys [dbo].[FK_Dept_HeadId] and "
+            + "[dbo].[FK_Person_DeptId])", pair.Error.Message, System.StringComparison.Ordinal);
     }
 
     private static Dictionary<Name, int> Positions(Order order) => order.Tables.ToDictionary(s => s.Table, s => s.Position);

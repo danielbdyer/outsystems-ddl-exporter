@@ -142,8 +142,13 @@ internal static class ReadSideFacts
         SortedArray.Of(File.ReadAllLines(Path(change)).Where(l => l.Length > 0 && !l.StartsWith('#')));
 
     /// <summary>The facts written as the committed file, under the header, with LF line endings.</summary>
-    public static void Bless(string change, SortedArray<string> facts) =>
-        File.WriteAllText(Path(change), string.Join('\n', Header.Concat(facts)) + "\n");
+    public static void Bless(string change, SortedArray<string> facts) => File.WriteAllText(Path(change), Written(facts));
+
+    /// <summary>The committed file's text exactly as it is on disk, to compare with <see cref="Written"/> byte for byte.</summary>
+    public static string Text(string change) => File.ReadAllText(Path(change));
+
+    /// <summary>The text Bless writes for <paramref name="facts"/>: the header, then the facts, one a line, LF after each.</summary>
+    public static string Written(SortedArray<string> facts) => string.Join('\n', Header.Concat(facts)) + "\n";
 
     /// <summary>
     /// An expression without its outer parentheses, removed in pairs while the first opens a group the last closes, as v2's
