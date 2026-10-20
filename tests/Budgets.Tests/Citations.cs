@@ -26,9 +26,10 @@ namespace DbChange.Budgets.Tests;
 /// </list>
 /// The root design documents are excluded until M8 starts; knowledge/ joins at M7.
 /// Each document also cites in v3's forms, so a file WP 7.2 moves from v2's skills passes only once its citations are rewritten
-/// (<see cref="Forms"/>): a finding by its identifier, never by v2's file; a sample by its shape under knowledge/samples/, never by
-/// v2's sample-prs/; a handbook chapter by its title, never by its number or file name (a bare §n passes, because v3 cites
-/// <c>V3_MILESTONES.md §13</c>, so WP 7.2 rewrites v2's bare §17.7 and §19 by hand); a ledger by knowledge/ledgers/ or
+/// (<see cref="Forms"/>): a finding by its identifier, never by v2's file, FINDINGS_AND_CHANGES.md or FINDINGS with a part or an
+/// identifier; a sample by its shape under knowledge/samples/, never by v2's sample-prs/; a handbook chapter by its title, never by
+/// its number, its file name or its file stem with a section number (<c>Operation-Reference 16.8</c>; a bare §n passes, because v3
+/// cites <c>V3_MILESTONES.md §13</c>, so WP 7.2 rewrites v2's bare §17.7 and §19 by hand); a ledger by knowledge/ledgers/ or
 /// dbchange/ledgers/, never by a bare name or any path into v2's estate/. A backticked span starting archive/ is provenance and
 /// exempt. Every F&lt;n&gt; names a finding of knowledge/findings.md, or of v2's FINDINGS_AND_CHANGES.md until that file lands; and every
 /// <c>dbchange &lt;verb&gt;</c> a document under knowledge/ or ARCHITECTURE.md cites is a row of the verb table, built or not.
@@ -71,11 +72,12 @@ public sealed class Citations
     /// <summary>v2's four citation forms, each with what it cites and the form v3 cites it in.</summary>
     private static readonly (Regex Pattern, string What, string Instead)[] Forms =
     [
-        (new(@"(?<!archive/v2/ssdt-agent/)\bFINDINGS_AND_CHANGES\.md", RegexOptions.CultureInvariant),
+        (new(@"(?<!archive/v2/ssdt-agent/)\bFINDINGS_AND_CHANGES\.md|\bFINDINGS\b", RegexOptions.CultureInvariant),
             "a finding by its file", "cite the finding by its identifier, F<n>"),
         (new(@"(?<![\w/])(?:\.\./)*sample-prs/", RegexOptions.CultureInvariant),
             "a sample by its v2 path", "cite knowledge/samples/<shape>.md"),
-        (new(@"(?i:handbook)(?:'s)?\s+(?:files?\s+)?\**\d+|\(=\s*§\d+|(?<![\w/])\d{2}-[A-Z][\w-]+\.md|(?<![\w.§])`?\d{1,2}`?\s*=\s*§\d+",
+        (new(@"(?i:handbook)(?:'s)?\s+(?:files?\s+)?\**\d+|\(=\s*§\d+|(?<![\w/])\d{2}-[A-Z][\w-]+\.md|"
+            + @"(?<![\w/-])[A-Z][A-Za-z]*(?:-[A-Za-z]+)+\s+\d+\.\d+|(?<![\w.§])`?\d{1,2}`?\s*=\s*§\d+",
             RegexOptions.CultureInvariant),
             "the handbook by number", "cite the chapter by its title"),
         (new(@"(?<![\w/.-])(?:(?:\.\./)*(?:ssdt-agent/)?estate/[\w.\-/<>]*|(?:ledgers/)?(?:in-flight|operations|refusals|"
@@ -130,6 +132,15 @@ public sealed class Citations
     [InlineData("Handbook files 06 and 07", "the handbook by number")]
     [InlineData("Handbook files are cited by FILENAME with a **+3 offset**: `13` = §16", "the handbook by number")]
     [InlineData("WP 7.2's row of `V3_MILESTONES.md` §13", "")]
+    [InlineData("> Handbook: the Audit and Temporal reference (Operation-Reference 16.8). Cite by filename.", "the handbook by number")]
+    [InlineData("the recipe in Multi-Phase-Pattern-Templates 14.2", "the handbook by number")]
+    [InlineData("> Handbook: the chapter on audit columns and temporal tables, under its title.", "")]
+    [InlineData("Advances FINDINGS Part 5.", "a finding by its file")]
+    [InlineData("invent a manual trust step (FINDINGS F9).", "a finding by its file")]
+    [InlineData("invent a manual trust step (F9).", "")]
+    [InlineData("Advances the open decision on a two-release drop, which `DECISIONS.md` records.", "")]
+    [InlineData("a drop of a populated column waits for a second release (pre-deploy, R1)", "")]
+    [InlineData("SQL Server 2022 Express and LocalDB 17.0 run the fixture lane; Kernel-Tests 3 is no stem", "")]
     [InlineData("`dbchange check inflight` reads `estate/in-flight.md`", "a ledger by its v2 or bare path")]
     [InlineData("records in `ledgers/scale-datapoints.md`", "a ledger by its v2 or bare path")]
     [InlineData("the gate reads `row-tiers.md`", "a ledger by its v2 or bare path")]
