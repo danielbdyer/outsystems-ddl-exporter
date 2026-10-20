@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using DbChange.Budgets.Tests;
@@ -20,9 +22,10 @@ namespace DbChange.Io.Tests;
 /// Spikes S9, S10 and S11 of V3_MILESTONES.md §6, each answered where its fact can be measured, on DacFx 170.5.96 in this process and on
 /// 162.5.57 through tests/DacFx162/ (the partial class beside this file): the receipts the Facsimile's §11 questions 1, 9 and 10 wait for
 /// (archive/v2/ssdt-agent/facsimile/ARCHITECTURE.md), held here until WP 2.6 moves the Facsimile's case catalog to tests/Cases/. S9: a
-/// schema read keeps a disabled constraint as the public property Disabled and an untrusted one only as the internal annotation
-/// IsNotTrustedPropertyAnnotation, and no plan of the repository touches an untrusted key, so WP 3.5's trust step reads trust from the
-/// catalog. S10: constraint validation runs after the commit and after the whole post-deploy script. S11: SQL Server names an unnamed
+/// schema read keeps a disabled check or foreign key as the public property Disabled and an untrusted one only as the internal annotation
+/// IsNotTrustedPropertyAnnotation, a project cannot declare a key untrusted, no plan of the repository touches an untrusted key, and every
+/// plan drops a disabled key the project does not declare and adds one it declares again WITH CHECK, so WP 3.5's trust step reads trust
+/// from the catalog. S10: constraint validation runs after the commit and after the whole post-deploy script. S11: SQL Server names an unnamed
 /// constraint after its object id, so the names differ between a copy and an environment with history, and the head plans against the two
 /// agree once each name is replaced by its role. Every test makes its own databases on the fixture's SQL Server and drops them.
 /// </summary>
@@ -37,7 +40,13 @@ public sealed partial class SpikeReceiptTests
     private const string Disabled =
         "ALTER TABLE dbo.Product ADD CONSTRAINT CK_Product_Code CHECK (LEN(Code) > 0); ALTER TABLE dbo.Product NOCHECK CONSTRAINT CK_Product_Code;";
 
+    /// <summary>The key declare-what-the-planter-reads puts on dbo.Product.CategoryId, added and then disabled.</summary>
+    private const string DisabledCategoryKey = "ALTER TABLE dbo.Product WITH NOCHECK ADD CONSTRAINT FK_Product_Category_CategoryId "
+        + "FOREIGN KEY (CategoryId) REFERENCES dbo.Category (Id); ALTER TABLE dbo.Product NOCHECK CONSTRAINT FK_Product_Category_CategoryId;";
+
     private const string Key = "FK_Order_Customer_CustomerId";
+
+    private const string CategoryKey = "FK_Product_Category_CategoryId";
 
     private const string Check = "CK_Product_Code";
 
@@ -55,6 +64,18 @@ public sealed partial class SpikeReceiptTests
     private const string SecondOrphan = "SET IDENTITY_INSERT dbo.[Order] ON; INSERT dbo.[Order] (Id, CustomerId, StatusId, Total, StatusText) "
         + "VALUES (5, 998, 1, 1.00, N'Pending'); SET IDENTITY_INSERT dbo.[Order] OFF;";
 
+    /// <summary>A Product row whose category no seed row adds, written while <see cref="CategoryKey"/> is disabled.</summary>
+    private const string CategoryOrphan = "INSERT dbo.Product (Code, CategoryId) VALUES (N'ORPHAN', 99);";
+
+    /// <summary>The state <see cref="Trust"/> gives a constraint the database does not hold.</summary>
+    private const int Absent = -1;
+
+    /// <summary>The project with <see cref="CategoryKey"/> declared on dbo.Product.CategoryId, as declare-what-the-planter-reads declares
+    /// it, and nothing else of that change.</summary>
+    private static readonly SampleChange DeclaresTheCategoryKey = new("declare-the-category-key",
+        [new GoldenEdit("Modules/Product.sql", "CategoryId INT           NULL,",
+            "CategoryId INT           NULL CONSTRAINT " + CategoryKey + " REFERENCES dbo.Category (Id),")], []);
+
     private static readonly XNamespace Report = "http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02";
 
     private static readonly XNamespace Serialization = "http://schemas.microsoft.com/sqlserver/dac/Serialization/2012/02";
@@ -67,21 +88,29 @@ public sealed partial class SpikeReceiptTests
         "Checking existing data against newly created constraints", "WITH CHECK CHECK CONSTRAINT [FK_Order_Customer_CustomerId]",
     ];
 
+    /// <summary>The order the plan of a release that leaves a declared key unchanged holds against a database where the key is disabled:
+    /// the key dropped, added again before the commit, the post-deploy script's last line, and the validation that trusts it.</summary>
+    private static readonly string[] ReEnabledAfterTheSeed =
+    [
+        "DROP CONSTRAINT [" + CategoryKey + "]", "ADD CONSTRAINT [" + CategoryKey + "]", "COMMIT TRANSACTION", "Post-deploy complete",
+        "WITH CHECK CHECK CONSTRAINT [" + CategoryKey + "]",
+    ];
+
     [Fact]
     [Trait("Category", "fixture")]
     public async Task Spike_S9_a_schema_read_keeps_a_disabled_check_and_an_untrusted_key_and_its_publish_reproduces_both()
     {
         await using var environment = await HoldingAnUntrustedKeyAndADisabledCheck();
         var reader = await ReadOnlyPrincipal.CreateAsync(environment);
-        Assert.Equal((3, 1), await Trusts(environment));
+        Assert.Equal((3, 1, 3), await Trusts(environment));
 
         using (var model = TSqlModel.LoadFromDatabase(reader.ConnectionString, new ModelExtractOptions()))
         {
-            Assert.Equal((true, false), (
+            bool KeyDisabled(string name) => model.GetObject(ForeignKeyConstraint.TypeClass, new ObjectIdentifier("dbo", name),
+                DacQueryScopes.UserDefined).GetProperty<bool>(ForeignKeyConstraint.Disabled);
+            Assert.Equal((true, false, true), (
                 model.GetObject(CheckConstraint.TypeClass, new ObjectIdentifier("dbo", Check), DacQueryScopes.UserDefined)
-                    .GetProperty<bool>(CheckConstraint.Disabled),
-                model.GetObject(ForeignKeyConstraint.TypeClass, new ObjectIdentifier("dbo", Key), DacQueryScopes.UserDefined)
-                    .GetProperty<bool>(ForeignKeyConstraint.Disabled)));
+                    .GetProperty<bool>(CheckConstraint.Disabled), KeyDisabled(Key), KeyDisabled(CategoryKey)));
         }
 
         using var scratch = ScratchFolder.Temporary("spike-s9");
@@ -90,13 +119,14 @@ public sealed partial class SpikeReceiptTests
         KeepsADisabledCheckAndAnUntrustedKey(extracted);
         await using var fresh = await SqlServerFixture.RegisterAsync();
         GoldenProject.Publish(extracted, fresh, GoldenProject.Pipeline());
-        Assert.Equal((3, 1), await Trusts(fresh));
+        Assert.Equal((3, 1, 3), await Trusts(fresh));
 
         // io's one element reader keeps Disabled and has nothing to keep of trust: the untrusted key reads as the trusted key the sample
         // change add-a-foreign-key builds.
         var read = await Read(environment);
         var head = (await GoldenProject.Model(GoldenProject.Change("add-a-foreign-key"))).Elements;
         Assert.Equal(new Value.Boolean(true), Single(read, "CheckConstraint [dbo].[" + Check + "]")["Disabled"]);
+        Assert.Equal(new Value.Boolean(true), Single(read, "ForeignKeyConstraint [dbo].[" + CategoryKey + "]")["Disabled"]);
         Assert.Equal(Single(head, "ForeignKeyConstraint [dbo].[" + Key + "]").Properties,
             Single(read, "ForeignKeyConstraint [dbo].[" + Key + "]").Properties);
     }
@@ -109,8 +139,9 @@ public sealed partial class SpikeReceiptTests
         var reader = await ReadOnlyPrincipal.CreateAsync(environment);
         var head = await Head();
 
+        // The head does not declare the disabled category key, and the plan drops it though the profile's DropObjectsNotInSource is False.
         var (script, report) = Plan(head, reader.ConnectionString, environment.Name);
-        Assert.Equal([("Create", "[dbo].[CK_Product_Code]"), ("Drop", "[dbo].[CK_Product_Code]")], Operations(report).Order());
+        Assert.Equal(DisabledCheckAndUndeclaredKey, Operations(report).Order());
         Assert.Contains("WITH CHECK CHECK CONSTRAINT [CK_Product_Code]", script, StringComparison.Ordinal);
         Assert.DoesNotContain(Key, script, StringComparison.Ordinal);
 
@@ -118,12 +149,56 @@ public sealed partial class SpikeReceiptTests
         using (var source = Value(Ssdt.Open(head)))
         {
             var planned = Value(DacFx.Plan(source, extracted, environment.Name, Value(PublishProfiles.Load(GoldenProject.Profile)), []));
-            Assert.Equal([("Create", "CheckConstraint [dbo].[CK_Product_Code]"), ("Drop", "CheckConstraint [dbo].[CK_Product_Code]")],
-                planned.Report.Operations.Select(o => (o.Kind.Name, o.Key.ToString())));
+            Assert.Equal([("Create", "CheckConstraint [dbo].[CK_Product_Code]"), ("Drop", "CheckConstraint [dbo].[CK_Product_Code]"),
+                    ("Drop", "ForeignKeyConstraint [dbo].[" + CategoryKey + "]")],
+                planned.Report.Operations.Select(o => (o.Kind.Name, o.Key.ToString())).Order());
         }
 
         GoldenProject.Publish(head, environment, GoldenProject.Pipeline());
-        Assert.Equal((0, 1), await Trusts(environment));
+        Assert.Equal((0, 1, Absent), await Trusts(environment));
+    }
+
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task Spike_S9_a_release_that_leaves_a_declared_key_unchanged_adds_it_again_where_it_is_disabled_and_fails_Msg_547_on_an_orphan()
+    {
+        var (last, head) = (await GoldenProject.Built(DeclaresTheCategoryKey),
+            await GoldenProject.Built(DeclaresTheCategoryKey, GoldenProject.Change("add-a-nullable-column")));
+        await using var clean = await WithTheCategoryKeyDisabled(last, orphaned: false);
+        await using var orphaned = await WithTheCategoryKeyDisabled(last, orphaned: true);
+
+        var (script, report) = Plan(head, clean.ConnectionString, clean.Name);
+        GoldenProject.Publish(head, clean, GoldenProject.Pipeline());
+        var failed = Assert.Throws<DacServicesException>(() => GoldenProject.Publish(head, orphaned, GoldenProject.Pipeline()));
+
+        Assert.Equal(TheCategoryKeyAddedAgain, Operations(report).Order());
+        ReEnablesAfterTheSeed(script);
+        Assert.Equal((1, 0), (await Nicknamed(clean), await Trust(clean.ConnectionString, CategoryKey)));
+        Assert.Contains("Msg 547", string.Join('\n', failed.Messages.Select(m => m.ToString()).Prepend(failed.Message)), StringComparison.Ordinal);
+        Assert.Equal((1, 1), (await Nicknamed(orphaned), await Trust(orphaned.ConnectionString, CategoryKey)));
+    }
+
+    [Fact]
+    [Trait("Category", "build")]
+    public void Spike_S9_a_project_cannot_declare_a_key_untrusted_its_build_warns_SQL70588_and_its_package_holds_the_key_trusted()
+    {
+        using var scratch = ScratchFolder.Temporary("spike-s9-build");
+        var project = GoldenProject.CopyTo(scratch.Path, new GoldenEdit("Modules/OrderStatusText.sql",
+            "-- Intentionally no schema object. The column lives in Modules/Order.sql.", Untrusted));
+        var output = new StringBuilder();
+        Ran Recorded(Command command, CancellationToken cancel)
+        {
+            var ran = Command.Run(command, cancel);
+            output.Append(ran is Ran.Exited exited ? exited.Output + exited.Errors : "");
+            return ran;
+        }
+
+        var built = Value(Ssdt.Build(project, new PublishedTool().Folder, scratch.Under("build"), Recorded));
+
+        Assert.Contains("OrderStatusText.sql(30,1): Build warning SQL70588: WITH CHECK | NOCHECK option for existing data check enforcement "
+            + "is ignored.", output.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(ModelElement(built.Path, "[dbo].[" + Key + "]").Elements(Serialization + "Annotation"),
+            a => (string?)a.Attribute("Type") == "IsNotTrustedPropertyAnnotation");
     }
 
     [Fact]
@@ -244,20 +319,46 @@ public sealed partial class SpikeReceiptTests
             Operations(Plan(inMemory, named.ConnectionString, named.Name).Report).Order());
     }
 
+    /// <summary>The operations of S9's head against the database <see cref="HoldingAnUntrustedKeyAndADisabledCheck"/> makes: the disabled
+    /// check dropped and created again, the disabled key the head does not declare dropped, and nothing of the untrusted key.</summary>
+    private static (string Operation, string Item)[] DisabledCheckAndUndeclaredKey =>
+        [("Create", "[dbo].[" + Check + "]"), ("Drop", "[dbo].[" + Check + "]"), ("Drop", "[dbo].[" + CategoryKey + "]")];
+
+    /// <summary>The operations of a release that adds dbo.Customer.Nickname and leaves <see cref="CategoryKey"/> as the project declared
+    /// it, against a database where the key is disabled: the column added and the key dropped and created again.</summary>
+    private static (string Operation, string Item)[] TheCategoryKeyAddedAgain =>
+        [("Alter", "[dbo].[Customer]"), ("Create", "[dbo].[" + CategoryKey + "]"), ("Drop", "[dbo].[" + CategoryKey + "]")];
+
     /// <summary>The operations of the plan of add-unnamed-constraints against a database it was published to: its Pinned check, written
     /// with IN, dropped and created again.</summary>
     private static (string Operation, string Item)[] CheckWrittenWithInOnNote =>
         [("Create", "Check Constraint: unnamed constraint on [dbo].[Note]"), ("Drop", "unnamed constraint on [dbo].[Note]")];
 
-    /// <summary>A registered database holding the golden base, published and seeded, with <see cref="Untrusted"/> and
-    /// <see cref="Disabled"/> run on it as the fixture's administrator.</summary>
+    /// <summary>A registered database holding the golden base, published and seeded, with <see cref="Untrusted"/>, <see cref="Disabled"/>
+    /// and <see cref="DisabledCategoryKey"/> run on it as the fixture's administrator.</summary>
     private static async Task<RegisteredDatabase> HoldingAnUntrustedKeyAndADisabledCheck()
     {
         var environment = await SqlServerFixture.RegisterAsync();
         GoldenProject.Publish(await GoldenProject.Built(), environment, GoldenProject.Pipeline());
-        await SqlServerFixture.ExecuteAsync(environment.ConnectionString, Untrusted + " " + Disabled);
+        await SqlServerFixture.ExecuteAsync(environment.ConnectionString, Untrusted + " " + Disabled + " " + DisabledCategoryKey);
         return environment;
     }
+
+    /// <summary>A registered database the package was published to, the package declaring <see cref="CategoryKey"/>; then the key
+    /// disabled as the fixture's administrator and, when orphaned, <see cref="CategoryOrphan"/> written.</summary>
+    private static async Task<RegisteredDatabase> WithTheCategoryKeyDisabled(string dacpac, bool orphaned)
+    {
+        var environment = await SqlServerFixture.RegisterAsync();
+        GoldenProject.Publish(dacpac, environment, GoldenProject.Pipeline());
+        await SqlServerFixture.ExecuteAsync(environment.ConnectionString,
+            "ALTER TABLE dbo.Product NOCHECK CONSTRAINT " + CategoryKey + ";" + (orphaned ? " " + CategoryOrphan : ""));
+        Assert.Equal(3, await Trust(environment.ConnectionString, CategoryKey));
+        return environment;
+    }
+
+    /// <summary>1 when the database holds dbo.Customer.Nickname, the column add-a-nullable-column adds, else 0.</summary>
+    private static Task<int> Nicknamed(RegisteredDatabase database) => SqlServerFixture.ScalarAsync(database.ConnectionString,
+        "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.Customer') AND name = N'Nickname';");
 
     /// <summary>
     /// A registered database given history: two tables with unnamed constraints created and dropped. SQL Server names an unnamed default,
@@ -282,14 +383,16 @@ public sealed partial class SpikeReceiptTests
         GoldenProject.Built(GoldenProject.Change("add-a-foreign-key"), GoldenProject.Change("add-a-check-constraint"));
 
     /// <summary>A constraint's state from the catalog: 0 trusted, 1 untrusted (is_not_trusted), 3 disabled (is_disabled, which leaves it
-    /// untrusted too).</summary>
+    /// untrusted too), <see cref="Absent"/> when the database holds no constraint of that name.</summary>
     private static Task<int> Trust(string connectionString, string constraint) => SqlServerFixture.ScalarAsync(connectionString,
-        "SELECT CAST(is_disabled AS int) * 2 + CAST(is_not_trusted AS int) FROM (SELECT name, is_disabled, is_not_trusted FROM sys.foreign_keys "
-        + "UNION ALL SELECT name, is_disabled, is_not_trusted FROM sys.check_constraints) c WHERE name = @name;", constraint);
+        "SELECT ISNULL((SELECT CAST(is_disabled AS int) * 2 + CAST(is_not_trusted AS int) FROM (SELECT name, is_disabled, is_not_trusted "
+        + "FROM sys.foreign_keys UNION ALL SELECT name, is_disabled, is_not_trusted FROM sys.check_constraints) c WHERE name = @name), -1);",
+        constraint);
 
-    /// <summary>The states of S9's check and key.</summary>
-    private static async Task<(int Check, int Key)> Trusts(RegisteredDatabase database) =>
-        (await Trust(database.ConnectionString, Check), await Trust(database.ConnectionString, Key));
+    /// <summary>The states of S9's check, untrusted key and disabled key.</summary>
+    private static async Task<(int Check, int Key, int CategoryKey)> Trusts(RegisteredDatabase database) =>
+        (await Trust(database.ConnectionString, Check), await Trust(database.ConnectionString, Key),
+            await Trust(database.ConnectionString, CategoryKey));
 
     /// <summary>After S10's failed validation: Customer 999, which the post-deploy seed adds; the key, which the main script added and
     /// committed; and the key's state, untrusted.</summary>
@@ -299,12 +402,22 @@ public sealed partial class SpikeReceiptTests
         await Trust(copy.ConnectionString, Key));
 
     /// <summary>The S10 head's script holds each marker of <see cref="ValidationAfterTheSeed"/>, in that order.</summary>
-    private static void ValidatesAfterTheSeed(string script)
+    private static void ValidatesAfterTheSeed(string script) => InOrder(script, ValidationAfterTheSeed);
+
+    /// <summary>The script holds each marker of <see cref="ReEnabledAfterTheSeed"/>, in that order, and adds the key WITH NOCHECK.</summary>
+    private static void ReEnablesAfterTheSeed(string script)
+    {
+        InOrder(script, ReEnabledAfterTheSeed);
+        Assert.Matches(@"WITH NOCHECK\s+ADD CONSTRAINT \[" + CategoryKey + @"\]", script);
+    }
+
+    /// <summary>The script holds each marker, and the first line holding each comes in the order given.</summary>
+    private static void InOrder(string script, string[] markers)
     {
         var lines = script.Split('\n').ToList();
         int At(string marker) => lines.FindIndex(l => l.Contains(marker, StringComparison.Ordinal));
-        Assert.All(ValidationAfterTheSeed, marker => Assert.True(At(marker) >= 0, marker + " is not in the script"));
-        Assert.Equal(ValidationAfterTheSeed, ValidationAfterTheSeed.OrderBy(At));
+        Assert.All(markers, marker => Assert.True(At(marker) >= 0, marker + " is not in the script"));
+        Assert.Equal(markers, markers.OrderBy(At));
     }
 
     /// <summary>
@@ -323,13 +436,14 @@ public sealed partial class SpikeReceiptTests
     }
 
     /// <summary>
-    /// What a package extracted from S9's database keeps in model.xml: the disabled check with IsDisabled True and the annotation
-    /// IsNotTrustedPropertyAnnotation, and the untrusted key with the annotation and no IsDisabled. The annotation is DacFx's internal name,
-    /// so a DacFx release that renames it fails this receipt, which is re-run on every bump of the pin.
+    /// What a package extracted from S9's database keeps in model.xml: the disabled check and the disabled key with IsDisabled True and the
+    /// annotation IsNotTrustedPropertyAnnotation, and the untrusted key with the annotation and no IsDisabled. The annotation is DacFx's
+    /// internal name, so a DacFx release that renames it fails this receipt, which is re-run on every bump of the pin.
     /// </summary>
     private static void KeepsADisabledCheckAndAnUntrustedKey(string dacpac)
     {
-        var (check, key) = (ModelElement(dacpac, "[dbo].[" + Check + "]"), ModelElement(dacpac, "[dbo].[" + Key + "]"));
+        var (check, key, disabled) = (ModelElement(dacpac, "[dbo].[" + Check + "]"), ModelElement(dacpac, "[dbo].[" + Key + "]"),
+            ModelElement(dacpac, "[dbo].[" + CategoryKey + "]"));
         static bool Untrusted(XElement element) =>
             element.Elements(Serialization + "Annotation").Any(a => (string?)a.Attribute("Type") == "IsNotTrustedPropertyAnnotation");
         static string? IsDisabled(XElement element) => (string?)element.Elements(Serialization + "Property")
@@ -337,6 +451,7 @@ public sealed partial class SpikeReceiptTests
 
         Assert.Equal(("True", true), (IsDisabled(check), Untrusted(check)));
         Assert.Equal((null, true), (IsDisabled(key), Untrusted(key)));
+        Assert.Equal(("True", true), (IsDisabled(disabled), Untrusted(disabled)));
     }
 
     private static string ModelXml(string dacpac)

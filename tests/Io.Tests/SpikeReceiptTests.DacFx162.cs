@@ -32,12 +32,34 @@ public sealed partial class SpikeReceiptTests
 
         Assert.Contains("CheckConstraint [dbo].[" + Check + "] Disabled=True", read, StringComparison.Ordinal);
         Assert.Contains("ForeignKeyConstraint [dbo].[" + Key + "] Disabled=False", read, StringComparison.Ordinal);
+        Assert.Contains("ForeignKeyConstraint [dbo].[" + CategoryKey + "] Disabled=True", read, StringComparison.Ordinal);
         KeepsADisabledCheckAndAnUntrustedKey(extracted);
-        Assert.Equal((3, 1), await Trusts(fresh));
-        Assert.Equal([("Create", "[dbo].[CK_Product_Code]"), ("Drop", "[dbo].[CK_Product_Code]")], Operations(report).Order());
+        Assert.Equal((3, 1, 3), await Trusts(fresh));
+        Assert.Equal(DisabledCheckAndUndeclaredKey, Operations(report).Order());
         Assert.DoesNotContain(Key, script, StringComparison.Ordinal);
         DacFx162Child.Succeeded(["publish", GoldenProject.Profile, environment.Name, head], environment.ConnectionString);
-        Assert.Equal((0, 1), await Trusts(environment));
+        Assert.Equal((0, 1, Absent), await Trusts(environment));
+    }
+
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task Spike_S9_on_DacFx_162_a_release_that_leaves_a_declared_key_unchanged_also_adds_it_again_where_it_is_disabled()
+    {
+        var (last, head) = (await GoldenProject.Built(DeclaresTheCategoryKey),
+            await GoldenProject.Built(DeclaresTheCategoryKey, GoldenProject.Change("add-a-nullable-column")));
+        await using var clean = await WithTheCategoryKeyDisabled(last, orphaned: false);
+        await using var orphaned = await WithTheCategoryKeyDisabled(last, orphaned: true);
+        using var scratch = ScratchFolder.Temporary("spike-s9-162-enabled");
+
+        var (script, report) = Planned162(scratch, clean.Name, clean.ConnectionString, ("head", head))[0];
+        DacFx162Child.Succeeded(["publish", GoldenProject.Profile, clean.Name, head], clean.ConnectionString);
+        var failed = DacFx162Child.Run(["publish", GoldenProject.Profile, orphaned.Name, head], orphaned.ConnectionString);
+
+        Assert.Equal(TheCategoryKeyAddedAgain, Operations(report).Order());
+        ReEnablesAfterTheSeed(script);
+        Assert.Equal((1, 0), (await Nicknamed(clean), await Trust(clean.ConnectionString, CategoryKey)));
+        Assert.True(failed.Code == 1 && failed.Errors.Contains("Msg 547", StringComparison.Ordinal), failed.Output + failed.Errors);
+        Assert.Equal((1, 1), (await Nicknamed(orphaned), await Trust(orphaned.ConnectionString, CategoryKey)));
     }
 
     [Fact]
