@@ -74,7 +74,8 @@ public sealed class Citations
             "a finding by its file", "cite the finding by its identifier, F<n>"),
         (new(@"(?<![\w/])(?:\.\./)*sample-prs/", RegexOptions.CultureInvariant),
             "a sample by its v2 path", "cite knowledge/samples/<shape>.md"),
-        (new(@"handbook(?:'s)?\s+(?:file\s+)?\**\d+|\(=\s*§\d+|(?<![\w/])\d{2}-[A-Z][\w-]+\.md", RegexOptions.CultureInvariant),
+        (new(@"(?i:handbook)(?:'s)?\s+(?:files?\s+)?\**\d+|\(=\s*§\d+|(?<![\w/])\d{2}-[A-Z][\w-]+\.md|(?<![\w.§])`?\d{1,2}`?\s*=\s*§\d+",
+            RegexOptions.CultureInvariant),
             "the handbook by number", "cite the chapter by its title"),
         (new(@"(?<![\w/.-])(?:(?:\.\./)*(?:ssdt-agent/)?estate/|ledgers/)?"
             + @"(?:in-flight|operations|refusals|reviewers|row-tiers|scale-datapoints|toolchain|cdc-tracked)\.md", RegexOptions.CultureInvariant),
@@ -120,8 +121,14 @@ public sealed class Citations
     [InlineData("proven live in `../../../sample-prs/make-mandatory.md`", "a sample by its v2 path")]
     [InlineData("**A rename with no refactorlog entry** (handbook 16 = §19.1)", "the handbook by number")]
     [InlineData("Cite by **filename**: **08-Referential-Integrity-Basics.md**", "the handbook by number")]
+    [InlineData("Handbook file 15 = §18.3:", "the handbook by number")]
+    [InlineData("the question set (file 15 = §18.1, Q1-Q4)", "the handbook by number")]
+    [InlineData("Never split it in one release (=§17.6)", "the handbook by number")]
+    [InlineData("Handbook files are cited by FILENAME with a **+3 offset**: `13` = §16", "the handbook by number")]
+    [InlineData("WP 7.2's row of `V3_MILESTONES.md` §13", "")]
     [InlineData("`dbchange check inflight` reads `estate/in-flight.md`", "a ledger by its v2 or bare path")]
     [InlineData("records in `ledgers/scale-datapoints.md`", "a ledger by its v2 or bare path")]
+    [InlineData("the gate reads `row-tiers.md`", "a ledger by its v2 or bare path")]
     [InlineData("reads `dbchange/ledgers/in-flight.md`", "")]
     [InlineData("`knowledge/ledgers/cdc-tracked.md` opens empty", "")]
     [InlineData("`archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:140`", "")]
@@ -137,8 +144,28 @@ public sealed class Citations
     [InlineData("F20, the scale lane's first light", true)]
     [InlineData("F21", false)]
     [InlineData("F0", false)]
+    [InlineData("F999", false)]
     public void A_finding_cited_by_identifier_resolves_in_the_findings(string line, bool resolves) =>
-        Assert.Equal(resolves, !UnknownFindings(line, Enumerable.Range(1, 20).ToHashSet()).Any());
+        Assert.Equal(resolves, !UnknownFindings(line, Findings.Value).Any());
+
+    /// <summary>
+    /// The parse of v2's FINDINGS_AND_CHANGES.md reads its twenty items, F1 to F20, and nothing else: a parse that read too much would
+    /// accept a finding that does not exist, and one that read nothing would refuse every finding. knowledge/findings.md replaces the
+    /// file at WP 7.2, which states its own count here.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_findings_are_v2_s_F1_to_F20_until_knowledge_findings_md_lands()
+    {
+        if (Repository.Contains("knowledge/findings.md"))
+        {
+            Assert.NotEmpty(Findings.Value);
+        }
+        else
+        {
+            Assert.Equal(Enumerable.Range(1, 20), Findings.Value.Order());
+        }
+    }
 
     [Theory]
     [Trait("Category", "fast")]
