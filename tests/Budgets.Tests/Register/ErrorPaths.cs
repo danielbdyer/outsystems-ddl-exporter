@@ -541,6 +541,14 @@ internal static partial class ErrorPaths
         new("an aggregate query the allowlist refuses", "aggregate-query.refused", true, (_, planted) =>
             Failed(SqlServer.AggregateQuery.Of("SELECT MAX(Email) FROM dbo.Customer WHERE Name = N'" + planted + "';",
                 "dbo.Customer.Email Fits"))),
+        new("a plan's script TSql160Parser does not read", "plan.unparsed", true, (_, planted) =>
+            Failed(BlockOnPossibleDataLoss.Read("INSERT INTO [dbo].[Customer] VALUES (N'" + planted + "' ,,);\nGO\n", []))),
+        new("a BlockOnPossibleDataLoss check that reads no table", "plan.check-table", true, (_, planted) =>
+            Failed(BlockOnPossibleDataLoss.Read("IF EXISTS (SELECT TOP 1 1)\n    RAISERROR (N'" + planted + "', 16, 127) WITH NOWAIT\n", []))),
+        new("a BlockOnPossibleDataLoss check that reads a SQLCMD value marked sensitive", "sqlcmd.sensitive", true, (_, planted) =>
+            Failed(BlockOnPossibleDataLoss.Read("IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer] WHERE [Token] = N'$(ServiceToken)')\n"
+                + "    RAISERROR (N'Rows were detected.', 16, 127) WITH NOWAIT\n",
+                [new(Made(SqlCmdName.Of("test", "ServiceToken")), planted, true)]))),
         new("a SQLCMD reference that does not resolve", "sqlcmd.unresolved", false, (scratch, _) =>
         {
             var root = Initialized(

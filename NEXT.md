@@ -24,7 +24,8 @@ and 4.
 - WP 3.4's remainder with spike S4; it drops `kernel/Environments.cs`' unread key `localServer` (`docker` or `localdb`) and
   `tests/Golden/dbchange/environments.json`'s `docker`, with EnvironmentsTests and PublishProfilesTests.
 - WP 7.1, the citations rewritten.
-- Then WP 2.5; WP 2.6, which moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6); WP 3.5; then M2's exit checks.
+- Then WP 2.5, which reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`; WP 2.6, which
+  moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6); WP 3.5; then M2's exit checks.
 - Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the vendoring verb's two
   names, R18's exit, who writes deployments.md, and the gate's wiki cells. `ParityResolves` prints where the ledger stands.
 

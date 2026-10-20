@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using CsCheck;
 using DbChange.Tests;
 using Xunit;
@@ -81,5 +82,51 @@ public sealed class SqlCmdTests
             + "USE [$(DatabaseName)];\nGO\nPRINT N'a: b';\n";
 
         Assert.Equal("USE [$(DatabaseName)];\nGO\nPRINT N'a: b';\n", SqlCmdVariable.WithoutDirectives(Script));
+    }
+
+    /// <summary>
+    /// The same script with each sqlcmd line left empty and its line end kept (CRLF or LF), so a parser's line number in what is left is
+    /// the line of the script DacFx wrote.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_script_with_its_sqlcmd_commands_left_empty_keeps_the_line_of_every_statement()
+    {
+        const string Script = ":setvar DatabaseName \"Estate\"\r\n:on error exit\n  :r .\\Seed.sql\nUSE [$(DatabaseName)];\nGO\n:setvar Last";
+
+        Assert.Equal("\r\n\n\nUSE [$(DatabaseName)];\nGO\n", SqlCmdVariable.WithoutDirectives(Script, keepLines: true));
+    }
+
+    /// <summary>
+    /// The values a script's own :setvar lines give, which DacFx writes for every variable a plan sets but those a reference gave: a value
+    /// in double quotes, a doubled quote inside read as one, or a bare word; the command and the name in any case, the later line
+    /// winning as sqlcmd reads them; and a :setvar with no value removing the variable. A line that only mentions :setvar sets nothing.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_script_s_setvar_lines_give_each_variable_its_last_value_quoted_or_bare()
+    {
+        const string Script = ":setvar DatabaseName \"Estate\"\r\n:SETVAR Tag \"a \"\"quoted\"\" tag\"\n:setvar Bare word\n"
+            + ":setvar databasename \"Later\"\n:setvar Gone \"x\"\n:setvar Gone\n-- :setvar Comment \"no\"\nPRINT N'$(Tag)';\n";
+
+        Assert.Equal(new Dictionary<string, string> { ["databasename"] = "Later", ["Tag"] = "a \"quoted\" tag", ["Bare"] = "word" },
+            SqlCmdVariable.SetIn(Script));
+    }
+
+    /// <summary>
+    /// A substitution records where it put each value in the text it returns, by the variable's name as the script writes it, so a caller
+    /// can tell which part of the substituted text holds a value marked sensitive without reading the value back.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_substitution_records_where_in_its_text_it_put_each_variable_s_value()
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["Tag"] = "dev", ["ServiceToken"] = Planted.Text };
+
+        var substituted = Expect.Value(SqlCmdVariable.Substituted("PRINT N'$(tag)'; ALTER USER [$(ServiceToken)]; -- $(Tag)", values));
+
+        Assert.Equal("PRINT N'dev'; ALTER USER [" + Planted.Text + "]; -- dev", substituted.Text);
+        Assert.Equal([("tag", "dev"), ("ServiceToken", Planted.Text), ("Tag", "dev")],
+            substituted.Placed.Select(p => (p.Name.ToString(), substituted.Text.Substring(p.Start, p.Length))));
     }
 }

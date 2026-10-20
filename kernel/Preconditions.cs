@@ -153,7 +153,8 @@ public sealed record ExistingData(SortedArray<PreconditionState> States)
 
 /// <summary>
 /// A BlockOnPossibleDataLoss check in an environment's plan, as WP 2.2's reader finds it in DacFx's script (§1 fact 3: an IF EXISTS over
-/// the table that raises at state 127): the table whose rows stop the publish, and the statement the check protects, as DacFx writes it.
+/// the table that raises at state 127): the table whose rows stop the publish, and the statement the check protects, as DacFx describes
+/// it in the block comment it writes before the check (io/BlockOnPossibleDataLoss), empty where DacFx wrote none.
 /// </summary>
 public sealed record BlockOnPossibleDataLossSite(Name Table, string Statement) : IComparable<BlockOnPossibleDataLossSite>
 {

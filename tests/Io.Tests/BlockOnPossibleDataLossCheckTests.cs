@@ -23,6 +23,12 @@ public sealed class BlockOnPossibleDataLossCheckTests(PlannedOnBothDacFxReleases
 {
     public static TheoryData<string> SampleChanges => new(GoldenProject.SampleChanges.Select(c => c.Name));
 
+    /// <summary>The sample changes whose plans write a BlockOnPossibleDataLoss check on the committed release.</summary>
+    public static TheoryData<string> Checked => new(GoldenProject.SampleChanges.Select(c => c.Name)
+        .Where(c => CommittedBlockOnPossibleDataLossChecks.For(c, PlannedOnBothDacFxReleases.Committed).Count > 0));
+
+    /// <summary>WP 2.2's done-when: io/BlockOnPossibleDataLoss, the reader, finds in each plan exactly the checks spike S2 extracted and
+    /// committed, from a live plan by each release, the 162.5.57 half run through tests/DacFx162/, and from io's own DacFx.Plan.</summary>
     [Theory]
     [Trait("Category", "fixture")]
     [MemberData(nameof(SampleChanges))]
@@ -31,8 +37,53 @@ public sealed class BlockOnPossibleDataLossCheckTests(PlannedOnBothDacFxReleases
         var (on170, on162) = (CommittedBlockOnPossibleDataLossChecks.For(change, PlannedOnBothDacFxReleases.Committed),
             CommittedBlockOnPossibleDataLossChecks.For(change, DacFx162Child.Release));
 
-        Assert.Equal((Lines(on170), Lines(on170), Lines(on162)), (Lines(BlockOnPossibleDataLossChecks.In(plans.Live170[change])),
-            Lines(BlockOnPossibleDataLossChecks.In(plans.Package170[change])), Lines(BlockOnPossibleDataLossChecks.In(plans.Live162[change]))));
+        Assert.Equal((Lines(on170), Lines(on170), Lines(on162)), (Lines(Read(plans.Live170[change])),
+            Lines(Read(plans.Package170[change])), Lines(Read(plans.Live162[change]))));
+    }
+
+    /// <summary>
+    /// The other half of WP 2.2's done-when: each check's predicate, run through SqlServer.Measure as SELECT CASE WHEN EXISTS (…) THEN 1
+    /// ELSE 0 END, answers 1 on the copy the golden project's seed populated and 0 on a copy of the same schema whose rows were deleted,
+    /// for the checks of either release's live plan.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fixture")]
+    [MemberData(nameof(Checked))]
+    public void Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(string change)
+    {
+        using var root = ScratchFolder.UnderRepository("data-loss-predicates");
+        var (populated, empty) = (Resolved(root, "populated", plans.Populated), Resolved(root, "empty", plans.Emptied));
+        var log = SqlServer.QueryLog.Start(root.Path);
+        var checks = plans.Live.SelectMany(r => Expect.Value(BlockOnPossibleDataLoss.Read(r.Scripts[change], []))).ToList();
+
+        Assert.NotEmpty(checks);
+        Assert.All(checks, check => Assert.Equal((check.ToString(), (long?)1, (long?)0), (check.ToString(), Answer(populated, check, log),
+            Answer(empty, check, log))));
+    }
+
+    /// <summary>
+    /// WP 1.4's rule on the reader: a check's query that fails against an environment classified real reports its error number and its
+    /// site alone. The check reads a planted string as a number, which SQL Server refuses with Msg 245 quoting the value.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    [Trait("Value", "X2")]
+    public async Task A_data_loss_check_whose_query_fails_against_a_real_environment_reports_only_its_number_and_its_site()
+    {
+        var planted = PlantedValue.Unique();
+        await SqlServerFixture.ExecuteAsync(plans.Emptied.ConnectionString,
+            "CREATE TABLE dbo.Planted (Id INT NOT NULL PRIMARY KEY, Value NVARCHAR(100) NOT NULL); INSERT dbo.Planted VALUES (1, @name);",
+            planted.Text);
+        using var root = ScratchFolder.UnderRepository("data-loss-failure");
+        var uat = Resolved(root, "uat", plans.Emptied);
+        var log = SqlServer.QueryLog.Start(root.Path);
+        var check = Assert.Single(Expect.Value(BlockOnPossibleDataLoss.Read("IF EXISTS (select top 1 1 from [dbo].[Planted] where [Value] > 0)\n"
+            + "    RAISERROR (N'Rows were detected.', 16, 127) WITH NOWAIT\nGO\n", [])));
+
+        var failed = Assert.IsType<SqlServer.Measurement.Raised>(Expect.Value(BlockOnPossibleDataLoss.Measure(uat, check, log)));
+
+        Assert.Equal((245, "BlockOnPossibleDataLoss on [dbo].[Planted]", (string?)null), (failed.Number, failed.Site, failed.Message));
+        planted.AbsentFrom(failed + "\n" + File.ReadAllText(log.Path));
     }
 
     [Theory]
@@ -126,6 +177,29 @@ public sealed class BlockOnPossibleDataLossCheckTests(PlannedOnBothDacFxReleases
     private const string Guard = "RAISERROR (N'Rows were detected";
 
     private static string Lines(IEnumerable<string> checks) => string.Concat(checks.Select(c => c + "\n"));
+
+    /// <summary>The checks the reader finds in a plan's script, each as DacFx wrote it.</summary>
+    private static IEnumerable<string> Read(string script) => Expect.Value(BlockOnPossibleDataLoss.Read(script, [])).Select(c => c.Text);
+
+    /// <summary>A check's predicate measured on a database: the one value it answers.</summary>
+    private static long? Answer(SqlServer.Database database, BlockOnPossibleDataLoss.Check check, SqlServer.QueryLog log) =>
+        Assert.Single(Assert.IsType<SqlServer.Measurement.Answered>(Expect.Value(BlockOnPossibleDataLoss.Measure(database, check, log)))
+            .Rows).Values.Single();
+
+    /// <summary>A copy reached as env:&lt;name&gt;, classified real, through a file: reference the owner alone reads.</summary>
+    private static SqlServer.Database Resolved(ScratchFolder root, string name, RegisteredDatabase copy)
+    {
+        var file = root.File(name + ".connection", copy.ConnectionString);
+        if (!OperatingSystem.IsWindows())
+        {
+            // io/SqlServer refuses a connection file others can read
+            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        EnvironmentsJson.Of(name, new("file:" + file.Replace('\\', '/'), "localhost", Classification: "real")).WriteTo(root.Path);
+        File.Copy(GoldenProject.Profile, Path.Combine(root.Path, "dbchange", "profiles", "pipeline.publish.xml"), overwrite: true);
+        return Expect.Value(SqlServer.Resolve(Expect.Value(SqlServer.Target("env:" + name, "--target")), root.Path));
+    }
 
     /// <summary>The ALTER DATABASE … SET QUERY_STORE of the script's Query Store block, or "" where it has none.</summary>
     private static string QueryStoreSet(string script) => BlockOnPossibleDataLossChecks.Statements(script)
@@ -231,7 +305,24 @@ public sealed class PlannedOnBothDacFxReleases : IAsyncLifetime
         UnchangedOn162Copy = new(await QueryStoreState(by162), Planned170Live(by162, unchanged)[Unchanged],
             Planned162Live(by162, unchanged, "on-the-162-copy")[Unchanged]);
         (Live170, Package170, Live162) = (Changes(planned[0]), planned[1], Changes(planned[2]));
+        await SqlServerFixture.ExecuteAsync(by162.ConnectionString, Empty);
+        (Populated, Emptied) = (by170, by162);
     }
+
+    /// <summary>The copy 170.5.96 published, its rows the golden project's seed: what every plan above is planned against.</summary>
+    public RegisteredDatabase Populated { get; private set; } = null!;
+
+    /// <summary>The copy 162.5.57 published, every row of its tables deleted once the plans against it were made.</summary>
+    public RegisteredDatabase Emptied { get; private set; } = null!;
+
+    /// <summary>Every row of every user table deleted, its constraints left unchecked first so no foreign key orders the deletes; a
+    /// history table of a system-versioned table refuses a DELETE, and the golden project's base holds none.</summary>
+    private const string Empty = "DECLARE @sql nvarchar(max) = N'';\n"
+        + "SELECT @sql += N'ALTER TABLE ' + QUOTENAME(s.name) + N'.' + QUOTENAME(t.name) + N' NOCHECK CONSTRAINT ALL; '\n"
+        + "FROM sys.tables AS t JOIN sys.schemas AS s ON s.schema_id = t.schema_id WHERE t.is_ms_shipped = 0;\n"
+        + "SELECT @sql += N'DELETE FROM ' + QUOTENAME(s.name) + N'.' + QUOTENAME(t.name) + N'; '\n"
+        + "FROM sys.tables AS t JOIN sys.schemas AS s ON s.schema_id = t.schema_id WHERE t.is_ms_shipped = 0;\n"
+        + "EXEC sys.sp_executesql @sql;";
 
     public async Task DisposeAsync()
     {
