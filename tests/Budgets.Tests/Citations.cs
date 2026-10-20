@@ -27,9 +27,10 @@ namespace DbChange.Budgets.Tests;
 /// The root design documents are excluded until M8 starts; knowledge/ joins at M7.
 /// Each document also cites in v3's forms, so a file WP 7.2 moves from v2's skills passes only once its citations are rewritten
 /// (<see cref="Forms"/>): a finding by its identifier, never by v2's file; a sample by its shape under knowledge/samples/, never by
-/// v2's sample-prs/; a handbook chapter by its title, never by its number or file name; a ledger by knowledge/ledgers/ or
-/// dbchange/ledgers/, never by v2's estate/ or a bare name. A backticked span starting archive/ is provenance and exempt. Every F&lt;n&gt;
-/// names a finding of knowledge/findings.md, or of v2's FINDINGS_AND_CHANGES.md until that file lands; and every
+/// v2's sample-prs/; a handbook chapter by its title, never by its number or file name (a bare §n passes, because v3 cites
+/// <c>V3_MILESTONES.md §13</c>, so WP 7.2 rewrites v2's bare §17.7 and §19 by hand); a ledger by knowledge/ledgers/ or
+/// dbchange/ledgers/, never by a bare name or any path into v2's estate/. A backticked span starting archive/ is provenance and
+/// exempt. Every F&lt;n&gt; names a finding of knowledge/findings.md, or of v2's FINDINGS_AND_CHANGES.md until that file lands; and every
 /// <c>dbchange &lt;verb&gt;</c> a document under knowledge/ or ARCHITECTURE.md cites is a row of the verb table, built or not.
 /// </summary>
 public sealed class Citations
@@ -77,8 +78,8 @@ public sealed class Citations
         (new(@"(?i:handbook)(?:'s)?\s+(?:files?\s+)?\**\d+|\(=\s*§\d+|(?<![\w/])\d{2}-[A-Z][\w-]+\.md|(?<![\w.§])`?\d{1,2}`?\s*=\s*§\d+",
             RegexOptions.CultureInvariant),
             "the handbook by number", "cite the chapter by its title"),
-        (new(@"(?<![\w/.-])(?:(?:\.\./)*(?:ssdt-agent/)?estate/|ledgers/)?"
-            + @"(?:in-flight|operations|refusals|reviewers|row-tiers|scale-datapoints|toolchain|cdc-tracked)\.md", RegexOptions.CultureInvariant),
+        (new(@"(?<![\w/.-])(?:(?:\.\./)*(?:ssdt-agent/)?estate/[\w.\-/<>]*|(?:ledgers/)?(?:in-flight|operations|refusals|"
+            + @"reviewers|row-tiers|scale-datapoints|toolchain|cdc-tracked)\.md)", RegexOptions.CultureInvariant),
             "a ledger by its v2 or bare path",
             "cite knowledge/ledgers/<name> for the template the tool seeds, or dbchange/ledgers/<name> for the SSDT repository's rows"),
     ];
@@ -124,11 +125,16 @@ public sealed class Citations
     [InlineData("Handbook file 15 = §18.3:", "the handbook by number")]
     [InlineData("the question set (file 15 = §18.1, Q1-Q4)", "the handbook by number")]
     [InlineData("Never split it in one release (=§17.6)", "the handbook by number")]
+    [InlineData("(handbook **16** = §19.1)", "the handbook by number")]
+    [InlineData("the recipe in handbook file 06", "the handbook by number")]
+    [InlineData("Handbook files 06 and 07", "the handbook by number")]
     [InlineData("Handbook files are cited by FILENAME with a **+3 offset**: `13` = §16", "the handbook by number")]
     [InlineData("WP 7.2's row of `V3_MILESTONES.md` §13", "")]
     [InlineData("`dbchange check inflight` reads `estate/in-flight.md`", "a ledger by its v2 or bare path")]
     [InlineData("records in `ledgers/scale-datapoints.md`", "a ledger by its v2 or bare path")]
     [InlineData("the gate reads `row-tiers.md`", "a ledger by its v2 or bare path")]
+    [InlineData("its home is `estate/handoffs/<change-id>/`", "a ledger by its v2 or bare path")]
+    [InlineData("the tool folder `dist/estate/` and `.estate/build/`", "")]
     [InlineData("reads `dbchange/ledgers/in-flight.md`", "")]
     [InlineData("`knowledge/ledgers/cdc-tracked.md` opens empty", "")]
     [InlineData("`archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:140`", "")]

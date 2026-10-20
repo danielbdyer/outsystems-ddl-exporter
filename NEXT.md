@@ -1,9 +1,8 @@
 # Next — rewritten by the session that finishes something; never appended
 Updated 2026-10-20 by #705, after wave 5 of the build. Wave 4 landed WP 3.1 (kernel `Schema` and `Order`), WP 2.3
 (`io/AggregateQueries.cs` and its partial files), WP 2.4 (kernel `Classify`), spike S2 (DacFx 162.5.57 beside 170.5.96,
-`tests/DacFx162/`) and io's refusal of DacFx's `xp_msver` call, so the read-only principal sends no `EXEC`. Wave 5 lands WP
-2.2 (the BlockOnPossibleDataLoss reader), WP 3.8 (kernel `Witness`), spikes S9 to S11, and the review findings of waves 3
-and 4.
+`tests/DacFx162/`) and io's refusal of DacFx's `xp_msver` call, so the read-only principal sends no `EXEC`. Wave 5 lands WP 2.2 (the
+BlockOnPossibleDataLoss reader), WP 3.8 (kernel `Witness`), spikes S9 to S11, and the review findings of waves 3 and 4.
 
 ## The operator's actions
 - The laptop check against Dev (M1 exit 1, spikes S1 and S3) waits until the operator brings the branch to a laptop:
@@ -23,7 +22,8 @@ and 4.
 - WP 2.1's second slice: the statement kinds the plan's §4 shapes name, with the four refinements of spike S2's decision lines.
 - WP 3.4's remainder with spike S4; it drops `kernel/Environments.cs`' unread key `localServer` (`docker` or `localdb`) and
   `tests/Golden/dbchange/environments.json`'s `docker`, with EnvironmentsTests and PublishProfilesTests.
-- WP 7.2 rewrites each skill's citations to the forms `Citations` accepts as it moves it; no test reads a rewrite map, so none is kept.
+- WP 7.2 rewrites each skill's citations to the forms `Citations` accepts as it moves it (no test reads a rewrite map, none is kept),
+  and by hand, to a title, the bare §17.7 and §19 it accepts: v2's skills/operations/structural.md:5, :23, :43 and op/add-index/SKILL.md:29.
 - Then WP 2.5, which reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`; WP 2.6, which
   moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6); WP 3.5; then M2's exit checks.
 - Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the vendoring verb's two

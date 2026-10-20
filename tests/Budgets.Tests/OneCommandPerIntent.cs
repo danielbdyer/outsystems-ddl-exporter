@@ -9,8 +9,9 @@ namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// Value O3: every step of a workflow is a dbchange verb, so no tool document outside knowledge/handbook/ shows a sqlpackage, sqlcmd
-/// or docker invocation. An invocation is a backticked span that starts with the tool's name and a space, or a line inside a ```
-/// fence that does. The tool's bare name in backticks, and Docker the product named in prose, are not invocations.
+/// or docker invocation. An invocation is a backticked span that starts with the tool's name and a space, within one paragraph
+/// however its lines wrap, or a line inside a ``` fence that does. The tool's bare name in backticks, and Docker the product named
+/// in prose, are not invocations.
 /// </summary>
 public sealed class OneCommandPerIntent
 {
@@ -41,6 +42,8 @@ public sealed class OneCommandPerIntent
     [InlineData("`docker inspect dbchange-sql`", true)]
     [InlineData("`sqlpackage /Action:Script`", true)]
     [InlineData("and `sqlcmd -S <Dev's server> -E -Q \"SELECT 1\"`.", true)]
+    [InlineData("and `sqlcmd -S <Dev's server>\n-E -Q \"SELECT 1\"`.", true)]
+    [InlineData("a stray `sqlcmd -S .\n\nends a paragraph; -E` opens the next", false)]
     [InlineData("`sqlpackage`, `sqlcmd` or `docker`", false)]
     [InlineData("SQL Server in Docker from the pinned image", false)]
     [InlineData("the docker image runs sqlcmd for the operator", false)]
@@ -50,28 +53,47 @@ public sealed class OneCommandPerIntent
     public void An_invocation_is_a_backticked_or_fenced_command_line_starting_with_the_tool(string text, bool invokes) =>
         Assert.Equal(invokes, Invocations(text.Split('\n')).Any());
 
-    /// <summary>Each invocation in a document's physical lines, with the line it stands on.</summary>
+    /// <summary>
+    /// Each invocation in a document, with the physical line it starts on. Inside a ``` fence each physical line is a command line;
+    /// outside one, a paragraph's physical lines are joined with a space first, because this repository soft-wraps its paragraphs and
+    /// a backticked span may open on one line and close on the next. A blank line or a fence ends a paragraph.
+    /// </summary>
     private static IEnumerable<(int Line, string Text)> Invocations(IReadOnlyList<string> lines)
     {
         var fenced = false;
-        for (var i = 0; i < lines.Count; i++)
+        var paragraph = new List<string>();
+        var start = 0;
+        for (var i = 0; i <= lines.Count; i++)
         {
-            if (lines[i].TrimStart().StartsWith("```", StringComparison.Ordinal))
+            var fence = i < lines.Count && lines[i].TrimStart().StartsWith("```", StringComparison.Ordinal);
+            var ends = i == lines.Count || fence || fenced || lines[i].Trim().Length == 0;
+            if (ends && paragraph.Count > 0)
             {
-                fenced = !fenced;
-                continue;
+                foreach (Match span in InBackticks.Matches(string.Join(' ', paragraph)))
+                {
+                    yield return (start + 1, span.Value);
+                }
+
+                paragraph.Clear();
             }
 
-            if (fenced && InFence.IsMatch(lines[i]))
+            if (i == lines.Count)
+            {
+                break;
+            }
+
+            if (fence)
+            {
+                fenced = !fenced;
+            }
+            else if (fenced && InFence.IsMatch(lines[i]))
             {
                 yield return (i + 1, lines[i].Trim());
             }
-            else if (!fenced)
+            else if (!fenced && lines[i].Trim().Length > 0)
             {
-                foreach (Match span in InBackticks.Matches(lines[i]))
-                {
-                    yield return (i + 1, span.Value);
-                }
+                start = paragraph.Count == 0 ? i : start;
+                paragraph.Add(lines[i].Trim());
             }
         }
     }
