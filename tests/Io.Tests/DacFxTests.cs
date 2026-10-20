@@ -194,6 +194,31 @@ public sealed class DacFxTests : IDisposable
         Assert.IsType<Result<Plan>.Ok>(DacFx.Plan(sensitive, insensitive, "Target", Strict(), []));
     }
 
+    /// <summary>
+    /// DacFx given no path for a script names its file after the target database alone, &lt;temp&gt;/&lt;database&gt;_Update1.publish.sql while
+    /// no file holds that name (measured on DacFx 170.5.96), so two plans of one database name at once can take one file and return each
+    /// other's script, or none. A folder at that name, which DacFx cannot open as a file, stands for another plan holding it; the plan
+    /// is made all the same, and its script is its own.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_plan_s_script_passes_through_no_file_another_plan_of_the_same_database_name_could_take()
+    {
+        var database = "dbchange_plan_" + Guid.NewGuid().ToString("N")[..8];
+        var taken = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), database + "_Update1.publish.sql"));
+        try
+        {
+            using var package = Ok(Ssdt.Open(Packaged("own", SqlServerVersion.Sql160, "CREATE TABLE dbo.T (Id INT NOT NULL);")));
+
+            Assert.Contains(":setvar DatabaseName \"" + database + "\"", Ok(DacFx.Plan(package, package, database, Strict(), [])).Script,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            taken.Delete();
+        }
+    }
+
     private string Packaged(string name, SqlServerVersion platform, params string[] scripts) => Collated(name, platform, null, scripts);
 
     /// <summary>A package built in memory under the collation given, the model's default when null.</summary>

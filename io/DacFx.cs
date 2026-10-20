@@ -23,7 +23,7 @@ namespace DbChange.Io;
 /// handed to the SQL Server adapter's classification and the rest named here. DacFx's own connections and statements are DacFx's: dbchange
 /// logs its own (io/SqlServer's query log), and the Extended Events test watches DacFx's.
 /// </summary>
-public static class DacFx
+public static partial class DacFx
 {
     /// <summary>How long DacFx may run one of its catalog queries while it extracts a database: its own default, named here.</summary>
     internal static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(60);
@@ -126,7 +126,8 @@ public static class DacFx
     /// <summary>
     /// The plan of <paramref name="source"/> against <paramref name="target"/>, package to package (DacServices.Script with two packages,
     /// which connects to nothing), under the profile's options and the SQLCMD values given, both outputs generated, planned as the database
-    /// <paramref name="databaseName"/>. Each variable the source declares must have a value from the profile or <paramref name="values"/>,
+    /// <paramref name="databaseName"/>, the script written to files of the plan's own (<see cref="Scripted"/>). Each variable the source
+    /// declares must have a value from the profile or <paramref name="values"/>,
     /// or it is sqlcmd.undefined before anything is planned (DF-9); a value for a variable the source does not declare is the note
     /// sqlcmd.undeclared. The script is kept without the :setvar line of each value a reference gave. A package whose collation ignores
     /// case against a target whose collation does not is plan.collation, the check DacFx makes of a live plan (<see cref="Verified"/>); a
@@ -158,8 +159,9 @@ public static class DacFx
             source.Source + " declares no " + SqlCmdVariable.Placeholder(name.ToString())
                 + ", so the value given for it reaches no script.")).ToList();
         return source.Elements.Bind(from => target.Elements.Bind(to => Verified(source, target, from.Elements, to.Elements).Bind(_ =>
-            Guard(() => DacServices.Script(source.Dac, target.Dac, databaseName,
-                    new PublishOptions { GenerateDeploymentScript = true, GenerateDeploymentReport = true, DeployOptions = options }),
+            Guard(() => Scripted(
+                    new PublishOptions { GenerateDeploymentScript = true, GenerateDeploymentReport = true, DeployOptions = options },
+                    given => DacServices.Script(source.Dac, target.Dac, databaseName, given)),
                 failure => Unplanned(failure, source, target))
             .Bind(planned => Report(planned.DeploymentReport, from.Elements, to.Elements)
                 .Map(report => new Io.Plan(report.Report,
@@ -186,7 +188,8 @@ public static class DacFx
 
     /// <summary>
     /// The package published to the copy under the profile's options, Strict or the copy's Permissive (§2.1 rule 3), both outputs
-    /// generated: what DacFx deployed, its report and its script. DacFx's error and warning messages during the call are kept with its
+    /// generated: what DacFx deployed, its report and its script, the script written to files of the publish's own
+    /// (<see cref="Scripted"/>). DacFx's error and warning messages during the call are kept with its
     /// failure, and its informational ones (a deployment script's PRINT output, "Altering Table [dbo].[T]...") are not; a failed publish of
     /// a profile with IncludeTransactionalScripts False says the copy may hold part of the change. Only a Copy is taken, so a named
     /// environment is never published to. The run's interruption and the caller's token cancel it, as they cancel an extract.
@@ -199,9 +202,9 @@ public static class DacFx
         var messages = new List<DacMessage>();
         services.Message += (_, e) => messages.Add(e.Message);
         var options = profile.Options();
-        return Guard(() => services.Publish(package.Dac, copy.Name.ToString(),
-            new PublishOptions { GenerateDeploymentReport = true, GenerateDeploymentScript = true, DeployOptions = options,
-                CancelToken = interrupted.Token }),
+        return Guard(() => Scripted(new PublishOptions { GenerateDeploymentReport = true, GenerateDeploymentScript = true,
+                    DeployOptions = options, CancelToken = interrupted.Token },
+                given => services.Publish(package.Dac, copy.Name.ToString(), given)),
                 failure => Failed(copy, failure with { Messages = SortedArray.Of(failure.Messages.Concat(Kept(messages)).Distinct()) },
                     options.IncludeTransactionalScripts), interrupted.Token)
             .Bind(published => package.Elements.Bind(elements => Report(published.DeploymentReport, elements.Elements, []))

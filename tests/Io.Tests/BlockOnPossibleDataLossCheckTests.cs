@@ -180,9 +180,11 @@ public sealed class CommittedBlockOnPossibleDataLossChecks
 /// Every sample change planned against one copy of the golden project's base, published and seeded by its post-deploy script under the
 /// pipeline profile by DacFx 170.5.96: by 170.5.96 in this process, live (DacServices.Script against the copy) and package to package
 /// (io's own DacFx.Plan, the plan predict reads); and by 162.5.57 live, in one run of the DacFx 162 child. Besides, the unchanged base
-/// planned live by both releases against that copy and against a second copy, which the child published with 162.5.57. The scripts are
-/// kept as DacFx wrote them, CRLF line endings included, in memory, and the child's in a scratch folder deleted with the copies; none is
-/// committed.
+/// planned live by both releases against that copy and against a second copy, which the child published with 162.5.57. The three ways of
+/// planning run at once against the one copy, so each gives DacFx files of its own for the script (io/DacFx.Scripted, and the child its
+/// output folder): given none, each release names the file after the database alone, and one plan reads, or deletes, another's. The
+/// scripts are kept as DacFx wrote them, CRLF line endings included, in memory, and the child's in a scratch folder deleted with the
+/// copies; none is committed.
 /// </summary>
 public sealed class PlannedOnBothDacFxReleases : IAsyncLifetime
 {
@@ -258,13 +260,13 @@ public sealed class PlannedOnBothDacFxReleases : IAsyncLifetime
     private static Dictionary<string, string> Planned170Live(RegisteredDatabase copy, (string Name, string Path)[] heads)
     {
         var services = new DacServices(copy.ConnectionString);
-        var options = new PublishOptions { GenerateDeploymentScript = true, GenerateDeploymentReport = false,
-            DeployOptions = GoldenProject.Pipeline() };
+        var options = GoldenProject.Pipeline();
         return heads.ToDictionary(h => h.Name, h =>
         {
             using var stream = File.OpenRead(h.Path);
             using var package = DacPackage.Load(stream);
-            return services.Script(package, copy.Name, options).DatabaseScript;
+            return DacFx.Scripted(new PublishOptions { GenerateDeploymentScript = true, GenerateDeploymentReport = false, DeployOptions = options },
+                given => services.Script(package, copy.Name, given)).DatabaseScript;
         }, StringComparer.Ordinal);
     }
 

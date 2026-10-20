@@ -185,6 +185,31 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
     }
 
     /// <summary>
+    /// A publish, as a plan does, gives DacFx files of its own for the script: given none, DacFx names the file after the copy alone,
+    /// &lt;temp&gt;/&lt;copy&gt;_Update1.publish.sql while no file holds that name. A folder at that name, which DacFx cannot open as a file,
+    /// stands for another call holding it; the base is published all the same, and the script returned is the publish's own.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_publish_s_script_passes_through_no_file_another_call_for_the_same_copy_could_take()
+    {
+        var strict = Made(PublishProfiles.Load(project.Profile));
+        var copy = Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(root)));
+        var taken = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), copy.Name + "_Update1.publish.sql"));
+        try
+        {
+            using var package = Made(Ssdt.Open(project.Base));
+
+            Assert.Contains("CREATE TABLE [dbo].[Customer]", Made(DacFx.Publish(copy, package, strict)).Script, StringComparison.Ordinal);
+        }
+        finally
+        {
+            taken.Delete();
+            Made(LocalServer.Drop(copy, SqlServer.QueryLog.Start(root)));
+        }
+    }
+
+    /// <summary>
     /// A failed DacServices.Publish through Copy.Publish and io/DacFx.Failed. The copy holds the seed's Customer rows, so the
     /// make-mandatory head's BlockOnPossibleDataLoss check (the option True in the pipeline's profile) raises Msg 50000 and DacFx throws
     /// DacServicesException with no SqlException inside. Its Message holds DacFx's errors (SQL72014 quoting Msg 50000, SQL72045), and

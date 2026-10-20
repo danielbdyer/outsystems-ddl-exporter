@@ -61,6 +61,9 @@ internal static class Program
     /// script: DacServices.Script of each package, loaded from a stream, against the database the connection reaches, under the profile's
     /// deploy options alone, the deployment script only; each written to &lt;output folder&gt;/&lt;name&gt;.sql, UTF-8 without a BOM, as
     /// DacFx returned it (CRLF line endings included). A package loaded by path would load the assemblies beside it into this process.
+    /// DacFx writes the script to that file first, and a master script to &lt;name&gt;.master.sql beside it for a target that takes one:
+    /// given no path, DacFx names the file after the database alone in the temporary folder, where a plan of the same database by the
+    /// fixture's own process, at the same moment, can read or delete it (io/DacFx.Scripted).
     /// </summary>
     private static int Script(string connection, string[] args)
     {
@@ -74,11 +77,12 @@ internal static class Program
         foreach (var head in args[3..])
         {
             var split = head.IndexOf('=', StringComparison.Ordinal);
+            var output = Path.Combine(args[2], head[..split]);
             using var stream = File.OpenRead(head[(split + 1)..]);
             using var package = DacPackage.Load(stream);
-            var plan = services.Script(package, args[1],
-                new PublishOptions { GenerateDeploymentScript = true, GenerateDeploymentReport = false, DeployOptions = options });
-            File.WriteAllText(Path.Combine(args[2], head[..split] + ".sql"), plan.DatabaseScript, new UTF8Encoding(false));
+            var plan = services.Script(package, args[1], new PublishOptions { GenerateDeploymentScript = true, GenerateDeploymentReport = false,
+                DeployOptions = options, DatabaseScriptPath = output + ".sql", MasterDbScriptPath = output + ".master.sql" });
+            File.WriteAllText(output + ".sql", plan.DatabaseScript, new UTF8Encoding(false));
         }
 
         return 0;
