@@ -15,7 +15,8 @@ namespace DbChange.Io.Tests;
 /// The copy cache (WP 3.4): a copy backed up under a key, recorded in .dbchange/cache/backups.json with the file the server wrote, in
 /// .dbchange/cache/ on LocalDB and in the server's own default backup folder on a SQL Server on this machine; restored into a new
 /// registered copy equal to the copy it was backed up from, so the plan of its package against the restored copy is empty; and a fresh
-/// copy of a base, published once and restored from its backup after.
+/// copy of a base, published once and restored from its backup after; and, where the server has no cache, a base published from scratch
+/// each time with the note cache.unavailable.
 /// </summary>
 public sealed class CopyCacheTests : IDisposable
 {
@@ -92,6 +93,46 @@ public sealed class CopyCacheTests : IDisposable
         {
             await SqlServerFixture.DeleteBackupsAsync(root);
         }
+    }
+
+    /// <summary>
+    /// A DBCHANGE_SQL server on another machine writes a backup to its own disk, where no restore here reads it (copy.uncached). Every
+    /// fixture server is on this machine, so the test gives FromBase that choice of backup folder: each fresh copy is published from
+    /// scratch, none is restored, each carries the one note cache.unavailable, and .dbchange/cache/backups.json is never written.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_fresh_copy_on_a_server_with_no_cache_is_published_from_scratch_each_time_with_the_note_cache_unavailable()
+    {
+        var server = await SqlServerFixture.ServerAsync();
+        var dacpac = await GoldenProject.Built();
+        var strict = Value(PublishProfiles.Load(GoldenProject.Profile));
+        var key = Fingerprint.Of("no cache " + Guid.NewGuid().ToString("N"));
+        var publishes = 0;
+        Result<SqlServer.Copy> Publish(SqlServer.Copy copy)
+        {
+            publishes++;
+            return copy.Publish(dacpac, strict, SqlServer.QueryLog.Start(root));
+        }
+
+        Result<LocalServer.BackupFolder> Elsewhere(ServerName name) =>
+            new Error("copy.uncached", "The local server " + name + " runs on another machine.", "Point DBCHANGE_SQL at this machine.");
+        LocalServer.Fresh Uncached() =>
+            Value(LocalServer.FromBase(root, server, key, Publish, SqlServer.QueryLog.Start(root), Elsewhere));
+
+        var first = Uncached();
+        using var firstCopy = DisposableCopy.Of(first.Copy);
+        var second = Uncached();
+        using var secondCopy = DisposableCopy.Of(second.Copy);
+
+        Assert.Equal(2, publishes);
+        Assert.NotEqual(first.Copy.Name, second.Copy.Name);
+        Assert.All(new[] { first, second }, fresh =>
+        {
+            Assert.False(fresh.Restored, fresh.Copy.Name + " was restored from a cache its server does not have");
+            Assert.Equal("cache.unavailable", Assert.Single(fresh.Notes).Code);
+        });
+        Assert.False(File.Exists(Path.Combine(root, ".dbchange", "cache", "backups.json")), "a server with no cache had a backup indexed");
     }
 
     /// <summary>The fresh copy, made as <paramref name="restored"/> says, with no note: the cache serves this server.</summary>

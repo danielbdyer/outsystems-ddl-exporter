@@ -16,15 +16,30 @@ public static partial class LocalServer
     /// </summary>
     internal static readonly TimeSpan SweptAfter = TimeSpan.FromDays(1);
 
+    /// <summary>How long a sweep waits for another run's sweep, which drops each of its copies within its DROP's timeout.</summary>
+    private static readonly TimeSpan SweepTimeout = TimeSpan.FromMinutes(10);
+
     /// <summary>
     /// The sweep (VALUES.md O5): each copy <see cref="Stale"/> chooses from .dbchange/copies.json dropped as Drop drops one, its row with
-    /// it; the names dropped. It runs before a copy is made, on the server that copy is made on, with the clock its caller gives. A copy
-    /// another run dropped between the read and the DROP is no error.
+    /// it; the names dropped. It runs before a copy is made, on the server that copy is made on, with the clock its caller gives. Where
+    /// the registry holds a stale row, the run takes .dbchange/sweep.lock, reads the rows again under it and drops them under it, so a
+    /// run that sweeps at the same time waits and then finds those rows gone; Unmake's application lock keeps a DROP apart from a Drop
+    /// of the same copy outside the sweep.
     /// </summary>
     internal static Result<IReadOnlyList<CopyName>> Swept(string repositoryRoot, string server, Kernel.ServerName name, DateTimeOffset now,
-        SqlServer.QueryLog log) =>
-        Rows(repositoryRoot).Bind(rows => Result.All(Stale(rows, name, now)
-            .Select(stale => Drop(new SqlServer.Copy(stale, server, repositoryRoot), log))));
+        SqlServer.QueryLog log)
+    {
+        var state = new LocalState(repositoryRoot);
+        return Rows(repositoryRoot).Bind(seen => Stale(seen, name, now).Count == 0 ? Result.Ok<IReadOnlyList<CopyName>>([])
+            : state.Made(state.Folder).Bind(_ => FileLock.Take(state.SweepLock, SweepTimeout)).Bind(held =>
+            {
+                using (held)
+                {
+                    return Rows(repositoryRoot).Bind(rows => Result.All(Stale(rows, name, now)
+                        .Select(stale => Drop(new SqlServer.Copy(stale, server, repositoryRoot), log))));
+                }
+            }));
+    }
 
     /// <summary>
     /// The registry's rows the sweep drops: a name dbchange gives a copy, made on this machine, on <paramref name="server"/> (the local
@@ -45,28 +60,30 @@ public static partial class LocalServer
     }
 
     /// <summary>
-    /// The Facsimile's TLC-10: the first statement this process sends the local server, sent once more when the server does not answer
-    /// (server.unreachable), after <see cref="Pause"/>, since LocalDB's first connection can time out while the instance starts. Any other
-    /// error is the server's answer and is returned as it is, and once a statement has reached the server no later one is retried.
+    /// The Facsimile's TLC-10: a connect to the local server that fails before the connection opens (server.unreachable, the connection
+    /// never opened) is tried once more after <see cref="Pause"/>, since LocalDB's first connection can time out while the instance starts;
+    /// this holds until the server has first answered this process, by a connection that opened or by an error of its own such as a
+    /// refused login. A failure after the connection opened, a severity of 20 or more among them, is never retried, since the server may
+    /// have run the statement, and once the server has answered no later connect is retried.
     /// </summary>
     internal sealed class FirstConnect
     {
         /// <summary>How long the retry waits: long enough for an instance that is starting to listen.</summary>
         internal static readonly TimeSpan Pause = TimeSpan.FromSeconds(2);
 
-        private int reached;
+        private int answered;
 
         /// <summary>The one this process's statements to the local server share (io/SqlServer.Query).</summary>
         internal static FirstConnect OfProcess { get; } = new();
 
         /// <summary>
-        /// The statement's answer; the wait watches the run's interruption (Interruption.RunToken) and throws OperationCanceledException
-        /// when it ends.
+        /// The statement's answer, <paramref name="attempt"/> saying with it whether its connection opened; the wait watches the run's
+        /// interruption (Interruption.RunToken) and throws OperationCanceledException when it ends.
         /// </summary>
-        internal Result<T> Attempt<T>(Func<Result<T>> attempt, TimeSpan pause)
+        internal Result<T> Attempt<T>(Func<(Result<T> Answer, bool Opened)> attempt, TimeSpan pause)
         {
-            var answered = attempt();
-            if (answered is Result<T>.Failed { Error.Code: "server.unreachable" } && Volatile.Read(ref reached) == 0)
+            var sent = attempt();
+            if (Unanswered(sent) && Volatile.Read(ref answered) == 0)
             {
                 if (Interruption.RunToken.WaitHandle.WaitOne(pause))
                 {
@@ -74,15 +91,19 @@ public static partial class LocalServer
                         Interruption.RunToken);
                 }
 
-                answered = attempt();
+                sent = attempt();
             }
 
-            if (answered is Result<T>.Ok)
+            if (!Unanswered(sent))
             {
-                Volatile.Write(ref reached, 1);
+                Volatile.Write(ref answered, 1);
             }
 
-            return answered;
+            return sent.Answer;
         }
+
+        /// <summary>A connect the server never answered: server.unreachable before the connection opened.</summary>
+        private static bool Unanswered<T>((Result<T> Answer, bool Opened) sent) =>
+            !sent.Opened && sent.Answer is Result<T>.Failed { Error.Code: "server.unreachable" };
     }
 }

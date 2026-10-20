@@ -1,9 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
 using DbChange.Kernel;
 using DbChange.Tests;
 using Xunit;
@@ -25,9 +29,10 @@ public sealed class LocalServerTests : IDisposable
     public void Dispose() => scratch.Dispose();
 
     /// <summary>
-    /// The Facsimile's TLC-10: LocalDB's first connection can time out while the instance starts, so the first statement this process sends
-    /// the local server is sent again once when it does not answer. A refusal or a timeout on an open connection is the server's answer
-    /// and is not sent again, and once one statement has reached the server, a later one that does not answer is not retried.
+    /// The Facsimile's TLC-10: LocalDB's first connection can time out while the instance starts, so a connect that fails before the
+    /// connection opens is tried once more until the server has first answered the process. A refusal, a timeout on an open connection,
+    /// and a connection the server broke after it opened, which may have run the statement, are not sent again; once the server has
+    /// answered, by a connection that opened or by a refused login, a later connect that fails is not retried.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -36,12 +41,68 @@ public sealed class LocalServerTests : IDisposable
         var denied = new Error("server.denied", "copy:x refused this identity.", "Check the login.");
         var timedOut = new Error("server.timed-out", "copy:x ran past its timeout.", "Run it again.");
 
-        Assert.Equal((2, "server.unreachable"), Attempts(new LocalServer.FirstConnect(), Unreachable, Unreachable));
-        Assert.Equal((1, "server.denied"), Attempts(new LocalServer.FirstConnect(), denied, 1));
-        Assert.Equal((1, "server.timed-out"), Attempts(new LocalServer.FirstConnect(), timedOut, 1));
+        Assert.Equal((2, "server.unreachable"), Attempts(new LocalServer.FirstConnect(), (Unreachable, false), (Unreachable, false)));
+        Assert.Equal((1, "server.denied"), Attempts(new LocalServer.FirstConnect(), (denied, false), (1, true)));
+        Assert.Equal((1, "server.timed-out"), Attempts(new LocalServer.FirstConnect(), (timedOut, true), (1, true)));
+        Assert.Equal((1, "server.unreachable"), Attempts(new LocalServer.FirstConnect(), (Unreachable, true), (1, true)));
         var connect = new LocalServer.FirstConnect();
-        Assert.Equal((2, "1"), Attempts(connect, Unreachable, 1));
-        Assert.Equal((1, "server.unreachable"), Attempts(connect, Unreachable, 1));
+        Assert.Equal((2, "1"), Attempts(connect, (Unreachable, false), (1, true)));
+        Assert.Equal((1, "server.unreachable"), Attempts(connect, (Unreachable, false), (1, true)));
+        var refused = new LocalServer.FirstConnect();
+        Assert.Equal((1, "server.denied"), Attempts(refused, (denied, false), (1, true)));
+        Assert.Equal((1, "server.unreachable"), Attempts(refused, (Unreachable, false), (1, true)));
+    }
+
+    /// <summary>
+    /// The retry on the statement path itself (io/SqlServer.Query): a fresh dbchange process whose DBCHANGE_SQL names a TCP listener that
+    /// accepts each connection and closes it at once makes a copy, so its first statement, the CREATE DATABASE, never reaches a server.
+    /// The listener counts two connections, the first connect and its one retry, and the run fails as server.unreachable with no row
+    /// left in .dbchange/copies.json.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "build")]
+    public async Task A_copy_s_first_statement_to_a_server_that_never_answers_connects_twice_and_fails_as_server_unreachable()
+    {
+        var root = SqlServerFixture.RepositoryRoot(scratch.Folder("repository"));
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var accepted = 0;
+        var accepting = new Thread(() =>
+        {
+            try
+            {
+                while (true)
+                {
+                    listener.AcceptTcpClient().Dispose();
+                    Interlocked.Increment(ref accepted);
+                }
+            }
+            catch (Exception e) when (e is SocketException or ObjectDisposedException or InvalidOperationException)
+            {
+                // the listener stopped
+            }
+        }) { IsBackground = true };
+        accepting.Start();
+        try
+        {
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port.ToString(CultureInfo.InvariantCulture);
+            using var run = DbChangeProcess.Start(new Dictionary<string, string>
+            {
+                ["DBCHANGE_SQL"] = "Server=127.0.0.1," + port + ";User ID=sa;Password=unused;Connect Timeout=5;TrustServerCertificate=true",
+            }, "copy", root);
+            var errors = run.StandardError.ReadToEndAsync();
+            var printed = run.StandardOutput.ReadToEnd();
+            Assert.True(run.WaitForExit(TimeSpan.FromMinutes(1)), "the run did not end");
+
+            Assert.True(printed.StartsWith("server.unreachable: ", StringComparison.Ordinal), printed + await errors);
+            Assert.Equal((1, 2), (run.ExitCode, Volatile.Read(ref accepted)));
+            Assert.DoesNotContain("dbchange_", File.ReadAllText(Path.Combine(root, ".dbchange", "copies.json")), StringComparison.Ordinal);
+        }
+        finally
+        {
+            listener.Stop();
+            accepting.Join(TimeSpan.FromSeconds(10));
+        }
     }
 
     /// <summary>
@@ -118,8 +179,8 @@ public sealed class LocalServerTests : IDisposable
     }
 
     /// <summary>How many times <see cref="LocalServer.FirstConnect.Attempt{T}"/> sent the statement, answered in turn by
-    /// <paramref name="answers"/>, and its outcome: the value, or the error's code.</summary>
-    private static (int, string) Attempts(LocalServer.FirstConnect connect, params Result<int>[] answers)
+    /// <paramref name="answers"/>, each with whether its connection opened, and its outcome: the value, or the error's code.</summary>
+    private static (int, string) Attempts(LocalServer.FirstConnect connect, params (Result<int> Answer, bool Opened)[] answers)
     {
         var sent = 0;
         var outcome = connect.Attempt(() => answers[Math.Min(sent++, answers.Length - 1)], TimeSpan.Zero);

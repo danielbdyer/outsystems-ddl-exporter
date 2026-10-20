@@ -49,16 +49,18 @@ public static partial class SqlServer
     /// which receives a failure SQL Server raised on the open connection below severity 20 and the command's timeout. No SqlConnection
     /// serves two statements, so a pooled connection the server broke fails that statement alone and is mapped once. A statement is
     /// logged once the connection opened, since only then was it sent, its parameters declared before it, so the log runs as a script.
-    /// The first statement this process sends a copy is sent once more when the local server does not answer (LocalServer.FirstConnect).
+    /// A statement to a copy whose connection fails to open is sent once more while the local server has not yet answered this process
+    /// (LocalServer.FirstConnect).
     /// </summary>
     internal static Result<T> Query<T>(Database target, Statement statement, QueryLog log,
         Func<IReadOnlyList<IReadOnlyList<object?>>, T> answer,
         Func<StatementFailure, T>? failed = null) =>
         target is Copy
             ? LocalServer.FirstConnect.OfProcess.Attempt(() => Sent(target, statement, log, answer, failed), LocalServer.FirstConnect.Pause)
-            : Sent(target, statement, log, answer, failed);
+            : Sent(target, statement, log, answer, failed).Answer;
 
-    private static Result<T> Sent<T>(Database target, Statement statement, QueryLog log,
+    /// <summary>The statement's answer, and whether its connection opened.</summary>
+    private static (Result<T> Answer, bool Opened) Sent<T>(Database target, Statement statement, QueryLog log,
         Func<IReadOnlyList<IReadOnlyList<object?>>, T> answer, Func<StatementFailure, T>? failed)
     {
         var opened = false;
@@ -91,7 +93,7 @@ public static partial class SqlServer
             }
 
             var outcome = rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows";
-            return log.Add(target, statement.Site, logged, outcome).Map(_ => answer(rows));
+            return (log.Add(target, statement.Site, logged, outcome).Map(_ => answer(rows)), true);
         }
         catch (Exception e) when (e is InvalidOperationException || Carries(e))
         {
@@ -100,13 +102,13 @@ public static partial class SqlServer
                 var unlogged = log.Add(target, statement.Site, logged, statementFailure.TimedOut
                     ? "timed out after " + statement.Timeout.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s"
                     : "failed, Msg " + statementFailure.Number.ToString(CultureInfo.InvariantCulture)) as Result<string>.Failed;
-                return unlogged is null ? failed(statementFailure) : unlogged.Error;
+                return (unlogged is null ? failed(statementFailure) : unlogged.Error, opened);
             }
 
             var error = target.ErrorOf(e, opened);
-            return opened
+            return (opened
                 && log.Add(target, statement.Site, logged, "failed, " + error.Code) is Result<string>.Failed { Error: var unwritten }
-                ? unwritten : error;
+                ? unwritten : error, opened);
         }
     }
 

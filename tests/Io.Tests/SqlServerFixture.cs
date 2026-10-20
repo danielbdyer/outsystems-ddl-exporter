@@ -29,7 +29,9 @@ public static class SqlServerFixture
 
     /// <summary>The database, then each login named after it, once no session holds it (a session that ended first is no error).</summary>
     private const string Drop =
-        "DECLARE @sql nvarchar(max) = N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ' + QUOTENAME(@name) + N';'; "
+        // A database a killed RESTORE left RESTORING takes DROP DATABASE alone: SQL Server refuses ALTER DATABASE on it (Msg 5052).
+        "DECLARE @sql nvarchar(max) = CASE WHEN DATABASEPROPERTYEX(@name, 'Status') = N'RESTORING' THEN N'' "
+        + "ELSE N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; ' END + N'DROP DATABASE ' + QUOTENAME(@name) + N';'; "
         + "IF DB_ID(@name) IS NOT NULL EXEC (@sql); "
         + "DECLARE @login sysname, @wait int; DECLARE logins CURSOR LOCAL FAST_FORWARD FOR SELECT name FROM sys.server_principals WHERE name LIKE @name + N'[_]%' AND type = 'S'; "
         + "OPEN logins; FETCH NEXT FROM logins INTO @login; WHILE @@FETCH_STATUS = 0 BEGIN "
@@ -71,7 +73,7 @@ public static class SqlServerFixture
     public static async Task<bool> LoginExistsAsync(string name) =>
         await ScalarAsync(await Master.Value, "SELECT COUNT(*) FROM sys.server_principals WHERE name = @name;", name) == 1;
 
-    /// <summary>The statement run with @name and any further parameter given, each nvarchar(128).</summary>
+    /// <summary>The statement run with @name and any further parameter given, each nvarchar(4000), which holds a backup's path.</summary>
     public static async Task ExecuteAsync(string connectionString, string sql, string? name = null,
         params (string Name, string Value)[] parameters) =>
         await RunAsync(connectionString, sql, name, parameters, c => c.ExecuteNonQueryAsync());
@@ -190,7 +192,7 @@ public static class SqlServerFixture
             connection) { CommandTimeout = (int)LocalServer.DatabaseStatementTimeout.TotalSeconds };
         foreach (var (parameter, value) in parameters.Concat(name is null ? [] : [("@name", name)]))
         {
-            command.Parameters.Add(new SqlParameter(parameter, System.Data.SqlDbType.NVarChar, 128) { Value = value });
+            command.Parameters.Add(new SqlParameter(parameter, System.Data.SqlDbType.NVarChar, 4000) { Value = value });
         }
 
         return await run(command);

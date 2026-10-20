@@ -101,18 +101,20 @@ public static partial class LocalServer
     /// A new registered copy on the server given, made as Create makes one (R15, the sweep, the row written first) and restored from the
     /// backup .dbchange/cache/backups.json holds under the key on that server, each file moved to the server's default data or log folder
     /// under the new copy's name; its RESTORE goes to the run's log. A key the cache holds no backup of there is copy.uncached, before
-    /// anything connects.
+    /// anything connects. <paramref name="now"/> is the clock the sweep and the row read, as Create takes it.
     /// </summary>
-    internal static Result<SqlServer.Copy> Restore(string repositoryRoot, string server, Fingerprint key, SqlServer.QueryLog log) =>
+    internal static Result<SqlServer.Copy> Restore(string repositoryRoot, string server, Fingerprint key, SqlServer.QueryLog log,
+        DateTimeOffset? now = null) =>
         ServerName(server).Bind(name => Backed(repositoryRoot, key, name).Bind(backup => backup is null
             ? new Error("copy.uncached",
                 LocalState.Name + "/cache/backups.json holds no backup of the base " + Short(key) + " on " + name + ".",
                 "Publish the base to a new copy and back it up, which records the backup in " + LocalState.Name + "/cache/backups.json.")
-            : Made(repositoryRoot, server, log, Resolved, DateTimeOffset.UtcNow, copy => Restored(copy, backup.Path, log),
+            : Made(repositoryRoot, server, log, Resolved, now ?? DateTimeOffset.UtcNow, copy => Restored(copy, backup.Path, log),
                 leavesDatabase: true)));
 
     /// <summary>A fresh copy of the base <paramref name="key"/> names on this machine's local server (<see cref="FromBase(string, string,
-    /// Fingerprint, Func{SqlServer.Copy, Result{SqlServer.Copy}}, SqlServer.QueryLog)"/>).</summary>
+    /// Fingerprint, Func{SqlServer.Copy, Result{SqlServer.Copy}}, SqlServer.QueryLog, Func{Kernel.ServerName, Result{BackupFolder}}?,
+    /// DateTimeOffset?)"/>).</summary>
     public static Result<Fresh> FromBase(string repositoryRoot, Fingerprint key, Func<SqlServer.Copy, Result<SqlServer.Copy>> publish,
         SqlServer.QueryLog log) =>
         Server().Bind(server => FromBase(repositoryRoot, server, key, publish, log));
@@ -123,19 +125,22 @@ public static partial class LocalServer
     /// cache to its backup, so two runs reaching one base at once publish it once and the second restores it. A server on another machine
     /// has no cache: each copy is published from scratch, with the note cache.unavailable. A backup the server can no longer read
     /// (cache.unreadable) or cannot write (cache.unwritable) is a note, and the copy is published from scratch all the same.
+    /// <paramref name="folder"/> chooses where the server writes a backup, <see cref="BackupFolderOf"/> unless a test gives another
+    /// choice; <paramref name="now"/> is the clock each copy's sweep and row read, as Create takes it.
     /// </summary>
     internal static Result<Fresh> FromBase(string repositoryRoot, string server, Fingerprint key,
-        Func<SqlServer.Copy, Result<SqlServer.Copy>> publish, SqlServer.QueryLog log) =>
-        ServerName(server).Bind(name => BackupFolderOf(repositoryRoot, name, Resolved).Match(
-            _ => Cached(repositoryRoot, server, name, key, publish, log),
-            uncached => Published(repositoryRoot, server, publish, log).Map(copy => new Fresh(copy, false,
+        Func<SqlServer.Copy, Result<SqlServer.Copy>> publish, SqlServer.QueryLog log,
+        Func<Kernel.ServerName, Result<BackupFolder>>? folder = null, DateTimeOffset? now = null) =>
+        ServerName(server).Bind(name => (folder ?? (named => BackupFolderOf(repositoryRoot, named, Resolved)))(name).Match(
+            _ => Cached(repositoryRoot, server, name, key, publish, log, now ?? DateTimeOffset.UtcNow),
+            uncached => Published(repositoryRoot, server, publish, log, now ?? DateTimeOffset.UtcNow).Map(copy => new Fresh(copy, false,
                 [Finding.Note("cache.unavailable", copy.Target.ToString(), uncached.Message + " The base was published from scratch.")]))));
 
     private static Result<Fresh> Cached(string repositoryRoot, string server, Kernel.ServerName name, Fingerprint key,
-        Func<SqlServer.Copy, Result<SqlServer.Copy>> publish, SqlServer.QueryLog log)
+        Func<SqlServer.Copy, Result<SqlServer.Copy>> publish, SqlServer.QueryLog log, DateTimeOffset now)
     {
         var state = new LocalState(repositoryRoot);
-        Result<Fresh> Built(IReadOnlyList<Finding> notes) => Published(repositoryRoot, server, publish, log).Map(copy =>
+        Result<Fresh> Built(IReadOnlyList<Finding> notes) => Published(repositoryRoot, server, publish, log, now).Map(copy =>
             BackUp(copy, key, log).Match(_ => new Fresh(copy, false, notes), error => new Fresh(copy, false,
                 [.. notes, Finding.Note("cache.unwritable", copy.Target.ToString(), error.Message + " The base is not cached.")])));
         return state.Made(state.Cache).Bind(_ => FileLock.Take(state.BaseLock(Short(key)), BaseTimeout)).Bind(held =>
@@ -143,7 +148,7 @@ public static partial class LocalServer
             using (held)
             {
                 return Backed(repositoryRoot, key, name).Bind(backup => backup is null ? Built([])
-                    : Restore(repositoryRoot, server, key, log).Match(copy => new Fresh(copy, true, []),
+                    : Restore(repositoryRoot, server, key, log, now).Match(copy => new Fresh(copy, true, []),
                         error => error.Code == "server.failed"
                             ? Built([Finding.Note("cache.unreadable", backup.Path,
                                 error.Message + " The base was published from scratch.")])
@@ -154,8 +159,8 @@ public static partial class LocalServer
 
     /// <summary>A new copy the base is published to; a copy whose publish failed is dropped, and the publish's error returned.</summary>
     private static Result<SqlServer.Copy> Published(string repositoryRoot, string server,
-        Func<SqlServer.Copy, Result<SqlServer.Copy>> publish, SqlServer.QueryLog log) =>
-        Create(repositoryRoot, server, log).Bind(copy => publish(copy).Match(Result.Ok, error =>
+        Func<SqlServer.Copy, Result<SqlServer.Copy>> publish, SqlServer.QueryLog log, DateTimeOffset now) =>
+        Create(repositoryRoot, server, log, now: now).Bind(copy => publish(copy).Match(Result.Ok, error =>
         {
             Drop(copy, log);   // a copy its DROP failed on keeps its row, and the sweep drops it
             return Result.Fail<SqlServer.Copy>(error);
@@ -225,7 +230,6 @@ public static partial class LocalServer
                         || (string?)e["server"] != backup.Server.ToString()), new JsonObject
                     {
                         ["key"] = backup.Key.ToString(), ["server"] = backup.Server.ToString(), ["path"] = backup.Path,
-                        ["made"] = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
                     }]),
                 }))).Map(_ => backup);
             }

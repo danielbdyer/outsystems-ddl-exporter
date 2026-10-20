@@ -34,13 +34,21 @@ public static partial class LocalServer
         + "EXEC (@sql); END";
 
     /// <summary>
-    /// The copy's database dropped, its sessions ended first; a database another run dropped first, between the check and the DROP, is no
-    /// error, so two sweeps of one copy at once both succeed.
+    /// The copy's database dropped, its sessions ended first, under an application lock in master that this session alone holds
+    /// (sp_getapplock, 'dbchange drop ' and the name), so two drops of one copy at once, by two runs' sweeps or by two Drop calls, run one
+    /// after the other and the second finds the database gone. Without the lock the second's ALTER DATABASE is killed by the first's
+    /// ROLLBACK IMMEDIATE at severity 21 (Msg 596), which closes its connection before its CATCH runs. A database left RESTORING by a
+    /// RESTORE that failed or whose run was killed takes DROP DATABASE alone, since SQL Server refuses ALTER DATABASE on it (Msg 5052).
     /// </summary>
-    private const string Unmake = "IF DB_ID(@name) IS NOT NULL BEGIN BEGIN TRY "
-        + "DECLARE @sql nvarchar(max) = N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; "
-        + "DROP DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql); END TRY "
-        + "BEGIN CATCH IF DB_ID(@name) IS NOT NULL THROW; END CATCH END";
+    private const string Unmake = "DECLARE @lock nvarchar(255) = N'dbchange drop ' + @name, @held int; "
+        + "EXEC @held = sp_getapplock @Resource = @lock, @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = -1; "
+        + "IF @held < 0 THROW 50000, N'sp_getapplock refused the lock that keeps two drops of one copy apart.', 1; "
+        + "BEGIN TRY IF DB_ID(@name) IS NOT NULL BEGIN "
+        + "DECLARE @sql nvarchar(max) = CASE WHEN DATABASEPROPERTYEX(@name, 'Status') = N'RESTORING' THEN N'' "
+        + "ELSE N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; ' END "
+        + "+ N'DROP DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql); END END TRY "
+        + "BEGIN CATCH EXEC sp_releaseapplock @Resource = @lock, @LockOwner = N'Session'; THROW; END CATCH; "
+        + "EXEC sp_releaseapplock @Resource = @lock, @LockOwner = N'Session';";
 
     /// <summary>
     /// How long CREATE DATABASE and DROP DATABASE may wait. Each waits for the database locks that other copies being made or
