@@ -96,8 +96,10 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
     /// <summary>
     /// A row to plant: its ordinal in its table from 1, which its literals are a function of; what it witnesses; a value for each
     /// column, in column order; and the foreign keys of the copy it breaks, which WP 3.5 suspends to plant it and restores to the
-    /// environment's trust state (PLT-59). WP 3.5 counts the copy before each row and skips one whose every purpose the copy already
-    /// answers, as a seeded row answers a lookup's presence (PLT-97), so an ancestor reuses a seeded row before one is planted.
+    /// environment's trust state (PLT-59). The plan lists every ancestor and presence row, since it reads no row of the copy; WP 3.5
+    /// counts the copy before each row and skips one whose every purpose the copy already answers, as a seeded row answers a lookup's
+    /// presence (PLT-97), so an ancestor reuses a seeded row before one is planted and a <see cref="Planted.Linked"/> key resolves to
+    /// the lowest seeded row (PLT-50, PLT-53).
     /// </summary>
     public sealed record Row(int Ordinal, SortedArray<Purpose> Serves, SortedArray<Cell> Cells, SortedArray<ElementKey> Suspends)
         : IComparable<Row>
