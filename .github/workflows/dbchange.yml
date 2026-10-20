@@ -85,7 +85,11 @@ jobs:
         run: |
           program="$(bash ci/readside.sh)"
           echo "DBCHANGE_READSIDE=$program" >> "$GITHUB_ENV"
-      - run: dotnet test DbChange.sln --no-build --filter Category=fixture
+      - run: dotnet test DbChange.sln --no-build --filter "Category=fixture&Spike!=S4"
+      # Spike S4 (V3_MILESTONES.md §6): a copy of a 300-table schema created, published, backed up, restored and dropped, each step
+      # timed. The test prints its "S4 |" line only under the detailed logger, and appends it to this job's summary.
+      - name: Spike S4, the copy's timings
+        run: dotnet test tests/Io.Tests/Io.Tests.csproj --no-build --filter "Spike=S4" --logger "console;verbosity=detailed"
       - if: always()
         run: bash ci/sql.sh down
       - name: Elapsed
@@ -96,7 +100,8 @@ jobs:
   sql-windows:
     name: sql (windows-latest, LocalDB)
     runs-on: windows-latest
-    timeout-minutes: 20
+    # 667 s of the 20 minutes before S4 and the copy cache's tests; LocalDB on the four-core runner is the slowest local server
+    timeout-minutes: 30
     # No DBCHANGE_SQL and no ~/.dbchange/sql.env, so io/LocalServer chooses LocalDB itself, as on the team's laptops.
     steps:
       - uses: actions/checkout@v4
@@ -111,7 +116,11 @@ jobs:
       - name: LocalDB's MSSQLLocalDB
         shell: pwsh
         run: ./ci/sql.ps1 up
-      - run: dotnet test DbChange.sln --no-build --filter Category=fixture
+      - run: dotnet test DbChange.sln --no-build --filter "Category=fixture&Spike!=S4"
+      # Spike S4 (V3_MILESTONES.md §6): a copy of a 300-table schema created, published, backed up, restored and dropped, each step
+      # timed. The test prints its "S4 |" line only under the detailed logger, and appends it to this job's summary.
+      - name: Spike S4, the copy's timings
+        run: dotnet test tests/Io.Tests/Io.Tests.csproj --no-build --filter "Spike=S4" --logger "console;verbosity=detailed"
       - name: Elapsed
         if: always()
         shell: bash
@@ -160,7 +169,8 @@ jobs:
             exit 1
           fi
       - name: Fixture tests, outbound denied
-        run: offline dotnet test DbChange.sln --no-build --filter Category=fixture
+        # S4's timings are the sql-ubuntu job's to take, on the same server
+        run: offline dotnet test DbChange.sln --no-build --filter "Category=fixture&Spike!=S4"
       - if: always()
         run: bash ci/sql.sh down
       - name: Elapsed

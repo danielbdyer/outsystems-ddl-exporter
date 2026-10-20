@@ -49,10 +49,17 @@ public static partial class SqlServer
     /// which receives a failure SQL Server raised on the open connection below severity 20 and the command's timeout. No SqlConnection
     /// serves two statements, so a pooled connection the server broke fails that statement alone and is mapped once. A statement is
     /// logged once the connection opened, since only then was it sent, its parameters declared before it, so the log runs as a script.
+    /// The first statement this process sends a copy is sent once more when the local server does not answer (LocalServer.FirstConnect).
     /// </summary>
     internal static Result<T> Query<T>(Database target, Statement statement, QueryLog log,
         Func<IReadOnlyList<IReadOnlyList<object?>>, T> answer,
-        Func<StatementFailure, T>? failed = null)
+        Func<StatementFailure, T>? failed = null) =>
+        target is Copy
+            ? LocalServer.FirstConnect.OfProcess.Attempt(() => Sent(target, statement, log, answer, failed), LocalServer.FirstConnect.Pause)
+            : Sent(target, statement, log, answer, failed);
+
+    private static Result<T> Sent<T>(Database target, Statement statement, QueryLog log,
+        Func<IReadOnlyList<IReadOnlyList<object?>>, T> answer, Func<StatementFailure, T>? failed)
     {
         var opened = false;
         var logged = string.Concat(statement.Parameters.Select(p =>

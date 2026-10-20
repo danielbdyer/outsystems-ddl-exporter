@@ -21,8 +21,8 @@ and 4.
 
 ## Next
 - WP 2.1's second slice: the statement kinds the plan's §4 shapes name, with the four refinements of spike S2's decision lines.
-- WP 3.4's remainder with spike S4; it drops `kernel/Environments.cs`' unread key `localServer` (`docker` or `localdb`) and
-  `tests/Golden/dbchange/environments.json`'s `docker`, with EnvironmentsTests and PublishProfilesTests.
+- S4's decision line, from the "S4 |" rows of the sql-ubuntu and sql-windows jobs' summaries (WP 3.4 landed `LocalServer`'s
+  sweep, first-connect retry and copy cache); its laptop half, the SSDT repository's own schema on LocalDB 16.x, waits on S6.
 - WP 7.1, the citations rewritten.
 - Then WP 2.5, which reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`; WP 2.6, which
   moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6); WP 3.5; then M2's exit checks.

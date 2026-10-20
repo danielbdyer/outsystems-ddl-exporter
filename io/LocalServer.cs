@@ -22,16 +22,25 @@ namespace DbChange.Io;
 /// makes a copy anywhere else, and started by ci/sql.sh up or ci/sql.ps1 up, never by io; Create, which names a copy for this host and
 /// process, records it and its server in .dbchange/copies.json and makes its database; Drop, which removes both; and the registry,
 /// against which alone copy: resolves, on the server its row records. A local server on the host an environment names in
-/// dbchange/environments.json, by spelling or by address, is refused before anything connects (R15). Its CREATE and DROP DATABASE
-/// go through io/SqlServer.Query, the one statement path.
+/// dbchange/environments.json, by spelling or by address, is refused before anything connects (R15). Before a copy is made, this host's
+/// copies registered on the same server more than a day earlier are dropped (the sweep, LocalServer.Sweep.cs), and a copy is backed up
+/// into the copy cache and restored from it (LocalServer.Cache.cs). Its CREATE, DROP, BACKUP and RESTORE go through io/SqlServer.Query,
+/// the one statement path, whose first connect to the local server is retried once (FirstConnect).
 /// </summary>
-public static class LocalServer
+public static partial class LocalServer
 {
+    /// <summary>The copy's database made, where it is absent: a CREATE sent again after a connection broke makes nothing twice.</summary>
+    private const string Make = "IF DB_ID(@name) IS NULL BEGIN DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; "
+        + "EXEC (@sql); END";
 
-    private const string Make = "DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql);";
-
-    private const string Unmake = "IF DB_ID(@name) IS NOT NULL BEGIN DECLARE @sql nvarchar(max) = N'ALTER DATABASE ' + QUOTENAME(@name) "
-        + "+ N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql); END";
+    /// <summary>
+    /// The copy's database dropped, its sessions ended first; a database another run dropped first, between the check and the DROP, is no
+    /// error, so two sweeps of one copy at once both succeed.
+    /// </summary>
+    private const string Unmake = "IF DB_ID(@name) IS NOT NULL BEGIN BEGIN TRY "
+        + "DECLARE @sql nvarchar(max) = N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; "
+        + "DROP DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql); END TRY "
+        + "BEGIN CATCH IF DB_ID(@name) IS NOT NULL THROW; END CATCH END";
 
     /// <summary>
     /// How long CREATE DATABASE and DROP DATABASE may wait. Each waits for the database locks that other copies being made or
@@ -80,9 +89,12 @@ public static class LocalServer
     public static Result<CopyName> Drop(SqlServer.Copy copy, SqlServer.QueryLog log)
     {
         SqlConnection.ClearPool(new SqlConnection(copy.Connection));
-        return Run(copy, "DROP DATABASE", Unmake, log)
-            .Bind(_ => Change(copy.Root, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())])).Map(_ => copy.Name);
+        return Run(copy, "DROP DATABASE", Unmake, log).Bind(Unregistered).Map(_ => copy.Name);
     }
+
+    /// <summary>The copy's row removed from .dbchange/copies.json.</summary>
+    private static Result<SqlServer.Copy> Unregistered(SqlServer.Copy copy) =>
+        Change(copy.Root, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())]).Map(_ => copy);
 
     /// <summary>
     /// The local server this machine would use, as it was chosen: the one DBCHANGE_SQL names; the SQL Server ci/sql.sh up runs, whose port
@@ -187,13 +199,26 @@ public static class LocalServer
             .Map(ConnectionString.ServerOf);
 
     /// <summary>
-    /// A copy on the server given, refused on a named environment's host (R15 against dbchange/environments.json, read here once); recorded
-    /// with its server before its database is made, so a crash leaves a row to follow.
+    /// A copy on the server given, its database made empty by CREATE DATABASE (<see cref="Made"/>); <paramref name="now"/> is the clock the
+    /// sweep and the row read, the time now unless a test moves it.
     /// </summary>
     internal static Result<SqlServer.Copy> Create(string repositoryRoot, string server, SqlServer.QueryLog log,
-        Func<string, IPAddress[]>? resolve = null) =>
+        Func<string, IPAddress[]>? resolve = null, DateTimeOffset? now = null) =>
+        Made(repositoryRoot, server, log, resolve ?? Resolved, now ?? DateTimeOffset.UtcNow,
+            copy => Run(copy, "CREATE DATABASE", Make, log), leavesDatabase: false);
+
+    /// <summary>
+    /// A copy on the server given, refused on a named environment's host (R15 against dbchange/environments.json, read here once); this
+    /// host's copies registered on that server more than a day before <paramref name="now"/> swept first; recorded with its server before
+    /// <paramref name="make"/> makes its database, so a crash leaves a row to follow. A failed make removes the row; where the failure can
+    /// have left a database (<paramref name="leavesDatabase"/>, a RESTORE), the database is dropped first, and a row whose database could
+    /// not be dropped stays for the sweep.
+    /// </summary>
+    private static Result<SqlServer.Copy> Made(string repositoryRoot, string server, SqlServer.QueryLog log,
+        Func<string, IPAddress[]> resolve, DateTimeOffset now, Func<SqlServer.Copy, Result<SqlServer.Copy>> make, bool leavesDatabase) =>
         ServerName(server).Bind(name => EnvironmentsFile.Read(repositoryRoot)
-            .Bind(environments => Unnamed(environments, repositoryRoot, name, resolve ?? Resolved))).Bind(name =>
+            .Bind(environments => Unnamed(environments, repositoryRoot, name, resolve)))
+            .Bind(name => Swept(repositoryRoot, server, name, now, log).Map(_ => name)).Bind(name =>
         {
             var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId,
                 BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, repositoryRoot);
@@ -201,12 +226,12 @@ public static class LocalServer
             {
                 ["name"] = copy.Name.ToString(), ["server"] = name.ToString(), ["machine"] = copy.Name.Machine,
                 ["pid"] = Environment.ProcessId,
-                ["created"] = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
+                ["created"] = now.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
             };
-            return Change(repositoryRoot, rows => [.. rows, row]).Bind(_ => Run(copy, "CREATE DATABASE", Make, log).Match(
+            return Change(repositoryRoot, rows => [.. rows, row]).Bind(_ => make(copy).Match(
                 made => Result.Ok(made),
-                error => Change(repositoryRoot, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())])
-                    .Bind(_ => Result.Fail<SqlServer.Copy>(error))));
+                error => (leavesDatabase ? Run(copy, "DROP DATABASE", Unmake, log) : Result.Ok(copy))
+                    .Match(Unregistered, _ => Result.Ok(copy)).Bind(_ => Result.Fail<SqlServer.Copy>(error))));
         });
 
     /// <summary>
@@ -298,10 +323,17 @@ public static class LocalServer
     /// <see cref="DatabaseStatementTimeout"/>.
     /// </summary>
     private static Result<SqlServer.Copy> Run(SqlServer.Copy copy, string site, string statement, SqlServer.QueryLog log) =>
+        Run(copy, site, statement, log, _ => copy);
+
+    /// <summary>A statement about the copy's database as <see cref="Run(SqlServer.Copy, string, string, SqlServer.QueryLog)"/> sends one,
+    /// with the further parameters given, its rows read into the answer.</summary>
+    private static Result<T> Run<T>(SqlServer.Copy copy, string site, string statement, SqlServer.QueryLog log,
+        Func<IReadOnlyList<IReadOnlyList<object?>>, T> answer, params (string Name, string Value)[] parameters) =>
         SqlServer.Query(copy, new SqlServer.Statement(site, statement)
         {
-            Timeout = DatabaseStatementTimeout, Catalog = "master", Pooled = false, Parameters = [("@name", copy.Name.ToString())],
-        }, log, _ => copy);
+            Timeout = DatabaseStatementTimeout, Catalog = "master", Pooled = false,
+            Parameters = [("@name", copy.Name.ToString()), .. parameters],
+        }, log, answer);
 
     /// <summary>
     /// The registry's rows, none when it is absent, each naming its copy and the server it was made on. A write replaces the file whole, so

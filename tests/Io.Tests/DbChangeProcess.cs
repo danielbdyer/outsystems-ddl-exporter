@@ -19,7 +19,8 @@ namespace DbChange.Io.Tests;
 /// when a project is named, builds it there and prints the package. An error is printed as its code and message, exit 1.
 /// The other modes stand in for programs io runs: lock (a holder of a lock file until its input ends), flood (a program
 /// that fills both pipes), sleep and spawn (a program that outlives its timeout, and one that starts a child first),
-/// utf8 (UTF-8 on both streams), env and environment (what a child inherits), and telemetry (the opt-out before DacFx loads).
+/// utf8 (UTF-8 on both streams), env and environment (what a child inherits), and telemetry (the opt-out before DacFx loads); and copy
+/// and base, a run holding a copy it made or reached from a base (io/LocalServer), until its input says to drop it.
 /// </summary>
 internal static class DbChangeProcess
 {
@@ -72,6 +73,12 @@ internal static class DbChangeProcess
                 }
 
                 return 0;
+            case ["copy", var root]:
+                return Holding(root, log => LocalServer.Create(root, log).Map(copy => (copy, "created")));
+            case ["base", var root, var dacpac, var profile, var key]:
+                return Holding(root, log => PublishProfiles.Load(profile).Bind(strict => Fingerprint.Parse(key)
+                    .Bind(fingerprint => LocalServer.FromBase(root, fingerprint, copy => copy.Publish(dacpac, strict, log), log)))
+                    .Map(fresh => (fresh.Copy, fresh.Restored ? "restored" : "built")));
             case ["telemetry"]:
                 _ = LocalState.UserSqlEnv;   // the first touch of an io type, and nothing has called Telemetry.OptOut
                 Console.WriteLine((Environment.GetEnvironmentVariable("DACFX_TELEMETRY_OPTOUT") ?? "<unset>") + " "
@@ -151,6 +158,43 @@ internal static class DbChangeProcess
     {
         RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8,
     })!;
+
+    /// <summary>
+    /// This assembly started as a program, as <see cref="Start(string[])"/> starts it, with the variables given set in its environment
+    /// (DBCHANGE_SQL, which carries a password, so never on its command line).
+    /// </summary>
+    public static Process Start(IReadOnlyDictionary<string, string> environment, params string[] arguments)
+    {
+        var start = new ProcessStartInfo("dotnet", [typeof(DbChangeProcess).Assembly.Location, .. arguments])
+        {
+            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8,
+        };
+        foreach (var (name, value) in environment)
+        {
+            start.Environment[name] = value;
+        }
+
+        return Process.Start(start)!;
+    }
+
+    /// <summary>
+    /// A run holding a copy: the copy made, then its name, the run's log and how it was made printed, one a line; then, once a line arrives
+    /// on its input, the copy dropped and "dropped" printed. Killed before that line, it leaves the copy and its row for the sweep.
+    /// </summary>
+    private static int Holding(string root, Func<SqlServer.QueryLog, Result<(SqlServer.Copy Copy, string How)>> make)
+    {
+        var log = SqlServer.QueryLog.Start(root);
+        return make(log).Bind(made =>
+        {
+            Console.WriteLine(made.Copy.Name + "\n" + log.Path + "\n" + made.How);
+            Console.ReadLine();
+            return LocalServer.Drop(made.Copy, log);
+        }).Match(_ =>
+        {
+            Console.WriteLine("dropped");
+            return 0;
+        }, error => Printed(error).Length > 0 ? 1 : 1);
+    }
 
     private static int Run(string[] arguments)
     {

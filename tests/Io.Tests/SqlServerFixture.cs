@@ -79,6 +79,26 @@ public static class SqlServerFixture
     public static async Task<int> ScalarAsync(string connectionString, string sql, string? name = null) =>
         Convert.ToInt32(await RunAsync(connectionString, sql, name, [], c => c.ExecuteScalarAsync()), CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Each backup .dbchange/cache/backups.json under the repository root records, deleted: one in the root's own cache goes with the
+    /// root; one in the server's default backup folder, which only the server's account can write (the mssql user), through the server's
+    /// own xp_delete_file, so a test leaves no file on the server.
+    /// </summary>
+    public static async Task DeleteBackupsAsync(string repositoryRoot)
+    {
+        var index = Path.Combine(repositoryRoot, LocalState.Name, "cache", "backups.json");
+        if (!File.Exists(index))
+        {
+            return;
+        }
+
+        foreach (var path in System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(index))!["backups"]!.AsArray()
+            .Select(b => (string)b!["path"]!).Where(p => !p.StartsWith(repositoryRoot, StringComparison.Ordinal)))
+        {
+            await ExecuteAsync(await Master.Value, "EXEC master.sys.xp_delete_file 0, @name;", path);
+        }
+    }
+
     internal static async Task DropAsync(string master, string name)
     {
         await ExecuteAsync(master, Drop, name);

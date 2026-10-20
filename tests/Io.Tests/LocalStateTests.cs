@@ -38,8 +38,8 @@ public sealed class LocalStateTests : IDisposable
     }
 
     /// <summary>
-    /// M3 of the pre-M2 review: a run's query log, the whole answer written beside it and the copy registry each make their folder
-    /// through Made, so a run that reads a database, and one that makes a copy, leave git listing nothing under .dbchange/ though no
+    /// M3 of the pre-M2 review: a run's query log, the whole answer written beside it, the copy registry and the copy cache each make
+    /// their folder through Made, so a run that reads a database, and one that makes a copy, leave git listing nothing under .dbchange/ though no
     /// worktree was made first. Each once created its folder directly, and a repository whose .gitignore did not name .dbchange/ listed
     /// queries.log. Each writer runs alone in a repository of its own, so no other writer's .gitignore hides its own. The copy is refused
     /// at CREATE DATABASE, by a server on a port nothing listens on, so no SQL Server is needed.
@@ -50,6 +50,7 @@ public sealed class LocalStateTests : IDisposable
     [InlineData("the query log's first entry")]
     [InlineData("the whole answer beside the log")]
     [InlineData("the copy registry")]
+    [InlineData("the copy cache's lock on a base")]
     public void Each_file_a_run_keeps_under_dot_dbchange_leaves_git_listing_nothing_with_no_worktree_made_first(string writer)
     {
         scratch.Commit("first", ("dbchange/environments.json", "{ \"environments\": {} }\n"));   // no .gitignore
@@ -60,7 +61,10 @@ public sealed class LocalStateTests : IDisposable
         {
             "the query log's first entry" => Value(log.Add(copy, "VIEW DEFINITION", "SELECT 1;", "1 row")),
             "the whole answer beside the log" => Value(log.WriteAnswer("{}\n")),
-            _ => Failed(LocalServer.Create(scratch.Root, "Server=tcp:127.0.0.1,1;Connect Timeout=1", log), "server.unreachable").Code,
+            "the copy registry" => Failed(LocalServer.Create(scratch.Root, "Server=tcp:127.0.0.1,1;Connect Timeout=1", log),
+                "server.unreachable").Code,
+            _ => Failed(LocalServer.FromBase(scratch.Root, "Server=tcp:127.0.0.1,1;Connect Timeout=1", Fingerprint.Of("a base"),
+                copy => copy, log), "server.unreachable").Code,
         };
 
         var state = new LocalState(scratch.Root);

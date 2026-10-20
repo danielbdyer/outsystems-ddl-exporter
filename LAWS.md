@@ -97,7 +97,10 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | O4 | An error carries a remedy that is one move in the register | `DbChange.Budgets.Tests.Register.Errors.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
 | O4 | Every error code the kernel io and the cli construct has a driver here | `DbChange.Budgets.Tests.Register.Errors.Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here` |
 | O4 | Every remedy the doctor gives is one move in the register | `DbChange.Budgets.Tests.Register.Errors.Every_remedy_the_doctor_gives_is_one_move_in_the_register` |
+| O5 | A killed run is swept by the next | `DbChange.Io.Tests.CopyLifetimeTests.A_killed_run_is_swept_by_the_next` |
 | O5 | LocalServer names a copy for its host and process registers it and Drop removes the database and its row | `DbChange.Io.Tests.CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |
+| O5 | The sweep chooses only this host's copies on this server registered more than a day ago | `DbChange.Io.Tests.LocalServerTests.The_sweep_chooses_only_this_host_s_copies_on_this_server_registered_more_than_a_day_ago` |
+| O6 | Two concurrent runs share nothing | `DbChange.Io.Tests.CopyLifetimeTests.Two_concurrent_runs_share_nothing` |
 | O7 | A publish whose token is cancelled publishes nothing and throws | `DbChange.Io.Tests.CopyTests.A_publish_whose_token_is_cancelled_publishes_nothing_and_throws` |
 | O7 | A signal or a timeout stops a waiting dbchange with exit 130 and an interrupted answer | `DbChange.Io.Tests.InterruptedProcessTests.A_signal_or_a_timeout_stops_a_waiting_dbchange_with_exit_130_and_an_interrupted_answer` |
 | O7 | A verb waiting on a held lock and given timeout 1 answers interrupted at exit 130 within 3 seconds and changes nothing | `DbChange.Io.Tests.InterruptionTests.A_verb_waiting_on_a_held_lock_and_given_timeout_1_answers_interrupted_at_exit_130_within_3_seconds_and_changes_nothing` |
@@ -184,7 +187,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X5 | Git runs with LC ALL C and without the caller's LANGUAGE and LC MESSAGES | `DbChange.Io.Tests.GitTests.Git_runs_with_LC_ALL_C_and_without_the_caller_s_LANGUAGE_and_LC_MESSAGES` |
 | X5 | Loading io opts out of telemetry before DacFx loads | `DbChange.Io.Tests.TelemetryTests.Loading_io_opts_out_of_telemetry_before_DacFx_loads` |
 
-Rows of `VALUES.md` no test declares: A1, A3, A5, A6, A7, A9, D1, D4, D5, D6, D7, E1, E2, E3, E4, E5, E6, E7, E8, E9, G1, G2, G3, G4, G5, G7, G8, G9, L5, L10, L11, L12, O1, O3, O6, O8, O9, O10, P1, P3, R2, R4, S3, S4, S5, S6, S8, X4, X6.
+Rows of `VALUES.md` no test declares: A1, A3, A5, A6, A7, A9, D1, D4, D5, D6, D7, E1, E2, E3, E4, E5, E6, E7, E8, E9, G1, G2, G3, G4, G5, G7, G8, G9, L5, L10, L11, L12, O1, O3, O8, O9, O10, P1, P3, R2, R4, S3, S4, S5, S6, S8, X4, X6.
 
 ## Milestone exits
 

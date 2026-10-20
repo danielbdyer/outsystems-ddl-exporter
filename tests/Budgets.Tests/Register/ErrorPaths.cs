@@ -495,6 +495,12 @@ internal static partial class ErrorPaths
             Registered(Initialized(
                 RepositoryAt(scratch,
                 Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1"))))))))),
+        new("a backup of a copy on a server on another machine", "copy.uncached", false, (scratch, _) =>
+            Failed(LocalServer.BackupFolderOf(scratch, ServerName.Of("build-sql.corp.example,1433", Environment.MachineName),
+                _ => [System.Net.IPAddress.Parse("192.0.2.10")]))),
+        new("a restore of a base the copy cache holds no backup of", "copy.uncached", false, (scratch, _) =>
+            Failed(LocalServer.Restore(scratch, "Server=127.0.0.1,1;Integrated Security=true", Fingerprint.Of("a base"),
+                SqlServer.QueryLog.Start(scratch)))),
         new("no local server anywhere", "local-server.missing", false, (scratch, _) =>
             Failed(LocalServer.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
         new("an DBCHANGE_SQL SqlClient reads no connection string from", "connection.malformed", true, (scratch, planted) =>
