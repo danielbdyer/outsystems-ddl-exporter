@@ -20,8 +20,10 @@ namespace DbChange.Io;
 /// predictable read-only, as it does for PARSE, which has no TRY_ form the allowlist admits, for an operand whose type dbchange does not
 /// read beside one SQL Server may convert, for an expression the allowlist refuses, and for the two errors no TRY_ form stops, each of
 /// which quotes the row's value: a string set against hierarchyid, xml or a spatial or CLR type, which SQL Server parses (Msg 6522), and
-/// a LIKE whose escape character is read from a row (Msg 506). A COLLATE the expression writes stands on what the query writes in its
-/// place, as Collation.Of admits its name.
+/// a LIKE whose escape character is read from a row (Msg 506). So does ISNULL's conversion of its second argument to the type of its
+/// first, whose error quotes the value too (Msg 220 for an integer into tinyint or smallint, Msg 232 for a float), save a string's into
+/// a string type, which never fails (Types.cs). A COLLATE the expression writes stands on what the query writes in its place, as
+/// Collation.Of admits its name.
 /// </summary>
 public static partial class AggregateQueries
 {
@@ -95,7 +97,7 @@ public static partial class AggregateQueries
     /// one, and the operands of a comparison. A conversion it may skip, PARSE, a subquery, a column no place gives, or an operand whose
     /// type is not read beside one SQL Server may convert leaves <see cref="Why"/>, and the precondition reads not predictable read-only.
     /// </summary>
-    private sealed class Rewriter(Func<string, (ScalarExpression Value, ColumnType? Type)?> column, bool conversions)
+    private sealed partial class Rewriter(Func<string, (ScalarExpression Value, ColumnType? Type)?> column, bool conversions)
     {
         /// <summary>The type of each operand the rewriter wrote or combined; null where it reads none.</summary>
         private readonly Dictionary<ScalarExpression, Typed?> types = new(ReferenceEqualityComparer.Instance);
@@ -430,43 +432,6 @@ public static partial class AggregateQueries
             return n;
         }
 
-        /// <summary>
-        /// The type of a call the allowlist admits: LEN and DATALENGTH an int; UPPER, LOWER, LTRIM and RTRIM a string; ABS its argument's;
-        /// ISNULL its first argument's, its second converted to it where that is a string and the first takes strings, which SQL Server
-        /// does only on the rows whose first is NULL. Null for any other call, and for ABS of a string, which SQL Server converts to float.
-        /// </summary>
-        private Typed? Function(FunctionCall f)
-        {
-            var first = f.Parameters.Count > 0 ? TypeOf(f.Parameters[0]) : null;
-            switch (f.FunctionName.Value.ToUpperInvariant())
-            {
-                case "LEN" or "DATALENGTH":
-                    return Typed.Int;
-                case "UPPER" or "LOWER" or "LTRIM" or "RTRIM":
-                    return Typed.String;
-                case "ABS" when first is { IsString: true }:
-                    Why ??= "it calls ABS on a string, which SQL Server converts to float with no CONVERT written";
-                    return null;
-                case "ABS":
-                    return first;
-                case "ISNULL" when f.Parameters.Count == 2:
-                    var second = TypeOf(f.Parameters[1]);
-                    if (first is { TakesStrings: true } && second is { IsString: true })
-                    {
-                        f.Parameters[1] = Converted(f.Parameters[1], first, every: false);
-                    }
-
-                    if (first is { ParsesStrings: true } && second is { IsString: true })
-                    {
-                        Parses([first, second]);
-                    }
-
-                    return first == Typed.Null ? second : first;
-                default:
-                    return null;
-            }
-        }
-
         /// <summary>A string SQL Server converts to <paramref name="target"/> with no CONVERT written, as TRY_CONVERT to that type, the
         /// rows on which it fails counted as <see cref="Tried"/> counts them.</summary>
         private ScalarExpression Converted(ScalarExpression value, Typed target, bool every)
@@ -480,20 +445,6 @@ public static partial class AggregateQueries
             var converted = Tried(value, parameter => new TryConvertCall { DataType = type, Parameter = parameter }, every);
             types[converted] = target;
             return converted;
-        }
-
-        /// <summary>Whether a string meets, among <paramref name="met"/>, a type SQL Server parses it into with no CONVERT written, whose
-        /// error would quote it (<see cref="Typed.ParsesStrings"/>); where one does, it leaves <see cref="Why"/>.</summary>
-        private bool Parses(IReadOnlyList<Typed?> met)
-        {
-            if (met.FirstOrDefault(t => t is { ParsesStrings: true }) is not { } parser || !met.Any(t => t is { IsString: true }))
-            {
-                return false;
-            }
-
-            Why ??= "it sets a string against a value of " + (parser.Base.Length > 0 ? parser.Base : "an alias type") + ", which SQL Server"
-                + " parses the string into with no CONVERT written, and the error of a string that does not parse quotes it";
-            return true;
         }
     }
 }

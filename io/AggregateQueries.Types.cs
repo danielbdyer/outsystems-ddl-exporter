@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using ColumnType = DbChange.Kernel.ColumnType;
 using ScriptLiteral = Microsoft.SqlServer.TransactSql.ScriptDom.Literal;
@@ -14,7 +16,9 @@ namespace DbChange.Io;
 /// own, time, datetime2 and datetimeoffset at scale 7, as SQL Server 2022 (16.0.4305.5) plans CONVERT_IMPLICIT: tinyint for a tinyint
 /// column, decimal(5,2) for a decimal(5,2) one, numeric(2,1) for the literal 1.5, int for 0, time(7) for a time(3) column. A string that
 /// meets hierarchyid, xml or a spatial or CLR type is parsed into it, and the parse's error quotes the string (Msg 6522), so the rewriter
-/// reads no such meeting.
+/// reads no such meeting. ISNULL converts its second argument to the type of its first whatever their precedence, and that conversion's
+/// error quotes the value too (Msg 220 for an integer into tinyint or smallint, Msg 232 for a float), so the rewriter reads none but a
+/// string's into a string type, which never fails, where the query writes the first argument as itself.
 /// </summary>
 public static partial class AggregateQueries
 {
@@ -53,6 +57,15 @@ public static partial class AggregateQueries
 
         /// <summary>The type's place in SQL Server's data type precedence, higher above lower; -1 for NULL and a type not listed.</summary>
         public int Rank => Array.IndexOf(Precedence, Base switch { "numeric" => "decimal", "sysname" => "nvarchar", var b => b });
+
+        /// <summary>Whether two operands are of one type, length, precision and scale, as each is written for TRY_CONVERT; one whose
+        /// precision the rewriter does not read, such as a string literal's length, is of no other's type.</summary>
+        public bool Same(Typed other) => Base == other.Base && Target is { } own && other.Target is { } theirs
+            && string.Equals(Plain(own), Plain(theirs), StringComparison.Ordinal);
+
+        /// <summary>A type as written for TRY_CONVERT, its spaces dropped and its letters in lower case: DECIMAL (5, 2) as decimal(5,2).
+        /// </summary>
+        private static string Plain(string written) => string.Concat(written.Where(c => !char.IsWhiteSpace(c))).ToLowerInvariant();
 
         /// <summary>A column's type as SQL Server stores it.</summary>
         public static Typed Of(ColumnType type) => Of(type.IsAlias ? "" : type.Type.Base.ToLowerInvariant(), Written(type));
@@ -108,5 +121,79 @@ public static partial class AggregateQueries
 
         private static Typed Of(string name, string written) => new(name, FamilyOf(name),
             name is "time" or "datetime2" or "datetimeoffset" ? name + "(7)" : written);
+    }
+
+    /// <summary>The check's rewriter (Check.cs), where it reads the type of a call and a string SQL Server parses.</summary>
+    private sealed partial class Rewriter
+    {
+        /// <summary>
+        /// The type of a call the allowlist admits: LEN and DATALENGTH an int; UPPER, LOWER, LTRIM and RTRIM a string; ABS its argument's;
+        /// ISNULL its first argument's, to which SQL Server converts its second, with no CONVERT written, on the rows whose first is NULL.
+        /// That conversion leaves <see cref="Why"/>, as measured on SQL Server 2022: ISNULL(CAST(NULL AS tinyint), [Num]) raises Msg 220
+        /// quoting a Num of 98765, and a column the change creates, which the query writes as NULL, converts nothing in the query where
+        /// it does in the deployment. A string into a string type is read where the query writes the first argument as itself, since
+        /// SQL Server truncates it or writes '?' without an error, as the deployment does. Null for any other call, and for ABS of a
+        /// string, which SQL Server converts to float.
+        /// </summary>
+        private Typed? Function(FunctionCall f)
+        {
+            var first = f.Parameters.Count > 0 ? TypeOf(f.Parameters[0]) : null;
+            switch (f.FunctionName.Value.ToUpperInvariant())
+            {
+                case "LEN" or "DATALENGTH":
+                    return Typed.Int;
+                case "UPPER" or "LOWER" or "LTRIM" or "RTRIM":
+                    return Typed.String;
+                case "ABS" when first is { IsString: true }:
+                    Why ??= "it calls ABS on a string, which SQL Server converts to float with no CONVERT written";
+                    return null;
+                case "ABS":
+                    return first;
+                case "ISNULL" when f.Parameters.Count == 2:
+                    var second = TypeOf(f.Parameters[1]);
+                    if (first is { TakesStrings: true } && second is { IsString: true })
+                    {
+                        f.Parameters[1] = Converted(f.Parameters[1], first, every: false);
+                    }
+
+                    if (first is { ParsesStrings: true } && second is { IsString: true })
+                    {
+                        Parses([first, second]);
+                    }
+
+                    // The literal NULL as the first argument takes the second's type, and converts nothing.
+                    var converts = first != Typed.Null && second != Typed.Null && (first is null || second is null || !first.Same(second));
+                    var kept = first is { IsString: true } && second is { IsString: true } && !Untyped(f.Parameters[0]);
+                    if (converts && !kept)
+                    {
+                        Why ??= "SQL Server converts ISNULL's second argument to the type of its first with no CONVERT written, on the"
+                            + " rows whose first is NULL, and the conversion's error can quote the row's value (Msg 220 for an integer"
+                            + " into tinyint or smallint, Msg 232 for a float), so the rows it fails on are not known read-only";
+                    }
+
+                    return first == Typed.Null ? second : first;
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>Whether a string meets, among <paramref name="met"/>, a type SQL Server parses it into with no CONVERT written, whose
+        /// error would quote it (<see cref="Typed.ParsesStrings"/>); where one does, it leaves <see cref="Why"/>.</summary>
+        private bool Parses(IReadOnlyList<Typed?> met)
+        {
+            if (met.FirstOrDefault(t => t is { ParsesStrings: true }) is not { } parser || !met.Any(t => t is { IsString: true }))
+            {
+                return false;
+            }
+
+            Why ??= "it sets a string against a value of " + (parser.Base.Length > 0 ? parser.Base : "an alias type") + ", which SQL Server"
+                + " parses the string into with no CONVERT written, and the error of a string that does not parse quotes it";
+            return true;
+        }
+
+        /// <summary>Whether the query writes NULL here, in parentheses or not, as it does for a column the change creates: SQL Server gives
+        /// that NULL no type, and the column's type stands in the rewriter's map alone.</summary>
+        private static bool Untyped(ScalarExpression value) =>
+            value is NullLiteral || (value is ParenthesisExpression p && Untyped(p.Expression));
     }
 }

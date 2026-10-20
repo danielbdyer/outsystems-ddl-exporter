@@ -188,6 +188,45 @@ public sealed class AggregateQueriesTests
     }
 
     /// <summary>
+    /// A retype into float or real prints that rounded values are not counted where the old type holds digits the new one does not keep,
+    /// which ALTER COLUMN rounds without an error (measured on SQL Server 2022: 1234567.89 as decimal(18,2) into real is 1234567.875,
+    /// 9007199254740993 as bigint into float 9007199254740992, 16777217 as int into real 16777216, 0.1 as float into real 0.100000001490116):
+    /// real keeps about 7 significant digits and float about 15, each holding a decimal fraction as the nearest binary one. Real into float,
+    /// int into float, smallint into real, and a decimal with no Scale and no more digits than the new type keeps print no line.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("decimal(18,2)", "real", "fits.rounded-values")]
+    [InlineData("decimal(18,2)", "float", "fits.rounded-values")]
+    [InlineData("decimal(5,2)", "float", "fits.rounded-values")]
+    [InlineData("decimal(9,0)", "real", "fits.rounded-values")]
+    [InlineData("decimal(7,0)", "real", "")]
+    [InlineData("decimal(16,0)", "float", "fits.rounded-values")]
+    [InlineData("decimal(15,0)", "float", "")]
+    [InlineData("money", "float", "fits.rounded-values")]
+    [InlineData("smallmoney", "real", "fits.rounded-values")]
+    [InlineData("bigint", "float", "fits.rounded-values")]
+    [InlineData("bigint", "real", "fits.rounded-values")]
+    [InlineData("int", "real", "fits.rounded-values")]
+    [InlineData("int", "float", "")]
+    [InlineData("smallint", "real", "")]
+    [InlineData("float", "real", "fits.rounded-values")]
+    [InlineData("float", "float(24)", "fits.rounded-values")]
+    [InlineData("real", "float", "")]
+    [InlineData("varchar(20)", "float", "fits.rounded-values")]
+    public void A_retype_into_float_or_real_prints_that_rounded_values_are_not_counted_where_the_old_type_holds_more_digits(string before,
+        string after, string lines)
+    {
+        var queries = new Case(Model.Of("N.Id int NOT NULL", "N.v " + before + " NULL"), Model.Of("N.Id int NOT NULL", "N.v " + after + " NULL"))
+            .Queries();
+
+        Assert.Contains(Assert.Single(queries.Tables).Preconditions, p => p.Kind is PreconditionKind.Fits);
+        Assert.Equal(lines, string.Join(' ', queries.Notes.Where(n => n.Code.StartsWith("fits.", StringComparison.Ordinal)).Select(n => n.Code)));
+        Assert.All(queries.Notes.Where(n => n.Code == "fits.rounded-values"), n => Assert.Contains(
+            "keeps about " + (after == "float" ? "15" : "7") + " significant digits", n.Message, StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// QST-33 and QST-35 to QST-46, and QST-100: the collation classes a key counts, under the collation the index is built with: exact and
     /// trailing space under every collation, case under a case-insensitive one, accent under an accent-insensitive one, and two NULLs where
     /// a key column allows NULL and the filter does not leave NULL out. A key over a column the change creates reads the value every
@@ -393,7 +432,10 @@ public sealed class AggregateQueriesTests
     /// value, ABS converts a string to float, and the allowlist refuses two columns set against each other, so those read not predictable
     /// read-only, with the reason. So do a string set against hierarchyid (Hid) by a comparison, COALESCE or ISNULL, which SQL Server
     /// parses with no CONVERT written and whose failure, Msg 6522, quotes the string; a LIKE that reads its escape character from a column
-    /// (Esc), which raises Msg 506 quoting a value of more than one character; and a COLLATE whose name Collation.Of refuses.
+    /// (Esc), which raises Msg 506 quoting a value of more than one character; a COLLATE whose name Collation.Of refuses; and ISNULL's
+    /// second argument converted to the type of its first, whose error quotes the row's value (Msg 220 for an int into tinyint), or which
+    /// the query cannot convert where the first is a column the change creates (New, NewCode), read as NULL. A string into a string type,
+    /// which never fails, is counted where the first is the column as held.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -407,6 +449,10 @@ public sealed class AggregateQueriesTests
     [InlineData("([Ref]+(1))>(0)", "")]
     [InlineData("UPPER([Ref])>(0)", "")]
     [InlineData("COALESCE([Ref],(0))>(0)", "")]
+    [InlineData("ISNULL([Ref],'0')>(0)", "")]
+    [InlineData("ISNULL(CAST(NULL AS [tinyint]),[Other])>(0)", "ISNULL's second argument")]
+    [InlineData("ISNULL([New],[Other])>(0)", "ISNULL's second argument")]
+    [InlineData("ISNULL([NewCode],[Ref])<>'x'", "ISNULL's second argument")]
     [InlineData("CONVERT([int],[Ref])>(0) OR [Other] IS NULL", "may skip a conversion")]
     [InlineData("NOT (CONVERT([int],[Ref])<=(0) AND [Other] IS NOT NULL)", "may skip a conversion")]
     [InlineData("COALESCE([Other],CONVERT([int],[Ref]))>(0)", "may skip a conversion")]
@@ -427,9 +473,10 @@ public sealed class AggregateQueriesTests
     public void A_check_that_converts_is_counted_through_its_TRY_form_or_reads_not_predictable_read_only(string expression, string why)
     {
         var model = T.With("T.Hid hierarchyid NULL", "T.Esc varchar(10) NULL");
-        var reads = new[] { "Ref", "Other", "Id", "Hid", "Esc" }.Where(c => expression.Contains("[" + c + "]", StringComparison.Ordinal))
-            .ToArray();
-        var queries = new Case(model, model.Check("CK_T_Probe", "T", expression, reads)).Queries();
+        var reads = new[] { "Ref", "Other", "Id", "Hid", "Esc", "New", "NewCode" }
+            .Where(c => expression.Contains("[" + c + "]", StringComparison.Ordinal)).ToArray();
+        var head = model.With("T.New tinyint NULL", "T.NewCode varchar(1) NULL");
+        var queries = new Case(model, head.Check("CK_T_Probe", "T", expression, reads)).Queries();
 
         if (why.Length == 0)
         {
@@ -537,8 +584,9 @@ public sealed class AggregateQueriesTests
     /// table's and each of its preconditions' alone, is one the allowlist admits when read again as text, and none calls CONVERT, CAST or
     /// PARSE, only their TRY_ forms; every precondition is counted by a query or read not predictable read-only; and no check is counted
     /// that SQL Server fails on with an error quoting a row's value: the varchar column s set against hierarchyid or xml, which SQL Server
-    /// parses s into with no CONVERT written (Msg 6522 quotes it), or read as LIKE's escape character (Msg 506 quotes it). Every case is
-    /// built, 32 types by 32 by 9 checks.
+    /// parses s into with no CONVERT written (Msg 6522 quotes it), read as LIKE's escape character (Msg 506 quotes it), or the int column d
+    /// as ISNULL's second argument after a tinyint, which SQL Server converts it to (Msg 220 quotes it). Every case is built, 32 types by 32
+    /// by 10 checks.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -551,8 +599,9 @@ public sealed class AggregateQueriesTests
             "binary(8)", "varbinary(max)", "xml", "sql_variant", "hierarchyid"];
         const string Parsed = "[c]=[s]";
         const string Escaped = "'abc' LIKE 'a%' ESCAPE [s]";
+        const string Narrowed = "ISNULL(CAST(NULL AS [tinyint]),[d])>(0)";
         string[] checks = ["[c] IS NOT NULL", "CONVERT([int],[c])>(0)", "CAST([c] AS [date])<>'20000101' OR [d]>(0)", "PARSE([c] AS int)>(0)",
-            "LEN([c])>(2)", "[c]>[d]", "[c]>(0)", Parsed, Escaped];
+            "LEN([c])>(2)", "[c]>[d]", "[c]>(0)", Parsed, Escaped, Narrowed];
         var forbidden = new Regex(@"(?<![A-Za-z_])(CONVERT|CAST|PARSE)\s*\(", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
         // A collation is written after the nullability, as Model reads a column.
@@ -572,7 +621,7 @@ public sealed class AggregateQueriesTests
             }
 
             var statements = queries.Tables.SelectMany(t => t.Alone.Prepend(t)).Select(t => t.Query.Statement).ToList();
-            var quoting = check == Escaped || (check == Parsed && after is "hierarchyid" or "xml");
+            var quoting = check is Escaped or Narrowed || (check == Parsed && after is "hierarchyid" or "xml");
             return statements.FirstOrDefault(s => !AggregateQuery(s)) is { } refused ? "refused when read again: " + refused
                 : statements.FirstOrDefault(forbidden.IsMatch) is { } converting ? "converts: " + converting
                 : !queries.Tables.SelectMany(t => t.Preconditions).Concat(queries.NotPredictable.Select(u => u.Precondition)).Order()

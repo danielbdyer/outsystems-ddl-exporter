@@ -1131,7 +1131,7 @@ Code only; tests are budgeted separately below. `ci/budgets.json` carries these 
 | `PullRequestDescription.cs`, `Locks.cs` | 570 | M5 |
 | `Platform.cs`, `Page.cs` (table classes, *in sync*) | 350 | M6 |
 
-**`io/` (ceiling 13,500; planned 7,358)**
+**`io/` (ceiling 13,500; planned 7,426)**
 
 | File | Lines | M |
 |---|---:|---|
@@ -1140,7 +1140,7 @@ Code only; tests are budgeted separately below. `ci/budgets.json` carries these 
 | `SqlServer.cs` (targets, the registry-bound `Copy`, model, plan, `Measure`, allowlist, withheld messages) | 700 | M1 |
 | a minimal `LocalServer.cs` (create, register, drop) | 60 | M1 |
 | `Profiles.cs` (options only; SQLCMD sensitivity), `Git.cs`, `Doctor.cs` | 440 | M1 |
-| `AggregateQueries.cs` and its five partial files at the 1,878 lines measured on 2026-10-20; the `BlockOnPossibleDataLoss` reader, `Predict.cs` and the machine block's parser at the 690 this row planned for all four until then | 2,568 | M2 |
+| `AggregateQueries.cs` and its five partial files at the 1,946 lines measured on 2026-10-20; the `BlockOnPossibleDataLoss` reader, `Predict.cs` and the machine block's parser at the 690 this row planned for all four until then | 2,636 | M2 |
 | `LocalServer.cs` completed, `SyntheticCopy.cs` (the copy build's eight steps), `Profile.cs` (a column's value-free shape; row tiers) | 950 | M3 |
 | `Prove.cs`, `RefactorLog.cs` | 550 | M4 |
 | `Gate.cs`, `Vendor.cs`, `Json.cs` additions | 670 | M5 |
@@ -1151,7 +1151,7 @@ Code only; tests are budgeted separately below. `ci/budgets.json` carries these 
 M0), then one file per verb at about a hundred lines (M1 320 · M2 220 · M3 120 · M4 120 · M5 200 ·
 M6 160 · M7 60).
 
-**Per milestone (code):** M0 1,120 · M1 2,560 · M2 3,758 · M3 2,270 · M4 790 · M5 1,440 · M6 880 ·
+**Per milestone (code):** M0 1,120 · M1 2,560 · M2 3,826 · M3 2,270 · M4 790 · M5 1,440 · M6 880 ·
 M7 460; about 13,300 in all, against a ceiling of 26,600. Before the re-cut of M3 (§17 item 20), M3
 planned 4,840: `Evidence.cs` 720 and `SyntheticData.cs` 1,800 in the kernel, 1,450 in io and 170 in
 cli, and they return with the trigger. `ci/budgets.json`'s planned figures moved to the re-cut when the

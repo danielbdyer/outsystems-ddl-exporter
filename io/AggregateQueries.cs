@@ -20,13 +20,14 @@ namespace DbChange.Io;
 /// grouping of a key over it reading it again within that statement. Every query passes AggregateQuery.Of, its text read again, and runs
 /// under the session given; no builder writes CONVERT, CAST or PARSE, only TRY_CONVERT and TRY_CAST, a check's string that SQL Server
 /// would convert with no CONVERT written is read through TRY_CONVERT too (Check.cs, Types.cs), and no query counts a check SQL Server
-/// fails on with an error no TRY_ form stops, a string parsed into hierarchyid or another CLR type, or a LIKE escape read from a row, so
-/// none raises an error that quotes a value (§18). A table's query that fails all the same, on an overflow, is run again a precondition
-/// at a time, and each that fails is reported by its precondition and SQL Server's number, the message withheld for a named environment.
-/// A precondition no query the allowlist admits can count reads not predictable read-only, with why, as do one whose columns name a
-/// collation Collation.Of refuses, since a query writes a COLLATE's name as it stands, and a retype from a binary type once a value longer
-/// than the new type is counted (Fits.cs). A column the change creates reads, where its name would stand, the value the coordinate rules
-/// give every existing row, its default or NULL (kernel/Coordinates.cs).
+/// fails on with an error the builders write no TRY_ form for, a string parsed into hierarchyid or another CLR type, a LIKE escape read
+/// from a row, or ISNULL's second argument converted to the type of its first, so none raises an error that quotes a value (§18). A
+/// table's query that fails all the same, on an overflow, is run again a precondition at a time, and each that fails is reported by its
+/// precondition and SQL Server's number, the message withheld for a named environment. A precondition no query the allowlist admits can
+/// count reads not predictable read-only, with why, as do one whose columns name a collation Collation.Of refuses, since a query writes a
+/// COLLATE's name as it stands, and a retype from a binary type once a value longer than the new type is counted (Fits.cs). A column the
+/// change creates reads, where its name would stand, the value the coordinate rules give every existing row, its default or NULL
+/// (kernel/Coordinates.cs).
 /// </summary>
 public static partial class AggregateQueries
 {

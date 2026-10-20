@@ -27,9 +27,9 @@ namespace DbChange.Io;
 /// the time of a date and time into date, its date into time, and an offset other than +00:00 that a datetimeoffset loses. The classes
 /// share no row; over bytes, an empty string a type reads and a lossy round trip convert without an error, so they are counted as classes
 /// and never as violating. What no count shows prints a line: characters substituted with '?' into a character type whose code page can
-/// lack them, and values rounded where the fractional digits the type holds fall. A pair of types SQL Server converts neither way, and a
-/// type no count reads (xml, sql_variant, hierarchyid, a spatial or CLR type, text or image as the new type), read not predictable
-/// read-only.
+/// lack them, and values rounded where the fractional digits the type holds fall, or into float or real, which keep about 15 and 7
+/// significant digits, from a type that holds more. A pair of types SQL Server converts neither way, and a type no count reads (xml,
+/// sql_variant, hierarchyid, a spatial or CLR type, text or image as the new type), read not predictable read-only.
 /// </summary>
 public static partial class AggregateQueries
 {
@@ -230,7 +230,7 @@ public static partial class AggregateQueries
     /// The lines a Fits site prints for what no count shows: characters substituted with '?' where a character type that is no Unicode type
     /// takes a Unicode value or one of another collation, whose code page can lack a character; and values rounded where the fractional
     /// digits the new type holds fall, which a string read as a number or a date and time can carry too, but not one read as an integer,
-    /// which fails instead.
+    /// which fails instead, and where float or real keeps fewer digits than the old type holds (<see cref="Rounds"/>).
     /// </summary>
     private static IEnumerable<Finding> Lines(string subject, ColumnType before, ColumnType after, Family from, Family to, Context context)
     {
@@ -244,14 +244,41 @@ public static partial class AggregateQueries
                 + " such a value.");
         }
 
-        if (Fraction(after) is { } lesser && Fraction(before) is { } greater && lesser < greater
-            && !(from is Family.Character or Family.Text && to is Family.Integer or Family.Bit))
+        if (to == Family.Approximate ? Rounds(before, after)
+            : Fraction(after) is { } lesser && Fraction(before) is { } greater && lesser < greater
+                && !(from is Family.Character or Family.Text && to is Family.Integer or Family.Bit))
         {
-            yield return Finding.Note("fits.rounded-values", subject, change
-                + ", which holds fewer decimals or fractional seconds: TRY_CONVERT and ALTER COLUMN alike round such a value, without an"
-                + " error, so no count shows it.");
+            var keeps = to != Family.Approximate ? ", which holds fewer decimals or fractional seconds"
+                : ", which keeps about " + (Real(after) ? "7" : "15") + " significant digits, a decimal fraction as the nearest binary one";
+            yield return Finding.Note("fits.rounded-values", subject, change + keeps
+                + ": TRY_CONVERT and ALTER COLUMN alike round such a value, without an error, so no count shows it.");
         }
     }
+
+    /// <summary>
+    /// Whether ALTER COLUMN into float or real rounds a value of <paramref name="before"/>, as measured value by value on SQL Server 2022:
+    /// real keeps about 7 significant digits and float about 15, each holding a decimal fraction as the nearest binary one, so a decimal or
+    /// numeric with a Scale or with more digits than the new type keeps, money, smallmoney, bigint, int into real, float into real and a
+    /// string, which can hold any digits, are rounded (1234567.89 as decimal(18,2) into real is 1234567.875, 9007199254740993 as bigint
+    /// into float 9007199254740992, 0.1 as float into real 0.100000001490116); real into float, int into float and smallint into real keep
+    /// every value. ALTER COLUMN refuses datetime and smalldatetime into either (Msg 257, measured on an empty table), so neither is read.
+    /// </summary>
+    private static bool Rounds(ColumnType before, ColumnType after) => before.Type.Base.ToLowerInvariant() switch
+    {
+        "decimal" or "numeric" => before.Scale > 0 || before.Precision > (Real(after) ? 7 : 15),
+        "money" or "smallmoney" or "bigint" => true,
+        "int" => Real(after),
+        "float" => Real(after) && !Real(before),
+        _ => FamilyOf(before) == Family.Character,
+    };
+
+    /// <summary>Whether a type is real, as float(1) to float(24) are stored; float with no precision is float(53).</summary>
+    private static bool Real(ColumnType type) => type.Type.Base.ToLowerInvariant() switch
+    {
+        "real" => true,
+        "float" => type.Precision is > 0 and <= 24,
+        _ => false,
+    };
 
     private static Family FamilyOf(ColumnType type) => type.IsAlias ? Family.Other : FamilyOf(type.Type.Base.ToLowerInvariant());
 

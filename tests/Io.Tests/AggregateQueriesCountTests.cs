@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -88,6 +89,34 @@ public sealed class AggregateQueriesCountTests : IDisposable
         Assert.Equal("rows 20, violating 0, not-convertible 0, empty-string 0", Line(counts, Kind(queries, "Fits", "Born")));
         Assert.Contains("DECLARE @dateformat nvarchar(4000) = N'dmy';", log, StringComparison.Ordinal);
         Assert.Contains("SET DATEFORMAT @dateformat;", log, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The session sets the language before the query, as a parameter, and a month written as its name converts under the language that
+    /// names it (measured on SQL Server 2022): under us_english, 13 April 2001 is a date and 13 avril 2001 is not, and under French the
+    /// reverse, DATEFORMAT dmy in both. Each column holds one of the two, so the two sessions count them apart only where SET LANGUAGE
+    /// runs: queries run under one language, the login's own, would count both sessions alike.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task The_session_s_LANGUAGE_decides_how_a_month_written_as_its_name_converts()
+    {
+        var change = new Case(Model.Of("L.Id int NOT NULL", "L.En nvarchar(20) NULL", "L.Fr nvarchar(20) NULL"),
+            Model.Of("L.Id int NOT NULL", "L.En date NULL", "L.Fr date NULL"));
+        const string Plant = "INSERT dbo.L (Id, En, Fr) VALUES (1, N'13 April 2001', N'13 avril 2001');";
+        const string Converts = "rows 1, violating 0, not-convertible 0, empty-string 0";
+        const string Fails = "rows 1, violating 1, not-convertible 1, empty-string 0";
+
+        var english = await Counted(change, Plant, new SqlServer.Session("us_english", SqlServer.DateFormat.Dmy));
+        var french = await Counted(change, Plant, new SqlServer.Session("French", SqlServer.DateFormat.Dmy));
+
+        static string Columns((AggregateQueries.Queries Queries, AggregateQueries.Counts Counts, string Log) run) =>
+            Line(run.Counts, Kind(run.Queries, "Fits", "En")) + "; " + Line(run.Counts, Kind(run.Queries, "Fits", "Fr"));
+        Assert.Equal(Converts + "; " + Fails, Columns(english));
+        Assert.Equal(Fails + "; " + Converts, Columns(french));
+        Assert.All(new[] { english.Log, french.Log }, log => Assert.Contains("SET LANGUAGE @language;", log, StringComparison.Ordinal));
+        Assert.Contains("DECLARE @language nvarchar(4000) = N'us_english';", english.Log, StringComparison.Ordinal);
+        Assert.Contains("DECLARE @language nvarchar(4000) = N'French';", french.Log, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -234,30 +263,36 @@ public sealed class AggregateQueriesCountTests : IDisposable
 
     /// <summary>
     /// §18, a value escaping in an error, where no TRY_ form helps: SQL Server parses a string set against hierarchyid with no CONVERT
-    /// written and fails with Msg 6522, and reads LIKE's escape character from a column and fails with Msg 506, each message quoting the
-    /// planted value, as each check run as written shows. The builders read both checks not predictable read-only and write neither into
-    /// a query; the string set against sql_variant, which SQL Server compares without parsing it, is counted as the check run as written
-    /// counts it, and raises nothing; and the value appears in no count, reason or line of the run's log.
+    /// written and fails with Msg 6522, reads LIKE's escape character from a column and fails with Msg 506, and converts ISNULL's second
+    /// argument, an int, to the type of its first, tinyint, and fails with Msg 220, each message quoting the planted value, as each check
+    /// run as written shows. The same ISNULL over a column the change creates as tinyint fails the check's validation with Msg 220 once
+    /// the column is added, where a query reading the column as NULL counts no row. The builders read the four checks not predictable
+    /// read-only and write none into a query; the string set against sql_variant, which SQL Server compares without parsing it, is counted
+    /// as the check run as written counts it, and raises nothing; and no planted value appears in a count, reason or line of the run's log.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
     [Trait("Value", "X2")]
     public async Task A_check_whose_error_would_quote_a_row_s_value_reads_not_predictable_read_only_and_runs_in_no_query()
     {
-        var planted = PlantedValue.Unique();
-        string[] quoting = ["'abc' LIKE 'a%' ESCAPE [Esc]", "[Ref]=[Hid]"];
+        var (planted, number) = (PlantedValue.Unique(),
+            new PlantedValue(Random.Shared.Next(1_000_000_000, int.MaxValue).ToString(CultureInfo.InvariantCulture)));
+        (string Check, PlantedValue Quoted)[] quoting = [("'abc' LIKE 'a%' ESCAPE [Esc]", planted), ("[Ref]=[Hid]", planted),
+            ("ISNULL(CAST(NULL AS [tinyint]),[Num])>(0)", number)];
+        const string Created = "ISNULL([NewTiny],[Num])>(0)";
         const string Variant = "[Var]=[Ref]";
         var environment = Model.Of("H.Id int NOT NULL", "H.Ref varchar(40) NULL Latin1_General_CI_AS", "H.Hid hierarchyid NULL",
-            "H.Esc varchar(40) NULL Latin1_General_CI_AS", "H.Var sql_variant NULL");
-        var head = environment.Check("CK_H_Esc", "H", quoting[0], ["Esc"]).Check("CK_H_Hid", "H", quoting[1], ["Hid", "Ref"])
-            .Check("CK_H_Var", "H", Variant, ["Ref", "Var"]);
+            "H.Esc varchar(40) NULL Latin1_General_CI_AS", "H.Var sql_variant NULL", "H.Num int NULL");
+        var head = environment.With("H.NewTiny tinyint NULL").Check("CK_H_Esc", "H", quoting[0].Check, ["Esc"])
+            .Check("CK_H_Hid", "H", quoting[1].Check, ["Hid", "Ref"]).Check("CK_H_Num", "H", quoting[2].Check, ["Num"])
+            .Check("CK_H_New", "H", Created, ["NewTiny", "Num"]).Check("CK_H_Var", "H", Variant, ["Ref", "Var"]);
         using var copy = DisposableCopy.Create(root, await SqlServerFixture.ServerAsync());
-        await SqlServerFixture.ExecuteAsync(copy.Copy.Connection, Tables(environment) + "INSERT dbo.H (Id, Ref, Hid, Esc, Var) VALUES"
-            + " (1, @name, hierarchyid::Parse('/1/'), @name, @name), (2, '/1/', NULL, '!', N'x');", planted.Text);
+        await SqlServerFixture.ExecuteAsync(copy.Copy.Connection, Tables(environment) + "INSERT dbo.H (Id, Ref, Hid, Esc, Var, Num) VALUES"
+            + " (1, @name, hierarchyid::Parse('/1/'), @name, @name, " + number.Text + "), (2, '/1/', NULL, '!', N'x', 5);", planted.Text);
         string AsWritten(string check) => "SELECT SUM(CASE WHEN NOT (" + check + ") THEN 1 ELSE 0 END) FROM dbo.H;";
-        foreach (var check in quoting)
+        foreach (var (check, quoted) in quoting)
         {
-            Assert.Contains(planted.Text, (await Assert.ThrowsAsync<SqlException>(() =>
+            Assert.Contains(quoted.Text, (await Assert.ThrowsAsync<SqlException>(() =>
                 SqlServerFixture.ScalarAsync(copy.Copy.Connection, AsWritten(check)))).Message, StringComparison.Ordinal);
         }
 
@@ -266,14 +301,25 @@ public sealed class AggregateQueriesCountTests : IDisposable
         var log = SqlServer.QueryLog.Start(root);
 
         var counts = Value(AggregateQueries.Count(copy.Copy, queries.Tables.Single(), log));
+        await SqlServerFixture.ExecuteAsync(copy.Copy.Connection, "ALTER TABLE dbo.H ADD NewTiny tinyint NULL;");
+        var validated = await Assert.ThrowsAsync<SqlException>(() => SqlServerFixture.ExecuteAsync(copy.Copy.Connection,
+            "ALTER TABLE dbo.H ADD CONSTRAINT CK_H_New CHECK (" + Created + ");"));
 
-        Assert.Equal(quoting, queries.NotPredictable.Select(u => ((PreconditionKind.Check)u.Precondition.Kind).Expression));
+        Assert.Equal(220, validated.Number);
+        Assert.Contains(number.Text, validated.Message, StringComparison.Ordinal);
+        Assert.Equal(quoting.Select(q => q.Check).Append(Created).Order(StringComparer.Ordinal),
+            queries.NotPredictable.Select(u => ((PreconditionKind.Check)u.Precondition.Kind).Expression));
+        Assert.All(queries.NotPredictable.Where(u => ((PreconditionKind.Check)u.Precondition.Kind).Expression.StartsWith("ISNULL",
+            StringComparison.Ordinal)), u => Assert.Contains("converts ISNULL's second argument to the type of its first", u.Why,
+            StringComparison.Ordinal));
         Assert.Equal((Variant, 2L, (long)asWritten), counts.Counted
             .Select(n => (((PreconditionKind.Check)n.Precondition.Kind).Expression, n.Rows, n.Violating)).Single());
         Assert.Empty(counts.Unanswered);
         Assert.DoesNotContain(Entries(File.ReadAllText(log.Path)), e => e.Outcome.StartsWith("failed", StringComparison.Ordinal));
-        planted.AbsentFrom(string.Join('\n', counts.Counted.Concat<object>(queries.NotPredictable).Concat(queries.Notes.Select(n => n.Message)))
-            + File.ReadAllText(log.Path));
+        var answered = string.Join('\n', counts.Counted.Concat<object>(queries.NotPredictable).Concat(queries.Notes.Select(n => n.Message)))
+            + File.ReadAllText(log.Path);
+        planted.AbsentFrom(answered);
+        number.AbsentFrom(answered);
     }
 
     /// <summary>
