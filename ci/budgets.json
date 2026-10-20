@@ -20,11 +20,11 @@
     }
   },
   "code": {
-    "about": "C# in the three packages together; tests are budgeted separately. The ceiling is the sum of the three package ceilings. The planned figures are M3 as re-cut, which the operator confirmed on 2026-10-19 (V3_MILESTONES.md section 17 item 20), and M2 with io/AggregateQueries.cs and its partial files as measured on 2026-10-20; before the re-cut M3 planned 4,840, and before 2026-10-20 M2 planned 1,880.",
+    "about": "C# in the three packages together; tests are budgeted separately. The ceiling is the sum of the three package ceilings. The planned figures are M3 as re-cut, which the operator confirmed on 2026-10-19 (V3_MILESTONES.md section 17 item 20), M2 with io/AggregateQueries.cs and its partial files, and M3 with kernel Witness and its partial files, as measured on 2026-10-20; before the re-cut M3 planned 4,840, and before 2026-10-20 M2 planned 1,880 and M3 2,270.",
     "budgets": ["kernel", "io", "cli"],
     "ceiling": 26600,
-    "planned": 13346,
-    "plannedByMilestone": { "M0": 1120, "M1": 2560, "M2": 3826, "M3": 2270, "M4": 790, "M5": 1440, "M6": 880, "M7": 460 }
+    "planned": 14321,
+    "plannedByMilestone": { "M0": 1120, "M1": 2560, "M2": 3826, "M3": 3245, "M4": 790, "M5": 1440, "M6": 880, "M7": 460 }
   },
   "budgets": {
     "kernel": {
@@ -32,7 +32,7 @@
       "include": ["kernel/**/*.cs"],
       "exclude": [],
       "ceiling": 9700,
-      "planned": 4440,
+      "planned": 5415,
       "plannedFiles": [
         { "files": ["SortedArray.cs", "Result.cs", "Error.cs", "Name.cs", "Fingerprint.cs"], "what": null, "lines": 410, "milestones": ["M0"] },
         { "files": ["Receipt.cs"], "what": "the five inputs, Engine", "lines": 180, "milestones": ["M0"] },
@@ -44,7 +44,7 @@
         { "files": ["Classify.cs"], "what": "renames of three kinds, shapes from recognize:", "lines": 450, "milestones": ["M2"] },
         { "files": ["Schema.cs"], "what": null, "lines": 520, "milestones": ["M3"] },
         { "files": ["Order.cs"], "what": null, "lines": 180, "milestones": ["M3"] },
-        { "files": ["Witness.cs"], "what": "the existing-data tier's plan", "lines": 500, "milestones": ["M3"] },
+        { "files": ["Witness.cs", "Witness.Demands.cs", "Witness.Rows.cs", "Witness.Literals.cs"], "what": "the existing-data tier's plan, at the 1,475 lines measured on 2026-10-20, where it planned 500 for Witness.cs until then", "lines": 1475, "milestones": ["M3"] },
         { "files": ["PullRequestDescription.cs", "Locks.cs"], "what": null, "lines": 570, "milestones": ["M5"] },
         { "files": ["Platform.cs", "Page.cs"], "what": "table classes, in sync", "lines": 350, "milestones": ["M6"] }
       ]
