@@ -305,10 +305,13 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     }
 
     /// <summary>
-    /// M1 exit 8 (R14) and the ruling of 2026-09-25: an Extended Events session on the read-only principal's login, made by the fixture's
-    /// admin identity, records every batch and call that login sends through a check drift of a named environment that matches, one that
-    /// finds drift, and a read --from env:dev. None is DML, DDL or an EXEC: the plan runs package to package, so DacFx no longer reads the
-    /// instance's default file paths (xp_instance_regread), and the test admits no EXEC at all. SQL Server masks the text of one call per
+    /// M1 exit 8 (R14) and the rulings of 2026-09-25 and 2026-10-20: an Extended Events session on the read-only principal's login, made
+    /// by the fixture's admin identity, records every batch and call that login sends through a check drift of a named environment that
+    /// matches, one that finds drift, and a read --from env:dev, each run by the published dbchange as its own process. None is DML, DDL
+    /// or an EXEC: the plan runs package to package, so DacFx no longer reads the instance's default file paths (xp_instance_regread), and
+    /// io/ServerProbe refuses DacFx's xp_msver before SqlClient sends it. Every call is sp_executesql, the form SqlClient sends a query
+    /// with parameters in. A run inside the test process proves nothing about xp_msver: DacFx sends it only when its per-process cache
+    /// holds no entry for the server and database, and the admin's publish fills that entry. SQL Server masks the text of one call per
     /// read of the database, which the test cannot read and admits by its form: DacFx sends its catalog queries as one sp_executesql call,
     /// and SQL Server replaces that call's text with *encrypt and dashes because it names the key and credential catalog views (measured
     /// through SqlClient's trace on DacFx 170.5.96: the call holds SELECT statements only).
@@ -325,10 +328,10 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         await using var trace = await ReadOnlyLoginTrace.StartAsync(reader.Login);
         var root = repository.Named(("dev", Path.Combine(Repository.Root, reader.Reference["file:".Length..])));
 
-        var (matchExit, matching) = repository.RunAt(root, "check", "drift", "--target", "env:dev", "--at", repository.Base);
+        var (matchExit, matching) = repository.Tool.RunAt(root, "check", "drift", "--target", "env:dev", "--at", repository.Base);
         await SqlServerFixture.ExecuteAsync(database.ConnectionString, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
-        var (driftExit, drifted) = repository.RunAt(root, "check", "drift", "--target", "env:dev", "--at", repository.Base);
-        var (readExit, read) = repository.RunAt(root, "read", "--from", "env:dev");
+        var (driftExit, drifted) = repository.Tool.RunAt(root, "check", "drift", "--target", "env:dev", "--at", repository.Base);
+        var (readExit, read) = repository.Tool.RunAt(root, "read", "--from", "env:dev");
         var sent = await trace.StopAsync();
 
         Assert.True(matchExit == 0, matching);
@@ -346,6 +349,8 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         Assert.True(masked.Count <= 3, masked.Count + " masked calls for three reads");
         var writes = sent.Where(s => !ReadOnlyLoginTrace.Masked(s.Text)).SelectMany(s => ReadOnlyLoginTrace.Writes(s.Text)).ToList();
         Assert.True(writes.Count == 0, string.Join("\n----\n", writes));
+        var calls = sent.Where(s => s.Event == "rpc_completed" && s.Object != "sp_executesql").Select(s => s.Object + ": " + s.Text);
+        Assert.Empty(calls);
     }
 
     /// <summary>The plan of the package at <paramref name="dacpac"/> against the copy, extracted, package to package, as check drift

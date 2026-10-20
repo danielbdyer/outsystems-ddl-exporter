@@ -13,13 +13,16 @@ namespace DbChange.Cli;
 public static class Program
 {
     /// <summary>
-    /// The telemetry opt-out is the first statement, before anything can load DacFx; Program has no static state to run ahead of it. Every
-    /// thread the command starts then takes the invariant culture (VALUES.md D2), and the run listens for Ctrl-C, Ctrl-Break, SIGTERM and
-    /// SIGHUP (io/Interruption), which stop a verb at its next program or lock wait.
+    /// The telemetry opt-out is the first statement, before anything can load DacFx; Program has no static state to run ahead of it. The
+    /// refusal of DacFx's xp_msver call (io/ServerProbe) follows, before any connection opens, here and not in io, because only this
+    /// process opens nothing but dbchange's own connections. Every thread the command starts then takes the invariant culture (VALUES.md
+    /// D2), and the run listens for Ctrl-C, Ctrl-Break, SIGTERM and SIGHUP (io/Interruption), which stop a verb at its next program or lock
+    /// wait.
     /// </summary>
     public static int Main(string[] args)
     {
         Telemetry.OptOut();
+        ServerProbe.Refuse();
         (CultureInfo.DefaultThreadCurrentCulture, CultureInfo.DefaultThreadCurrentUICulture) =
             (CultureInfo.InvariantCulture, CultureInfo.InvariantCulture);
         using var interruption = Interruption.Listen();
