@@ -133,8 +133,8 @@ public sealed class Citations
     [InlineData("| O1 | … | `io/SyntheticCopy.cs`, not held yet: WP 3.4 | … |", 4, "io/SyntheticCopy.cs")]
     [InlineData("| E4 | … | `io/Emit.cs`, not held yet: the cutover tools | … |", 7, "")]
     [InlineData("| E4 | … | `io/Emit.cs`, not held yet: the cutover tools | … |", 8, "io/Emit.cs")]
-    [InlineData("extract the BlockOnPossibleDataLoss checks into `tests/Golden/data-loss-checks/`", 0, "")]
-    [InlineData("extract the BlockOnPossibleDataLoss checks into `tests/Golden/data-loss-checks/`", 1, "tests/Golden/data-loss-checks/")]
+    [InlineData("record the trust state of each constraint under `tests/Golden/trust-states/`", 0, "")]
+    [InlineData("record the trust state of each constraint under `tests/Golden/trust-states/`", 1, "tests/Golden/trust-states/")]
     [InlineData("builds `cli` into `.dbchange/bin/` when stale; no `gate.json` carries a password", 0, "")]
     [InlineData("`packages.lock.json` in every project", 0, "")]
     public void A_missing_path_resolves_only_through_a_milestone_its_own_clause_names(string line, int milestone, string unresolved) =>

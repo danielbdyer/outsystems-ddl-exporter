@@ -1,0 +1,1 @@
+add-index Index [dbo].[Customer].[IX_Customer_Email]

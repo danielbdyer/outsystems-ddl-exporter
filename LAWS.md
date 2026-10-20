@@ -175,6 +175,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X2 | Nothing a named environment prints carries a literal or what a reference names | `DbChange.Kernel.Tests.EnvironmentsTests.Nothing_a_named_environment_prints_carries_a_literal_or_what_a_reference_names` |
 | X3 | Every package is allowed and every allowed package is used | `DbChange.Budgets.Tests.PackagesAllowlist.Every_package_is_allowed_and_every_allowed_package_is_used` |
 | X3 | Every project restores from its lock file and CI restores locked | `DbChange.Budgets.Tests.PackagesAllowlist.Every_project_restores_from_its_lock_file_and_CI_restores_locked` |
+| X3 | Only the DacFx 162 runner overrides a central package version | `DbChange.Budgets.Tests.PackagesAllowlist.Only_the_DacFx_162_runner_overrides_a_central_package_version` |
 | X5 | Each banned symbol planted in the kernel is a build error | `DbChange.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |
 | X5 | Main opts out of telemetry before anything else | `DbChange.Budgets.Tests.ContractTests.Main_opts_out_of_telemetry_before_anything_else` |
 | X5 | Neither io nor the cli calls DacFx's EnableTelemetry | `DbChange.Budgets.Tests.DependenciesPointOneWay.Neither_io_nor_the_cli_calls_DacFx_s_EnableTelemetry` |

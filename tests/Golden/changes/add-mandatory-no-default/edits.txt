@@ -1,0 +1,4 @@
+=== Modules/Customer.sql
+--- AccountId       INT             NULL,
++++ AccountId       INT             NULL,
++++     MiddleName      NVARCHAR(100)   NOT NULL,

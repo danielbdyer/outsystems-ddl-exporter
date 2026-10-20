@@ -1,0 +1,1 @@
+narrow Column [dbo].[OrderLine].[Amount]

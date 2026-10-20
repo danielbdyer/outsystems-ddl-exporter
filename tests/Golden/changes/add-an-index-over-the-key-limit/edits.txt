@@ -1,0 +1,12 @@
+=== Modules/Product.sql
+--- Name    NVARCHAR(200)   NULL,
++++ Name    NVARCHAR(1000)  NULL,
+=== Modules/Product.sql
+--- CONSTRAINT PK_Product_Id PRIMARY KEY CLUSTERED (Id)
+--- );
+--- GO
++++ CONSTRAINT PK_Product_Id PRIMARY KEY CLUSTERED (Id)
++++ );
++++ GO
++++ CREATE INDEX IX_Product_Name ON dbo.Product (Name);
++++ GO

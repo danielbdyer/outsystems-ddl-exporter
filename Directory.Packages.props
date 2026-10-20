@@ -1,5 +1,6 @@
 <Project>
-  <!-- One version per package, for every v3 project. A new package is a decision line and a row in ci/packages.allow. -->
+  <!-- One version per package, for every v3 project but tests/DacFx162/, which runs Microsoft.SqlServer.DacFx 162.5.57 through a
+       VersionOverride (DECISIONS.md, 2026-10-19). A new package is a decision line and a row in ci/packages.allow. -->
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>

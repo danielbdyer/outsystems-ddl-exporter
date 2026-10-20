@@ -28,8 +28,8 @@ does not prove · §7 keeping it true.
 |---|---|---|---|
 | M0 Foundation | built (#704) | exits 1, 3 and 4 by tests declaring `Exit` M0.1, M0.3 and M0.4 (`LAWS.md`) | exit 2 (the archived solutions' counts) is recorded in #704; no test repeats it |
 | M1 Read | built (#704) | exits 2 to 8 by tests declaring `Exit` M1.2 to M1.8 | exit 1: the laptop check against Dev (spikes S1 and S3), the operator's, with the commands in `NEXT.md` |
-| M2 Predict | started 2026-10-19 on the operator's go, with WP 2.1's first slice | — | no person; WP 2.2 waits on spike S2 run with the second DacFx release |
-| M3 Synthetic copy | not started; its re-cut confirmed by the operator on 2026-10-19 (§17 item 20 of `V3_MILESTONES.md`) | — | no person; WPs 3.1 and 3.4 first, then WP 3.8 and WP 3.5 |
+| M2 Predict | started 2026-10-19 on the operator's go, with WP 2.1's first slice | — | no person; spike S2 ran on both DacFx releases, so WP 2.2 can start |
+| M3 Synthetic copy | started: WP 3.1 (#705); its re-cut confirmed by the operator on 2026-10-19 (§17 item 20 of `V3_MILESTONES.md`) | — | no person; WP 3.4, then WP 3.8 and WP 3.5 |
 | M4 to M7 | not started | — | their predecessors (`V3_MILESTONES.md` §5) |
 
 **CI on `2a87f39` is green in all eleven checks** across six workflow runs:
@@ -87,7 +87,7 @@ its clauses hold and others wait.
 | ID | What v2 does | Where v2 proves it | How v3 does it | Where v3 holds it |
 |---|---|---|---|---|
 | PAR-001 | Builds the SSDT project into a package that carries the refactorlog and both deploy scripts. The Twin built with `TSqlModel.AddObjects` and lost both (§1 fact 8 of `V3_MILESTONES.md`); `prove.mjs` built the real project | `archive/v2/ssdt-agent/scripts/prove.mjs:216` | `io/Ssdt.Build`: the classic build against the committed DacFx targets, one build for every verb | `Io.Tests: "Fact 1 the classic build of the golden project carries the refactorlog and both deploy scripts"`; exit M0.4 |
-| PAR-002 | Reads a live database's schema | `archive/v2/src/Projection.Adapters.Sql/ReadSide.fs` | `io/SqlServer.Model`: `TSqlModel.LoadFromDatabase`, then the one element reader | `Io.Tests: "Fact 5 LoadFromDatabase runs as the read only login into the model the build produced"`; law 3′ |
+| PAR-002 | Reads a live database's schema | `archive/v2/src/Projection.Adapters.Sql/ReadSide.fs` | `io/SqlServer.Model`: `TSqlModel.LoadFromDatabase`, then the one element reader | `Io.Tests: "Fact 5 LoadFromDatabase runs as the read only login into the model the build produced"`; `Io.Tests: "Schema of a published copy equals the catalog v2's read side writes for it"`; law 3′ |
 | PAR-003 | Puts every key of two catalogs in exactly one of four partitions: added, removed, renamed, altered (A38) | `archive/v2/AXIOMS.md:1367` | `Change.Between` over `Element`s: created, dropped, renamed (from the refactorlog), altered per property | `Kernel.Tests: "A change names only elements its two models hold"`; `Kernel.Tests: "A single generated edit yields exactly that one change and undoing it the mirror"`; exit M1.2 |
 | PAR-004 | Keeps identity through a rename: a rename changes the name and never the key, and the refactorlog forces it (A1, A3, A43) | `archive/v2/AXIOMS.md:1981` | renames read from the refactorlog; a rename with no entry is a drop and a create; law 6 on a copy | `Kernel.Tests: "Renames made one at a time are reported as renames whichever keys their entries were recorded under"`; `Kernel.Tests: "A rename without its refactorlog entry is a drop and an add"`; law 6 on a copy — not held yet: WP 4.5 |
 | PAR-005 | Makes a change invertible: replay folds the changes and the inverse is the rollback (T12, T13) | `archive/v2/AXIOMS.md:1906` | `Change.Between` mirrors back; law 7 publishes head back to base on the copy | `Kernel.Tests: "The change from one model to another mirrors the change back through the inverted renames"`; law 7 — not held yet: WP 4.5 |
@@ -114,13 +114,13 @@ its clauses hold and others wait.
 |---|---|---|---|---|
 | PAR-017 | Publishes Strict, and Permissive only after a block (`prove.mjs`) | `archive/v2/ssdt-agent/scripts/prove.mjs:267` | the pipeline's profile as loaded is Strict; Permissive flips `BlockOnPossibleDataLoss` alone and exists only for a `Copy` | `Io.Tests: "Fact 10 the pipeline profile loads as deploy options names no target and is the only profile"`; value S1 |
 | PAR-018 | Records the DacFx version and leaves the pin open until the deployment step's version is known (F19) | `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:479` | `Toolchain`: the committed DacFx inside the ledger's window, every provenance record stamped, `UNPINNED` said aloud | exit M1.6; value R1 |
-| PAR-019 | Proved in two DacFx releases on two paths, in-process 162.5.57 and external `sqlpackage` 170.x | `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:298` | one DacFx, 170.5.96, in-process for the build and every publish | `Io.Tests: "A tool folder whose task is another DacFx is refused before the build"`; value R1 |
+| PAR-019 | Proved in two DacFx releases on two paths, in-process 162.5.57 and external `sqlpackage` 170.x | `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:298` | one DacFx, 170.5.96, in-process for the build and every publish; the pipeline's presumed release, 162.5.57, plans each sample change beside it in the fixture lane (S2) | `Io.Tests: "A tool folder whose task is another DacFx is refused before the build"`; value R1; `Io.Tests: "Both DacFx releases plan each sample change as the same statements but the Query Store block 162.5.57 adds"`; `Io.Tests: "An unset Query Store is OFF to DacFx 162.5.57 and READ_WRITE to 170.5.96 and each plans it on the other's copy"` |
 
 ### 2.4 Predicting
 
 | ID | What v2 does | Where v2 proves it | How v3 does it | Where v3 holds it |
 |---|---|---|---|---|
-| PAR-020 | Finds `BlockOnPossibleDataLoss` data-blind: it fires on row presence and never asks whether a row violates (F1, F7; v2's central finding) | `archive/v2/ssdt-agent/skills/_index/tightening-class/SKILL.md:51` | the check read from DacFx's own script at state 127 and run read-only; law 9 as a property of `Outcome.Predict` | `Io.Tests: "Fact 3 the data loss check is found at state 127 and its predicate returns 1 as the read only login"`; law 9; law 9 on a publish — not held yet: WP 4.5 |
+| PAR-020 | Finds `BlockOnPossibleDataLoss` data-blind: it fires on row presence and never asks whether a row violates (F1, F7; v2's central finding) | `archive/v2/ssdt-agent/skills/_index/tightening-class/SKILL.md:51` | the check read from DacFx's own script at state 127 and run read-only; law 9 as a property of `Outcome.Predict` | `Io.Tests: "Fact 3 the data loss check is found at state 127 and its predicate returns 1 as the read only login"`; `Io.Tests: "Each sample change's plan writes the data loss checks committed for it on both DacFx releases"`; law 9; law 9 on a publish — not held yet: WP 4.5 |
 | PAR-021 | Treats a constraint as a claim: one violating row refuses it, a clean table takes it, and an aggregate query predicts which | `archive/v2/ssdt-agent/skills/_index/constraint-is-a-claim/SKILL.md:31` | one aggregate query per precondition kind; law P holds each to the proof | `Io.Tests: AggregateQueriesTests`; `Io.Tests: AggregateQueriesCountTests`; law P — not held yet: WP 4.5 |
 | PAR-022 | Classifies from the script's text signals (`prove.mjs`), which the deploy report is too coarse to replace | `archive/v2/ssdt-agent/scripts/prove.mjs:283` | the property read finds the precondition; the report stays coarse | `Io.Tests: "Fact 6 one read of every property finds Nullable true to false and nothing else"`; `Io.Tests: "Fact 7 the deploy report stays coarse one Alter on the table and no alert"` |
 | PAR-023 | Names the operation and refuses a rename made by typing (`classify-mechanism`) | `archive/v2/ssdt-agent/skills/classify-mechanism/SKILL.md` | `Classify.Of` over each operation's `recognize:` block; *provisional* first | `Kernel.Tests: "An element the change creates is one entry with what it holds and what names only it"`; `Kernel.Tests: "An alteration that reorders its targets or gains a created element it does not hold is an entry of its own"`; `Kernel.Tests: "A clause recognizes an alteration only when it accounts for every property the alteration changes"`; `Kernel.Tests: "The first word of every classification is provisional"`; `Io.Tests: "Each sample change classifies as the operation its classify txt names"`; `Kernel.Tests: "A column renamed by typing without its refactorlog entry is refused with the remedy that writes the entry"`; `Io.Tests: "Each rename made by typing is refused at exit 9 with the remedy that writes its refactorlog entry"`; the blocks in their operations' files under `knowledge/ops/` — not held yet: WP 7.2 |
@@ -294,13 +294,13 @@ v3 is complete when every row above is held, retired, or waits only on the cutov
 exit of M0 to M7 that can run here is green. What remains, in the order the work can move:
 
 **Now, needing no person.**
-1. Done: the pre-M2 code the rulings of 2026-09-25 call for is in the code; round two's finding DF-5 and a test for an environment that names no host remain (`NEXT.md`, *Next*).
-2. Spikes in CI: S2 (the check forms and the vocabulary's statement shapes on both DacFx releases),
-   S4 (CREATE, RESTORE and DROP timed in LocalDB 16.x), and S9 to S11 (trust state through a schema
-   read; constraint validation after the post-deploy script on 162.x; system-named constraints
-   through a publish).
-3. WP 3.1 (`Schema`, `Order`), WP 3.4 (`LocalServer` completed) and WP 3.5's first step (the base
-   built, published and backed up), then WP 3.8 (`Witness`), now that the re-cut is confirmed.
+1. Done: the pre-M2 code the rulings of 2026-09-25 call for, with DF-5 (`Io.Tests: SsdtTests`) and an environment that names no host (`Io.Tests: PublishProfilesTests`).
+2. Spikes in CI: S2 is done (the check forms and the vocabulary's statement shapes on both DacFx releases, in
+   `Io.Tests: BlockOnPossibleDataLossCheckTests` against `tests/Golden/data-loss-checks/`); S4 (CREATE, RESTORE and DROP timed in
+   LocalDB 16.x), and S9 to S11 (trust state through a schema read; constraint validation after the post-deploy script on 162.x;
+   system-named constraints through a publish), which run DacFx 162.5.57 as S2 does, through the child process `tests/DacFx162/`.
+3. WP 3.4 (`LocalServer` completed) and WP 3.5's first step (the base built, published and backed up), then WP 3.8
+   (`Witness`), now that the re-cut is confirmed; WP 3.1 (`Schema`, `Order`) is done.
 4. Lane C's WP 7.1 (citations rewritten), which waits on nothing.
 
 **Decided by the operator, 2026-10-19.** M2 has started, and with it PAR-016, 020, 021, 023, 119, 132, 201 and 215

@@ -75,6 +75,16 @@ jobs:
       - run: dotnet build DbChange.sln --no-restore
       - name: SQL Server 2022 Express, installed and started
         run: bash ci/sql.sh up
+      # WP 3.1's oracle: v2's read side, built from the archive with the SDK v2 pins, so Io.Tests' ReadSideTests compares v3's Schema.Of
+      # with v2's catalog on every push; the other SQL lanes compare it with the committed facts this lane holds equal to v2's.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.314
+      - name: v2's read side, built from the archive (WP 3.1's oracle)
+        # The assignment alone, so a failed build fails the step under bash -e, where an echo of it would not.
+        run: |
+          program="$(bash ci/readside.sh)"
+          echo "DBCHANGE_READSIDE=$program" >> "$GITHUB_ENV"
       - run: dotnet test DbChange.sln --no-build --filter Category=fixture
       - if: always()
         run: bash ci/sql.sh down
@@ -119,6 +129,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      # The solution holds tests/DacFx162/, so its DacFx 162.5.57 graph is restored and built here, before the deny; the child
+      # process the fixture tests start from its build reads no package and opens no connection beyond loopback.
       - run: dotnet restore DbChange.sln --locked-mode
       - run: dotnet build DbChange.sln --no-restore
       - name: SQL Server 2022 Express, installed and started (the last step allowed the network)

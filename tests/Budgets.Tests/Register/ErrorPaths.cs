@@ -9,6 +9,7 @@ using DbChange.Tests;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Contract = DbChange.Cli.Contract;
+using Schema = DbChange.Kernel.Schema;
 
 namespace DbChange.Budgets.Tests.Register;
 
@@ -87,6 +88,29 @@ internal static partial class ErrorPaths
             SortedArray<Element> after =
                 [Made(Element.Of(key, [], [Element.Relationship.Of("Columns", [column]), Element.Relationship.Of("Host", [Table])]))];
             return Failed(Preconditions.Of([], after, Made(Change.Between([], after, [])), []));
+        }),
+        new("a table whose column the model does not hold", "model.unresolved", false, (_, _) =>
+            Failed(Schema.Of([Made(Element.Of(Table, [],
+                [Element.Relationship.Of("Columns", [Made(ElementKey.Of(Table, "Column", Made(Name.Of("Email"))))])]))]))),
+        new("an identity seed beyond bigint", "model.identity", false, (_, _) =>
+        {
+            var column = Made(ElementKey.Of(Table, "Column", Made(Name.Of("Id"))));
+            return Failed(Schema.Of([
+                Made(Element.Of(Table, [], [Element.Relationship.Of("Columns", [column])])),
+                Made(Element.Of(column,
+                    [new("IdentityIncrement", new Value.Text("1")), new("IdentitySeed", new Value.Text("99999999999999999999")),
+                        new("IsIdentity", new Value.Boolean(true))],
+                    [Element.Relationship.Of("DataType", [Made(ElementKey.Of("DataType", Made(Name.Of("decimal"))))])])),
+            ]));
+        }),
+        new("two tables referencing each other through NOT NULL foreign keys", "synthetic-copy.cycle", false, (_, _) =>
+        {
+            var (hen, egg) = (Made(Name.Of("dbo", "Hen")), Made(Name.Of("dbo", "Egg")));
+            Kernel.Table Referencing(Name table, Name parent) => new(table, [], null, [],
+                [new Reference(Made(ElementKey.Of("ForeignKeyConstraint", Made(Name.Of("dbo", "FK_" + table.Base)))), null, parent,
+                    [new Reference.Leg(0, Made(Name.Of(parent.Base + "Id")), Made(Name.Of("Id")))], ReferentialAction.NoAction,
+                    ReferentialAction.NoAction, false, false)], [], [], null);
+            return Order.Of(new Schema([Referencing(hen, egg), Referencing(egg, hen)])).Cycles.Single().Error;
         }),
         new("a precondition on a column the environment lacks and the change does not create", "plan.missing-object", false, (_, _) =>
             Failed(Coordinates.Of(new Precondition(Table.Name, [Made(Name.Of("Nickname"))], new PreconditionKind.NotNull()),

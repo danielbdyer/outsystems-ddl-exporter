@@ -1,0 +1,3 @@
+=== Modules/CustomerAddress.sql
+--- CustomerId  INT             NOT NULL,
++++ CustomerId  INT             NOT NULL REFERENCES dbo.Customer (Id),

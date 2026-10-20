@@ -10,6 +10,8 @@ using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
 using Xunit.Abstractions;
+using Column = Microsoft.SqlServer.Dac.Model.Column;
+using Table = Microsoft.SqlServer.Dac.Model.Table;
 
 namespace DbChange.Io.Tests;
 

@@ -77,6 +77,30 @@ public sealed class ClassifyTests
         Assert.Equal("provisional: create-entity", created.Summary);
     }
 
+    /// <summary>v2's temporal-convert creates the paired history table as a step of the conversion, so a history table the change creates
+    /// is part of the entry of the table whose TemporalSystemVersioningHistoryTable gains it: of an existing table made system-versioned,
+    /// and of a table created system-versioned, never a create-entity of its own. A table the change creates that no table names as its
+    /// history table is one.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_history_table_the_change_creates_is_part_of_the_entry_of_the_table_it_keeps_the_history_of()
+    {
+        var patterns = SortedArray.Of(Patterns.Append(
+            Block("temporal-convert", "altered Table Columns TemporalSystemVersioningHistoryTable")));
+        var periods = Base.With("Customer.ValidFrom datetime2 NOT NULL", "Customer.ValidTo datetime2 NOT NULL",
+            "CustomerHistory.Id int NOT NULL", "CustomerHistory.ValidFrom datetime2 NOT NULL",
+            "CustomerHistory.ValidTo datetime2 NOT NULL");
+        var priced = Base.With("Price.Id int NOT NULL", "PriceHistory.Id int NOT NULL").PrimaryKey("PK_Price", "Price", "Id");
+        ChangeClassification Of(Model before, SortedArray<Element> after) =>
+            Classify.Of(before.Elements, after, Ok(Change.Between(before.Elements, after, [])), patterns, Classify.Inputs.None);
+
+        Assert.Equal(["add-mandatory Column [dbo].[Customer].[ValidFrom]", "add-mandatory Column [dbo].[Customer].[ValidTo]",
+            "temporal-convert Table [dbo].[Customer]"], Of(Base, Versioned(periods, "Customer", "CustomerHistory")).Lines);
+        Assert.Equal(["create-entity Table [dbo].[Price]"], Of(Base, Versioned(priced, "Price", "PriceHistory")).Lines);
+        Assert.Equal(["create-entity Table [dbo].[CustomerHistory]"],
+            Of(Base, Base.With("CustomerHistory.Id int NOT NULL").Elements).Lines);
+    }
+
     /// <summary>A table whose columns stay but stand in another order, which DacFx plans as a rebuild of the table, and an index whose key
     /// gains a created column or puts its columns in another order, which DacFx drops and creates again, are each an altered entry of its
     /// own that no block here recognizes, not part of the created column's entry and not no change.</summary>
@@ -256,6 +280,12 @@ public sealed class ClassifyTests
         SortedArray<Rename> renames = default) =>
         Classify.Of(before.Elements, after.Elements, Ok(Change.Between(before.Elements, after.Elements, renames)), Patterns,
             inputs ?? Classify.Inputs.None);
+
+    /// <summary>The model's elements, <paramref name="table"/> made system-versioned with <paramref name="history"/> as its history table,
+    /// as DacFx 170.5.96 writes it: the table's TemporalSystemVersioningHistoryTable names the history table.</summary>
+    private static SortedArray<Element> Versioned(Model model, string table, string history) => SortedArray.Of(model.Elements.Select(e =>
+        e.Key != Model.TableKey(table) ? e : Ok(Element.Of(e.Key, e.Properties, e.Relationships.Append(
+            Element.Relationship.Of("TemporalSystemVersioningHistoryTable", [Model.TableKey(history)]))))));
 
     private static Pattern Block(string operation, params string[] clauses) => Ok(Pattern.Parse(operation,
         "recognize:\n" + string.Concat(clauses.Select(c => "  match: " + c + "\n")) + "  ships: as written\n"))!;

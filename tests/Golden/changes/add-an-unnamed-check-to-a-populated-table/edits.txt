@@ -1,0 +1,4 @@
+=== Modules/OrderLine.sql
+--- CONSTRAINT PK_OrderLine_Id PRIMARY KEY CLUSTERED (Id)
++++ CONSTRAINT PK_OrderLine_Id PRIMARY KEY CLUSTERED (Id),
++++     CHECK (LineNumber > 0)

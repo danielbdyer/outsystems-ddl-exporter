@@ -1,0 +1,3 @@
+temporal-convert Table [dbo].[Account]
+temporal-convert Column [dbo].[Account].[ValidFrom]
+temporal-convert Column [dbo].[Account].[ValidTo]

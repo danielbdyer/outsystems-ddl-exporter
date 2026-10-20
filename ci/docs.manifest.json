@@ -214,6 +214,16 @@
       "ancestor": ["archive/v2/scripts/warm-sql.sh"]
     },
     {
+      "path": "ci/readside.sh",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the SQL lane on Ubuntu", "regenerating WP 3.1's read-side facts"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/src/Projection.Adapters.Sql/ReadSide.fs", "archive/v2/src/Projection.Targets.Json/CatalogCodec.fs"]
+    },
+    {
       "path": "ci/budgets.json",
       "kind": "hand",
       "owner": "tool",
@@ -314,6 +324,16 @@
       "ancestor": ["archive/v2/ssdt-agent/skills/op/add-check/SKILL.md"]
     },
     {
+      "path": "tests/Golden/patterns/add-index.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/add-index/SKILL.md"]
+    },
+    {
       "path": "tests/Golden/patterns/add-mandatory.md",
       "kind": "hand",
       "owner": "tool",
@@ -332,6 +352,16 @@
       "budget": 20,
       "generator": null,
       "ancestor": ["archive/v2/ssdt-agent/skills/op/add-optional/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/add-unique.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/add-unique/SKILL.md"]
     },
     {
       "path": "tests/Golden/patterns/create-entity.md",
@@ -354,6 +384,16 @@
       "ancestor": ["archive/v2/ssdt-agent/skills/op/create-fk-clean/SKILL.md"]
     },
     {
+      "path": "tests/Golden/patterns/define-pk.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/define-pk/SKILL.md"]
+    },
+    {
       "path": "tests/Golden/patterns/delete-attribute.md",
       "kind": "hand",
       "owner": "tool",
@@ -374,6 +414,16 @@
       "ancestor": ["archive/v2/ssdt-agent/skills/op/delete-entity/SKILL.md"]
     },
     {
+      "path": "tests/Golden/patterns/drop-pk.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/drop-pk/SKILL.md"]
+    },
+    {
       "path": "tests/Golden/patterns/edit-seed.md",
       "kind": "hand",
       "owner": "tool",
@@ -384,6 +434,16 @@
       "ancestor": ["archive/v2/ssdt-agent/skills/op/edit-seed/SKILL.md"]
     },
     {
+      "path": "tests/Golden/patterns/identity-swap.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/identity-swap/SKILL.md"]
+    },
+    {
       "path": "tests/Golden/patterns/make-mandatory.md",
       "kind": "hand",
       "owner": "tool",
@@ -392,6 +452,16 @@
       "budget": 20,
       "generator": null,
       "ancestor": ["archive/v2/ssdt-agent/skills/op/make-mandatory/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/make-optional.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/make-optional/SKILL.md"]
     },
     {
       "path": "tests/Golden/patterns/narrow.md",
@@ -412,6 +482,36 @@
       "budget": 20,
       "generator": null,
       "ancestor": ["archive/v2/ssdt-agent/skills/op/rename-attribute/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/retype-explicit.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/retype-explicit/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/temporal-convert.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/temporal-convert/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/temporal-new.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/temporal-new/SKILL.md"]
     },
     {
       "path": "tests/Golden/patterns/widen.md",
