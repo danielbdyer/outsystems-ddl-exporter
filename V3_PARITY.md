@@ -51,7 +51,7 @@ finding against one of them, and a publish decides it (§7).
 
 **The tally.** `dotnet test tests/Budgets.Tests/Budgets.Tests.csproj --filter
 "FullyQualifiedName~ParityResolves"` prints how many rows are held, partly held, not held yet,
-waiting on the cutover tools, and retired. On 2026-10-20, after wave 5 of the build: 24 held, 25 partly held, 69 not held yet, 3 waiting on the cutover tools, 6 retired.
+waiting on the cutover tools, and retired. On 2026-10-20, after wave 6 of the build: 25 held, 27 partly held, 66 not held yet, 3 waiting on the cutover tools, 6 retired.
 
 ---
 
