@@ -11,10 +11,11 @@ namespace DbChange.Budgets.Tests;
 /// <summary>
 /// Every path a document of the tool cites resolves. The rule, as small as it can be and still honest:
 /// <list type="bullet">
-/// <item>A citation is a relative markdown link, or a backticked span of one word of path characters that holds a '/'
-/// or ends in an extension this repository's files carry. Only the spans named in <see cref="Elsewhere"/> are skipped:
-/// another repository's paths (the SSDT repository's pipeline checks its own), a branch, and a C# construct. So a misspelt root file
-/// or directory (<c>DECISION.md</c>, <c>kernal/</c>) is a citation, and it fails.</item>
+/// <item>A citation is a relative markdown link, a backticked span of one word of path characters that holds a '/'
+/// or ends in an extension this repository's files carry, or a name ending .md in plain text (<c>per THE_RECORD.md §4</c>).
+/// Only the spans named in <see cref="Elsewhere"/> are skipped: another repository's paths (the SSDT repository's pipeline
+/// checks its own), a branch, and a C# construct. So a misspelt root file or directory (<c>DECISION.md</c>, <c>kernal/</c>) is a
+/// citation, and it fails.</item>
 /// <item>It resolves when the file or directory exists, a bare file name when some file outside archive/ carries that
 /// name; when it lies under a run-time root or is a file a verb writes at run time, which git never holds; when its
 /// own clause says the milestone that creates it (<c>pending M3</c>, <c>from M7</c>, <c>at M8</c>, <c>not held yet: WP 3.4</c>,
@@ -26,10 +27,11 @@ namespace DbChange.Budgets.Tests;
 /// </list>
 /// The root design documents are excluded until M8 starts; knowledge/ joins at M7.
 /// Each document also cites in v3's forms, so a file WP 7.2 moves from v2's skills passes only once its citations are rewritten
-/// (<see cref="Forms"/>): a finding by its identifier, never by v2's file, FINDINGS_AND_CHANGES.md or FINDINGS with a part or an
-/// identifier; a sample by its shape under knowledge/samples/, never by v2's sample-prs/; a handbook chapter by its title, never by
-/// its number, its file name or its file stem with a section number (<c>Operation-Reference 16.8</c>; a bare §n passes, because v3
-/// cites <c>V3_MILESTONES.md §13</c>, so WP 7.2 rewrites v2's bare §17.7 and §19 by hand); a ledger by knowledge/ledgers/ or
+/// (<see cref="Forms"/>): a finding by its identifier, never by v2's file, FINDINGS_AND_CHANGES.md, FINDINGS with a part or an
+/// identifier, or a bare Part n; a sample by its shape under knowledge/samples/, never by v2's sample-prs/; a handbook chapter by
+/// its title, never by its number, its file name, its file stem with a section number (<c>Operation-Reference 16.8</c>) or a
+/// pattern's number (<c>playbook Pattern 17.8</c>; a bare §n passes, because v3 cites <c>V3_MILESTONES.md §13</c>, so WP 7.2
+/// rewrites v2's bare §n by hand); a ledger by knowledge/ledgers/ or
 /// dbchange/ledgers/, never by a bare name or any path into v2's estate/. A backticked span starting archive/ is provenance and
 /// exempt. Every F&lt;n&gt; names a finding of knowledge/findings.md, or of v2's FINDINGS_AND_CHANGES.md until that file lands; and every
 /// <c>dbchange &lt;verb&gt;</c> a document under knowledge/ or ARCHITECTURE.md cites is a row of the verb table, built or not.
@@ -55,6 +57,16 @@ public sealed class Citations
 
     private static readonly Regex Link = new(@"\]\((?![a-z]+:)([^)\s#]+)", RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// A markdown document named in plain text, outside backticks and links: <c>THE_RECORD.md §4 owns it</c> cites a file as much as
+    /// <c>`THE_RECORD.md`</c> does. A URL's path is no citation: the name must not follow a ':', a '/' or a word character.
+    /// </summary>
+    private static readonly Regex PlainDocument = new(@"(?<![\w./:\-])((?:\.\./)*\w[\w.\-]*(?:/[\w.\-]+)*\.md)(?![\w/\-])",
+        RegexOptions.CultureInvariant);
+
+    /// <summary>A backticked span or a link's target, each read by its own rule, so <see cref="PlainDocument"/> skips it.</summary>
+    private static readonly Regex Unquoted = new(@"`[^`]*`|\]\([^)]*\)|[a-z]+://\S+", RegexOptions.CultureInvariant);
+
     /// <summary>A clause's edge outside backticks: a ';', a table cell's '|', or the space after a sentence's end.</summary>
     private static readonly Regex ClauseEdge = new(@"(?:;|\||(?<=[.!?])\s)(?=(?:[^`]*`[^`]*`)*[^`]*$)", RegexOptions.CultureInvariant);
 
@@ -72,12 +84,13 @@ public sealed class Citations
     /// <summary>v2's four citation forms, each with what it cites and the form v3 cites it in.</summary>
     private static readonly (Regex Pattern, string What, string Instead)[] Forms =
     [
-        (new(@"(?<!archive/v2/ssdt-agent/)\bFINDINGS_AND_CHANGES\.md|\bFINDINGS\b", RegexOptions.CultureInvariant),
+        (new(@"(?<!archive/v2/ssdt-agent/)\bFINDINGS_AND_CHANGES\.md|\bFINDINGS\b|(?<![\w-])Part\s+\d+\b", RegexOptions.CultureInvariant),
             "a finding by its file", "cite the finding by its identifier, F<n>"),
         (new(@"(?<![\w/])(?:\.\./)*sample-prs/", RegexOptions.CultureInvariant),
             "a sample by its v2 path", "cite knowledge/samples/<shape>.md"),
         (new(@"(?i:handbook)(?:'s)?\s+(?:files?\s+)?\**\d+|\(=\s*§\d+|(?<![\w/])\d{2}-[A-Z][\w-]+\.md|"
-            + @"(?<![\w/-])[A-Z][A-Za-z]*(?:-[A-Za-z]+)+\s+\d+\.\d+|(?<![\w.§])`?\d{1,2}`?\s*=\s*§\d+",
+            + @"(?<![\w/-])[A-Z][A-Za-z]*(?:-[A-Za-z]+)+\s+\d+\.\d+|(?<![\w.§])`?\d{1,2}`?\s*=\s*§\d+|"
+            + @"(?i:playbook\s+)?\bPattern\s+\d+\.\d+",
             RegexOptions.CultureInvariant),
             "the handbook by number", "cite the chapter by its title"),
         (new(@"(?<![\w/.-])(?:(?:\.\./)*(?:ssdt-agent/)?estate/[\w.\-/<>]*|(?:ledgers/)?(?:in-flight|operations|refusals|"
@@ -138,6 +151,11 @@ public sealed class Citations
     [InlineData("Advances FINDINGS Part 5.", "a finding by its file")]
     [InlineData("invent a manual trust step (FINDINGS F9).", "a finding by its file")]
     [InlineData("invent a manual trust step (F9).", "")]
+    [InlineData("updated (playbook Pattern 17.8 — the computed-column bridge, not a compatibility view).", "the handbook by number")]
+    [InlineData("updated (the handbook's chapter on the computed-column bridge, not a compatibility view).", "")]
+    [InlineData("this estate cannot relax the gate (Part 1).", "a finding by its file")]
+    [InlineData("this estate cannot relax the gate (F7).", "")]
+    [InlineData("SQL Server's Parts 1 and 2 of the setup; a partition holds part 3", "")]
     [InlineData("Advances the open decision on a two-release drop, which `DECISIONS.md` records.", "")]
     [InlineData("a drop of a populated column waits for a second release (pre-deploy, R1)", "")]
     [InlineData("SQL Server 2022 Express and LocalDB 17.0 run the fixture lane; Kernel-Tests 3 is no stem", "")]
@@ -286,6 +304,13 @@ public sealed class Citations
     [InlineData("record the trust state of each constraint under `tests/Golden/trust-states/`", 1, "tests/Golden/trust-states/")]
     [InlineData("builds `cli` into `.dbchange/bin/` when stale; no `gate.json` carries a password", 0, "")]
     [InlineData("`packages.lock.json` in every project", 0, "")]
+    [InlineData("THE_RECORD.md §4 owns the internal->record direction", 0, "THE_RECORD.md")]
+    [InlineData("the substrate per PROVING_PATH_WINDOWS.md, step 5", 0, "PROVING_PATH_WINDOWS.md")]
+    [InlineData("## Running in parallel — see self-test/PROTOCOL.md", 0, "self-test/PROTOCOL.md")]
+    [InlineData("NEXT.md names what is next, and AGENTS.md how to work", 0, "")]
+    [InlineData("the record of `archive/v2/ssdt-agent/THE_RECORD.md` §4", 0, "")]
+    [InlineData("the guide at https://example.com/docs/GUIDE.md", 0, "")]
+    [InlineData("the backport agent's STATE.md", 0, "")]
     public void A_missing_path_resolves_only_through_a_milestone_its_own_clause_names(string line, int milestone, string unresolved) =>
         Assert.Equal(unresolved, string.Join(", ", Unresolved(line, "", n => n < milestone)));
 
@@ -295,6 +320,8 @@ public sealed class Citations
     private static IEnumerable<string> Unresolved(string line, string directory, Func<int, bool> complete) =>
         ClauseEdge.Split(line).SelectMany(clause => Backticked.Matches(clause).Select(m => m.Groups[1].Value).Where(IsCitation)
             .Concat(Link.Matches(clause).Select(m => Path.Join(directory, m.Groups[1].Value).Replace('\\', '/')))
+            .Concat(PlainDocument.Matches(Unquoted.Replace(clause, " ")).Select(m => m.Groups[1].Value)
+                .Where(span => !Elsewhere.Any(e => span.StartsWith(e, StringComparison.Ordinal))))
             .Where(path => !Resolves(path, clause, complete)));
 
     private static bool IsCitation(string span) =>

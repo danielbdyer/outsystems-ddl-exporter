@@ -1,7 +1,5 @@
 # Next — rewritten by the session that finishes something; never appended
-Updated 2026-10-20 by #705, after wave 6 of the build. Waves 4 and 5 landed WP 3.1, 2.3, 2.4, 2.2 and 3.8 (kernel `Witness`), spikes
-S2 and S9 to S11, io's refusal of DacFx's `xp_msver` call and check drift's warning for a check written with IN; wave 6 lands WP 3.4
-(`LocalServer`'s sweep, retry and copy cache), WP 7.1 (the citation test's forms) and the review findings of waves 3 to 5.
+Updated 2026-10-20 by #705, after wave 6: WP 3.4 (`LocalServer`'s copy cache) and WP 7.1 (the citation test's forms).
 
 ## The operator's actions
 - The laptop check against Dev (M1 exit 1, spikes S1 and S3) waits until the operator brings the branch to a laptop:
@@ -20,14 +18,16 @@ S2 and S9 to S11, io's refusal of DacFx's `xp_msver` call and check drift's warn
 ## Next
 - WP 2.1's second slice: the statement kinds the plan's §4 shapes name, with the four refinements of spike S2's decision lines.
 - S4's decision line, from the "S4 |" rows of the sql-ubuntu and sql-windows jobs' summaries; its laptop half (LocalDB 16.x) waits on S6.
-- WP 7.2 rewrites each skill's citations to the forms `Citations` accepts as it moves it (no rewrite map is kept). Of v2's skills/ and
-  agents/, those forms pass four blocks, rewritten by hand to a title: operations/structural.md:5, :23, :43 (§17.7), op/add-index:29 (§19).
+- WP 7.2 rewrites each moved skill's citations to the forms `Citations` accepts (no rewrite map is kept). It rewrites by hand what
+  `Citations` passes in v2's skills/ and agents/: the bare §n of operations/structural:5, :23, :43 (§17.7), op/add-index:29 (§19),
+  os-vocabulary:9 (§2), review/verdict:126 (§3), classify-mechanism:52 (§5), and the templated paths to a per-operation or shared
+  skill in agents/intake, the authoring agent and confirm-intent, which no citation test reads.
 - Then WP 2.5, which reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`; WP 2.6, which
   moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6) and re-reads against `Io.Tests: SpikeReceiptTests`
   the cases S9 to S11 bear on: PLT-87, 88, 90, QST-55, 59, OP-toggle-trust-03 to 05, OP-add-default-04, OP-temporal-convert-04,
   INV-H6-01, CLS-14, REC-19; WP 3.5, whose identity step calls `CheckWrittenWithIn.Of`; then M2's exit checks.
 - Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the vendoring verb's two names, R18's exit,
-  who writes deployments.md, and the gate's wiki cells. `ParityResolves` prints where the ledger stands.
+  who writes the deployments file beside the wiki page, and the gate's wiki cells. `ParityResolves` prints where the ledger stands.
 
 ## Waiting on others
 - S5, a lead who reads Dev's platform database: which `ossys_` tables and columns hold consumer references and publish times.
