@@ -8,9 +8,9 @@ public sealed partial record Witness
 {
     /// <summary>
     /// A reference a table's rows meet or leave: its key, its parent and its legs, each a column and the parent's column it references;
-    /// whether a row links each leg to a parent (a NOT NULL reference of the copy, one the change validates, PLT-125, or one with a leg
-    /// a precondition reads); the copy's reference, null where only a precondition names it (PLT-56); and whether the change validates
-    /// it.
+    /// whether a row links each leg to a parent (a NOT NULL reference of the copy, one the change validates, PLT-125, one with a leg a
+    /// precondition reads, or one with a nullable leg that is by itself a unique key without a filter); the copy's reference, null where
+    /// only a precondition names it (PLT-56); and whether the change validates it.
     /// </summary>
     private sealed record Link(ElementKey Key, Name Parent, (Name Column, Name ParentColumn)[] Legs, bool Met, Reference? Copy,
         bool Validated);
@@ -72,11 +72,17 @@ public sealed partial record Witness
             }
 
             Ancestors();
+
+            // A cycle names the copy's foreign keys on its path; a foreign key only a precondition declares has no name in the copy.
+            var declaredOnly = links.Values.SelectMany(l => l).Where(l => l.Copy is null).Select(l => l.Key).ToHashSet();
             foreach (var member in order.Cycles.SelectMany(c => c.Members.Select(m => (Cycle: c, Member: m))))
             {
                 if (rows.GetValueOrDefault(member.Member) > 0)
                 {
-                    Need(member.Member, new NeedsRow.Reason.OnCycle(member.Cycle));
+                    Need(member.Member, new NeedsRow.Reason.OnCycle(member.Cycle with
+                    {
+                        Keys = SortedArray.Of(member.Cycle.Keys.Where(k => !declaredOnly.Contains(k))),
+                    }));
                 }
             }
 
@@ -134,10 +140,6 @@ public sealed partial record Witness
             }
         }
 
-        /// <summary>Whether a column is in a key of the copy's table, or of a Unique precondition on it.</summary>
-        private bool Keyed(Table table, Name column) => Keys(table).Any(k => k.Contains(column))
-            || located.Any(l => l.Table.Name == table.Name && l.Here.Kind is PreconditionKind.Unique && l.Here.Columns.Contains(column));
-
         /// <summary>Whether a row of the table links the reference's legs to a parent: a row no orphan of those legs takes (PLT-75, whose
         /// one row is the orphan and plants no parent).</summary>
         private bool Linking(Name table, Link link) => rows.GetValueOrDefault(table) > (placed.GetValueOrDefault(table) ?? [])
@@ -149,14 +151,16 @@ public sealed partial record Witness
         /// A table's rows: row r takes, in each column, the value of the demand that covers the row and sets the column, else the column's
         /// clean value at r; it serves presence where the table's rows do, and every demand that covers it. A value no literal can write is
         /// a need, and so are a demand's literal in a column of a foreign key the row meets (<see cref="Unmet"/>) and a one-column key
-        /// whose planted values repeat where no demand asks it to (PLT-42, PLT-114); each leaves the table's rows to the declared
-        /// witnesses, and null is returned. A row that holds a value in every column of a ForeignKey the environment answered clean over a
-        /// parent that holds no row, as a value of a class does in the one column that admits NULL, refuses the plan.
+        /// whose planted values repeat where no demand asks it to (<see cref="Repeats"/>), a column no value is written in aside; each
+        /// leaves the table's rows to the declared witnesses, and null is returned. A row that holds a value in every column of a
+        /// ForeignKey the environment answered clean over a parent that holds no row, as a value of a class does in the one column that
+        /// admits NULL, refuses the plan.
         /// </summary>
         private SortedArray<Row>? Build(Table table)
         {
             var reasons = new List<NeedsRow.Reason>();
             var built = new List<Row>();
+            var unwritten = new HashSet<Name>();
             for (var r = 1; r <= rows[table.Name]; r++)
             {
                 var suspends = new List<ElementKey>();
@@ -169,9 +173,15 @@ public sealed partial record Witness
                     var value = by.Demand is { } demand ? demand.Value(CleanAt, r, r - by.Start, column.Name) : CleanAt(column.Name, r);
                     var parent = by.Demand is { Purpose.Precondition.Kind: not PreconditionKind.ForeignKey }
                         && value is not (null or Planted.Null or Planted.Linked) ? Unmet(table, column.Name, suspends) : null;
-                    if ((value is null || parent is not null) && by.Demand is { } unwritten)
+                    if ((value is null || parent is not null) && by.Demand is { } asking)
                     {
-                        reasons.Add(new NeedsRow.Reason.NoClassValue(column.Name, unwritten.Purpose.Class, parent));
+                        reasons.Add(new NeedsRow.Reason.NoClassValue(column.Name, asking.Purpose.Class, parent));
+                    }
+
+                    // A value no literal writes is a need already, and its NULL stands in the row for no planted value.
+                    if (value is null)
+                    {
+                        unwritten.Add(column.Name);
                     }
 
                     cells.Add(new Cell(column.Ordinal, column.Name, value ?? new Planted.Null()));
@@ -192,7 +202,7 @@ public sealed partial record Witness
                 }
             }
 
-            reasons.AddRange(Repeats(table, built, demands[table.Name]));
+            reasons.AddRange(Repeats(table, built, demands[table.Name], unwritten));
             if (reasons.Count == 0)
             {
                 return SortedArray.Of(built);
@@ -212,8 +222,8 @@ public sealed partial record Witness
         /// holds NULL in a column of its key; none for a column SQL Server fills; a leg's parent key, or NULL where a nullable leg's
         /// reference is left; a nullable xml column no precondition reads, left to its default, since a column set and a typed xml column
         /// both read as one (PLT-36, PLT-22); for an integer key of the copy without identity, a key past the seeded rows (PLT-41); for a
-        /// column the change retypes, a value of no class; else the ordinal literal, or NULL in a nullable column of a type the planter
-        /// writes none for, and a need in a NOT NULL one.
+        /// column the change retypes, a value of no class; else the ordinal literal, or, for a type the planter writes none for, NULL in
+        /// a nullable column no precondition reads and a need in any other (<see cref="Plain"/>).
         /// </summary>
         private Planted? Clean(Table table, Column column, int r, List<ElementKey> suspends, List<NeedsRow.Reason> reasons)
         {
@@ -244,8 +254,7 @@ public sealed partial record Witness
                 return new Planted.AfterMax(table.Name, stored.Name, r);
             }
 
-            if (located.FirstOrDefault(l => l.Table.Name == table.Name && l.Here.Kind is PreconditionKind.Fits
-                && l.Here.Columns.Contains(stored.Name))?.Here.Kind is PreconditionKind.Fits fits)
+            if (Retyped(table, stored.Name) is { } fits)
             {
                 var clean = Literals.Clean(stored.Type, fits.After, r);
                 if (clean is null)
@@ -256,7 +265,7 @@ public sealed partial record Witness
                 return clean;
             }
 
-            return Plain(stored, r, reasons);
+            return Plain(table, stored, r, reasons);
         }
 
         /// <summary>
@@ -272,14 +281,14 @@ public sealed partial record Witness
         {
             if (!link.Met || !links.ContainsKey(link.Parent))
             {
-                return leg.Nullable ? new Planted.Null() : Plain(leg, r, reasons);
+                return leg.Nullable ? new Planted.Null() : Plain(table, leg, r, reasons);
             }
 
             if (empty.Contains(link.Parent))
             {
                 if (cleared)
                 {
-                    return Plain(leg, r, reasons);
+                    return Plain(table, leg, r, reasons);
                 }
 
                 if (leg.Nullable && !Read(table, leg.Name))
@@ -293,7 +302,7 @@ public sealed partial record Witness
 
             var deferred = order.Deferred.Contains(new Order.Deferral(table.Name, link.Key));
             return new Planted.Linked(link.Parent, parentColumn, r,
-                deferred ? leg.Nullable ? new Planted.Null() : Plain(leg, r, reasons) : null);
+                deferred ? leg.Nullable ? new Planted.Null() : Plain(table, leg, r, reasons) : null);
         }
 
         /// <summary>
@@ -352,21 +361,23 @@ public sealed partial record Witness
                 "Predict again, so that every precondition of the change is counted again in the environment.");
         }
 
-        /// <summary>The ordinal literal, NULL in a nullable column of a type the planter writes none for, and a need in a NOT NULL
-        /// one.</summary>
-        private static Planted? Plain(Column.Stored column, int r, List<NeedsRow.Reason> reasons)
+        /// <summary>The ordinal literal; for a type the planter writes none for, NULL in a nullable column no precondition reads
+        /// (PLT-22), and else a need (PLT-21, PLT-28), since a NULL in a column a precondition reads can change its answer.</summary>
+        private Planted? Plain(Table table, Column.Stored column, int r, List<NeedsRow.Reason> reasons)
         {
             if (Literals.Of(column.Type, r) is { } literal)
             {
                 return literal;
             }
 
-            if (!column.Nullable)
+            var reader = column.Nullable ? Reader(table, column.Name) : null;
+            if (!column.Nullable || reader is not null)
             {
-                reasons.Add(new NeedsRow.Reason.NoLiteral(column.Name, column.Type));
+                reasons.Add(new NeedsRow.Reason.NoLiteral(column.Name, column.Type, reader));
+                return null;
             }
 
-            return column.Nullable ? new Planted.Null() : null;
+            return new Planted.Null();
         }
 
         /// <summary>A value of the leg no parent row holds (PLT-75, PLT-76): past the parent's largest key for a number, the reserved
@@ -378,28 +389,9 @@ public sealed partial record Witness
             : Literals.Of(leg.Type, 0) is { } zero && zero != Literals.Of(leg.Type, 1) ? zero
             : null;
 
-        /// <summary>The planted values of a one-column key that repeat where no demand asks for it: a key of the copy, or one the change
-        /// adds that the environment answered clean.</summary>
-        private IEnumerable<NeedsRow.Reason> Repeats(Table table, List<Row> built, Demand[] demands)
-        {
-            var asked = demands.Where(d => d.Size == 2).Select(d => d.Columns).ToArray();
-            var clean = located.Where(l => l.Table.Name == table.Name && l.Here.Kind is PreconditionKind.Unique
-                && l.State is not { Violating: true }).Select(l => l.Here.Columns);
-            foreach (var key in Keys(table).Concat(clean).Where(k => k.Count == 1 && !asked.Any(a => a.Contains(k[0]))).Distinct())
-            {
-                var values = built.Select(r => r.Cells.First(c => c.Column == key[0]).Value)
-                    .Where(v => v is Planted.Number or Planted.Text or Planted.Bytes or Planted.Null).ToArray();
-                if (values.Distinct().Count() < values.Length && table.Find(key[0]) is Column.Stored column)
-                {
-                    yield return new NeedsRow.Reason.NarrowKey(key[0], Literals.Room(column.Type));
-                }
-            }
-        }
-
-        /// <summary>The copy's enabled keys of a table, each its columns: the primary key and every unique constraint and index.</summary>
-        private static IEnumerable<SortedArray<Name>> Keys(Table table) =>
-            (table.Key is { } pk ? [SortedArray.Of(pk.Columns.Select(c => c.Column))] : Array.Empty<SortedArray<Name>>())
-            .Concat(table.Uniques.Where(u => !u.Disabled).Select(u => SortedArray.Of(u.Columns.Select(c => c.Column))));
+        /// <summary>The Fits by which the change retypes a column, or null where it retypes none.</summary>
+        private PreconditionKind.Fits? Retyped(Table table, Name column) => located.FirstOrDefault(l => l.Table.Name == table.Name
+            && l.Here.Kind is PreconditionKind.Fits && l.Here.Columns.Contains(column))?.Here.Kind as PreconditionKind.Fits;
 
         /// <summary>The link a column is a leg of, and the parent column it references: one the change validates first, then one a row
         /// meets, then any; none for a column of no reference.</summary>
@@ -409,18 +401,25 @@ public sealed partial record Witness
                 .FirstOrDefault();
 
         /// <summary>Whether a precondition reads the column: its columns, a foreign key's legs, a filter's columns.</summary>
-        private bool Read(Table table, Name column) => located.Any(l => l.Table.Name == table.Name
-            && (l.Here.Columns.Contains(column) || l.Here.Kind is PreconditionKind.Unique u && u.FilterColumns.Contains(column)));
+        private bool Read(Table table, Name column) => Reader(table, column) is not null;
 
-        /// <summary>A table's links: each reference of the copy, met where it is NOT NULL, where the change validates it, or where a
-        /// precondition reads a leg, whose value a NULL would make violating; and each foreign key a precondition validates that the copy
-        /// lacks, keyed under the table by its place among them.</summary>
+        /// <summary>The first precondition that reads the column, as the change names it; null where none reads it.</summary>
+        private Precondition? Reader(Table table, Name column) => located.FirstOrDefault(l => l.Table.Name == table.Name
+            && (l.Here.Columns.Contains(column) || l.Here.Kind is PreconditionKind.Unique u && u.FilterColumns.Contains(column)))
+            ?.Precondition;
+
+        /// <summary>
+        /// A table's links: each reference of the copy, met where it is NOT NULL, where the change validates it, where a precondition
+        /// reads a leg, whose value a NULL would make violating, or where a nullable leg is by itself a unique key without a filter, which
+        /// holds one NULL at most, so each row links to a parent row of its own (Ancestors), where PLT-52 leaves the leg NULL; and each
+        /// foreign key a precondition validates that the copy lacks, keyed under the table by its place among them.
+        /// </summary>
         private Link[] Links(Table table)
         {
             var validated = located.Where(l => l.Table.Name == table.Name && l.Parent is not null)
                 .Select(l => l.Here.Kind).OfType<PreconditionKind.ForeignKey>().Where(f => f.Pairs.Count > 0).Distinct().ToArray();
             var copy = table.References.Select(r => new Link(r.Key, r.Parent, [.. r.Legs.Select(g => (g.Column, g.ParentColumn))],
-                !r.Optional || validated.Any(v => Same(r, v)) || r.Legs.Any(g => Read(table, g.Column)), r,
+                !r.Optional || validated.Any(v => Same(r, v)) || r.Legs.Any(g => Read(table, g.Column) || Alone(table, g.Column)), r,
                 validated.Any(v => Same(r, v))));
             var added = validated.Where(v => !table.References.Any(r => Same(r, v))).Select((v, i) => new Link(
                 Key(Key(null, "Table", table.Name), "ForeignKeyConstraint", Known(Name.Of("link " + i))),

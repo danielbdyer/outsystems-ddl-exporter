@@ -244,8 +244,14 @@ public sealed class WitnessProperties
                     StringComparison.Ordinal);
         });
 
-    /// <summary>Without existing data every table but a history table takes three presence rows, or names why only a person can write
-    /// its rows.</summary>
+    /// <summary>
+    /// Without existing data every table but a history table takes three presence rows, or names why only a person can write its rows;
+    /// and each need is one a plan without existing data can know of, and true of its inputs: a table on a cycle of NOT NULL foreign
+    /// keys; a one-column key whose column's planted values have room for fewer than the three rows, or that is a key without a filter
+    /// over a nullable column the plan plants NULL in more than once, as a deferred reference's first pass does; a column of a type the
+    /// planter writes no literal for that is NOT NULL or that a precondition reads; or a column a Fits retypes that no ordinal value
+    /// converts cleanly.
+    /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Without_existing_data_each_table_takes_three_rows_or_names_a_need() =>
@@ -253,8 +259,9 @@ public sealed class WitnessProperties
         {
             var plan = i.Plan(presence: true)!;
             return i.Schema.Tables.Where(t => t.Versioning is not Versioning.History).All(t =>
-                plan.Tables.Any(p => p.Table == t.Name && p.Rows.Select(r => r.Ordinal).SequenceEqual([1, 2, 3]))
-                || plan.Needs.Any(n => n.Table == t.Name));
+                    plan.Tables.Any(p => p.Table == t.Name && p.Rows.Select(r => r.Ordinal).SequenceEqual([1, 2, 3]))
+                    || plan.Needs.Any(n => n.Table == t.Name))
+                && plan.Needs.All(n => Known(i, n));
         });
 
     /// <summary>Whether two plans agree but on one column of one table: both refused, or the same needs, the same tables and rows, and in
@@ -293,6 +300,27 @@ public sealed class WitnessProperties
                 && linked.Column == l.Referenced)
             || Value(row, leg.Key) is Witness.Planted.Null
             || row.Serves.Any(p => p.Precondition is { Kind: PreconditionKind.ForeignKey } other && other.Columns.Contains(leg.Key)));
+    }
+
+    /// <summary>Whether a need of a plan without existing data is one the property names, and true of the inputs.</summary>
+    private static bool Known(Inputs i, Witness.NeedsRow need)
+    {
+        var table = i.Schema.Find(need.Table)!;
+        bool Single(Name column, bool unfiltered) => table.Uniques.Any(u => !u.Disabled && u.Columns.Count == 1 && u.Columns[0].Column == column
+                && (!unfiltered || u.Filter is null))
+            || i.Preconditions.Any(p => p.Table == table.Name && p.Kind is PreconditionKind.Unique { Filter: var filter } && p.Columns.Count == 1
+                && p.Columns[0] == column && (!unfiltered || filter is null));
+        return need.Why.Match(
+            _ => false,
+            _ => false,
+            cycle => cycle.Cycle.Members.Contains(need.Table),
+            narrow => narrow.Room < Witness.PresenceRows && Single(narrow.Column, unfiltered: false),
+            literal => Witness.Literal(literal.Type, 1) is null,
+            _ => false,
+            clean => i.Preconditions.Any(p => p.Table == table.Name && p.Kind is PreconditionKind.Fits && p.Columns.Contains(clean.Column)),
+            _ => false,
+            repeated => repeated.Rows > 1 && repeated.Value is Witness.Planted.Null && table.Find(repeated.Column)?.Nullable == true
+                && Single(repeated.Column, unfiltered: true));
     }
 
     /// <summary>Whether the environment answered a table empty: it holds a state for the table, and every one says it holds no
@@ -363,13 +391,14 @@ public sealed class WitnessProperties
 
             foreach (var c in table.Columns.OfType<Column.Stored>().Where(c => c.Identity is null && c.Default?.Sequence is null))
             {
-                // A column of one of the table's foreign keys always takes a precondition, and a ForeignKey on it is that foreign key's
-                // leg, where the parent holds the column the leg references.
+                // A column of one of the table's foreign keys takes a precondition five times in six, and a ForeignKey on it is that
+                // foreign key's leg, where the parent holds the column the leg references; a nullable leg no precondition reads is left
+                // NULL, or linked where it is a key of its own (PLT-52).
                 var leg = table.References.SelectMany(r => r.Legs.Where(l => l.Column == c.Name
                         && schema.Find(r.Parent)?.Find(l.ParentColumn) is not null)
                     .Select(l => new PreconditionKind.ForeignKey(r.Parent, [new PreconditionKind.ForeignKey.Pair(c.Name, l.ParentColumn)])))
                     .FirstOrDefault();
-                PreconditionKind? kind = d.Of(leg is null ? 10 : 5) switch
+                PreconditionKind? kind = d.Of(leg is null ? 10 : 6) switch
                 {
                     0 when c.Nullable => new PreconditionKind.NotNull(),
                     1 => new PreconditionKind.Fits(c.Type, d.Pick(Targets)),

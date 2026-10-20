@@ -242,6 +242,93 @@ public sealed class WitnessTests
     }
 
     /// <summary>
+    /// PLT-52 beside UX_Customer_AccountId, a unique index on the nullable AccountId of FK_Customer_Account: a NULL passes the foreign key
+    /// without a parent row, but a unique index without a filter holds one NULL at most, so each planted Customer row links to an Account
+    /// row of its own; a filtered one, WHERE [AccountId] IS NOT NULL, leaves its NULLs out of the index, so AccountId stays NULL and no
+    /// Account row is planted for it. So it goes with three presence rows and with the two rows a duplicate Email asks, and neither plan
+    /// names a need.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    public void A_nullable_foreign_key_column_a_unique_index_holds_links_each_row_to_a_parent_unless_its_filter_leaves_NULLs_out(
+        bool filtered, bool presence)
+    {
+        string[] linked = ["the [Id] of row 1 of [dbo].[Account]", "the [Id] of row 2 of [dbo].[Account]", "the [Id] of row 3 of [dbo].[Account]"];
+
+        var plan = Plan(AccountKeyed(filtered),
+            presence ? [] : [Rows(HasCustomers), Violating(Unique("Customer", "Email"), RowClasses.Exact)], presence);
+
+        var customers = plan.Tables.Single(t => t.Table == TableName("Customer")).Rows;
+        Assert.Empty(plan.Needs);
+        Assert.Equal((filtered ? ["NULL", "NULL", "NULL"] : linked).Take(presence ? 3 : 2), customers.Select(r => Cell(r, "AccountId")));
+        Assert.Equal(presence ? 3 : filtered ? 0 : 2, plan.Tables.SingleOrDefault(t => t.Table == TableName("Account"))?.Rows.Count ?? 0);
+    }
+
+    /// <summary>
+    /// Where the environment answered Account empty, AccountId, which no precondition reads, is NULL in each Customer row (PLT-59): two
+    /// rows, as a duplicate Email asks, would hold two NULLs in UX_Customer_AccountId, which SQL Server refuses in a unique index without a
+    /// filter (Msg 2601), so the plan names the NULLs as a need, and no room its type lacks; a filtered index leaves them out, and both rows
+    /// are planted.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void NULLs_a_unique_index_without_a_filter_would_hold_twice_are_a_need_that_names_them()
+    {
+        PreconditionState[] states = [Rows(HasCustomers), Violating(Unique("Customer", "Email"), RowClasses.Exact), Empty(HasAccounts)];
+
+        var unfiltered = Plan(AccountKeyed(filtered: false), states);
+        var filtered = Plan(AccountKeyed(filtered: true), states);
+
+        Assert.Empty(unfiltered.Tables);
+        Assert.Equal("[dbo].[Customer].[AccountId] is a key without a filter, which holds one NULL at most, and the plan plants NULL in it in"
+            + " 2 rows.", Assert.Single(unfiltered.Needs).Message);
+        Assert.Equal(["NULL", "NULL"], Assert.Single(filtered.Tables).Rows.Select(r => Cell(r, "AccountId")));
+        Assert.Empty(filtered.Needs);
+    }
+
+    /// <summary>
+    /// PLT-57 where the change adds FK_Employee_Manager, which the copy lacks: a ForeignKey the change validates still orders the rows,
+    /// since each row links to a parent row, so the NOT NULL self-reference it closes is a need; the need names the copy's foreign keys on
+    /// the path, none here, and never the name the plan gives a foreign key only a precondition declares.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_cycle_a_foreign_key_the_change_adds_closes_is_a_need_that_names_no_key_the_copy_lacks()
+    {
+        var plan = Plan(Copy(T("Employee", "Id int IDENTITY", "ManagerId int").Key("Id")),
+            [Rows(TableEmpty("Employee")), Rows(ForeignKey("Employee", "Employee", ("ManagerId", "Id")))]);
+
+        Assert.Empty(plan.Tables);
+        Assert.Equal("[dbo].[Employee] references itself through a NOT NULL foreign key ([dbo].[Employee] → [dbo].[Employee]), so no"
+            + " order of INSERTs plants a row in it.", Assert.Single(plan.Needs).Message);
+    }
+
+    /// <summary>
+    /// PLT-42 and PLT-114: a key's need names the room of the values the planter writes into the column, fewer than the three presence
+    /// rows: two for bit, and for a decimal(18,2) the change retypes to bit, whose clean values are 1.00 and 0.00; one for an
+    /// nvarchar(50) the change narrows to nvarchar(1), whose clean value is w; never the room of a type the values are not written in.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("bit", null, "2 planted values")]
+    [InlineData("decimal(18,2)", "bit", "2 planted values")]
+    [InlineData("nvarchar(50)", "nvarchar(1)", "one planted value")]
+    public void A_key_s_need_names_the_room_of_the_values_the_planter_writes(string type, string? retyped, string room)
+    {
+        var copy = Copy(T("T", "Id int IDENTITY", "c " + type).Key("Id").Unique("UX_T_c", "c"));
+
+        var plan = Plan(copy, retyped is null ? [] : [Rows(Fits("T.c", type, retyped))], presence: true);
+
+        Assert.Empty(plan.Tables);
+        Assert.Equal("[dbo].[T].[c] is a key with room for " + room + ", fewer than the rows the plan plants.",
+            Assert.Single(plan.Needs).Message);
+    }
+
+    /// <summary>
     /// PLT-60 where the existing data counts the foreign key: a ForeignKey answered populated and clean over a parent answered empty says
     /// that each row holds NULL in a column of the key, which no row can where every column is NOT NULL, or is one a NotNull answered
     /// clean reads, or holds the value of a class another precondition answered. No rows hold those answers, so a count is wrong, as a
@@ -473,6 +560,15 @@ public sealed class WitnessTests
 
     private static Witness Plan(Schema schema, PreconditionState[] states, bool presence = false, Change? change = null) =>
         PlanterCopies.Plan(schema, states, presence, null, change);
+
+    /// <summary>PgCopy with FK_Customer_Account on the nullable AccountId, and UX_Customer_AccountId on it, filtered WHERE [AccountId] IS
+    /// NOT NULL or not.</summary>
+    private static Schema AccountKeyed(bool filtered)
+    {
+        var customer = PgCopy.Find(TableName("Customer"))!.References("FK_Customer_Account", "Account", ("AccountId", "Id"));
+        return PgCopy.With(filtered ? customer.Filtered("UX_Customer_AccountId", "([AccountId] IS NOT NULL)", "AccountId")
+            : customer.Unique("UX_Customer_AccountId", "AccountId"));
+    }
 
     private static string Cell(Witness plan, string table, int row, string column) =>
         Cell(plan.Tables.Single(t => t.Table == TableName(table)).Rows.Single(r => r.Ordinal == row), column);

@@ -265,19 +265,6 @@ public sealed partial record Witness
             };
         }
 
-        /// <summary>How many distinct literals a one-column key of the type holds from ordinal 1, for a need's message: 2 for bit, 256
-        /// for tinyint, 10^(p−s) for a decimal, and the markers that fit a string of one or two characters.</summary>
-        public static long Room(ColumnType type) => FamilyOf(type) switch
-        {
-            Family.Bit => 2,
-            Family.Integer when Base(type) == "tinyint" => 256,
-            Family.Decimal => (long)BigInteger.Min(long.MaxValue,
-                BigInteger.Pow(10, (int)Math.Min(19, type.Precision > type.Scale ? type.Precision - type.Scale : type.Scale))),
-            Family.Character when Width(type) is { } w && w <= 2 => w == 1 ? 1 : 35,
-            Family.Binary when Width(type) == 1 => 256,
-            _ => long.MaxValue,
-        };
-
         /// <summary>A type as T-SQL writes it, for a message: nvarchar(50), varchar(max), decimal(18,2), int, [dbo].[ShortCode].</summary>
         public static string Written(ColumnType type) => type.IsAlias ? type.Type.ToString() : FamilyOf(type) switch
         {

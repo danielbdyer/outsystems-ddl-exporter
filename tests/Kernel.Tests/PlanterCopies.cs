@@ -55,6 +55,13 @@ internal static class PlanterCopies
             Part(name))), Part(name), SortedArray.Of(columns.Select((c, i) => new KeyColumn(i, Part(c), false))), true, null, false))),
     };
 
+    /// <summary>A unique index of that name over the columns written, filtered by the WHERE clause written, as SQL Server keeps it.</summary>
+    public static Table Filtered(this Table table, string name, string filter, params string[] columns) =>
+        table.Unique(name, columns) is var t ? t with
+        {
+            Uniques = SortedArray.Of(t.Uniques.Select(u => u.Constraint == Part(name) ? u with { Filter = new Value.Script(filter) } : u)),
+        } : t;
+
     /// <summary>A foreign key of that name in the table's schema, to the parent written, each leg a column and the parent's column; optional
     /// where it is disabled or a leg admits NULL, as Schema.Of reads it.</summary>
     public static Table References(this Table table, string name, string parent, params (string Column, string Parent)[] legs) =>

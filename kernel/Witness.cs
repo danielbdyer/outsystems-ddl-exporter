@@ -222,15 +222,17 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
             c => c.Cycle.Error.Message.TrimEnd('.'),
             k => Table + "." + k.Column + " is a key with room for " + (k.Room == 1 ? "one planted value" : Number(k.Room) + " planted"
                 + " values") + ", fewer than the rows the plan plants",
-            l => Table + "." + l.Column + " is NOT NULL and of the type " + Literals.Written(l.Type) + ", which the planter writes no"
-                + " literal for",
+            l => Table + "." + l.Column + " is " + (l.Reader is { } reader ? "read by " + reader : "NOT NULL") + " and of the type "
+                + Literals.Written(l.Type) + ", which the planter writes no literal for",
             v => "The planter writes no value " + (v.Class == RowClasses.None ? "that breaks the precondition" : "of the class " + v.Class)
                 + " into " + Table + "." + v.Column
                 + (v.Parent is { } parent ? " that is also a key of " + parent + ", the table the column references" : ""),
             c => "No ordinal value of " + Table + "." + c.Column + " (" + Literals.Written(c.Before) + ") converts to "
                 + Literals.Written(c.After) + " and fits both",
             h => Table + " is the history table of " + h.Current + ", whose rows SQL Server writes only from updates of "
-                + h.Current) + ".";
+                + h.Current,
+            r => Table + "." + r.Column + " is a key" + (r.Value is Planted.Null ? " without a filter, which holds one NULL at most," : ",")
+                + " and the plan plants " + r.Value + " in it in " + Number(r.Rows) + " rows") + ".";
 
         public string Remedy => Why is Reason.FalseCheck c
             ? "Declare one row of " + Table + " that makes the check false, as a witness of " + c.Check + "."
@@ -249,7 +251,7 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
 
             public T Match<T>(Func<FalseCheck, T> falseCheck, Func<Rejects, T> rejects, Func<OnCycle, T> onCycle,
                 Func<NarrowKey, T> narrowKey, Func<NoLiteral, T> noLiteral, Func<NoClassValue, T> noClassValue,
-                Func<NoCleanValue, T> noCleanValue, Func<History, T> history) => this switch
+                Func<NoCleanValue, T> noCleanValue, Func<History, T> history, Func<Repeated, T> repeated) => this switch
                 {
                     FalseCheck c => falseCheck(c),
                     Rejects r => rejects(r),
@@ -259,6 +261,7 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
                     NoClassValue v => noClassValue(v),
                     NoCleanValue c => noCleanValue(c),
                     History h => history(h),
+                    Repeated r => repeated(r),
                     _ => throw new UnreachableException(),
                 };
 
@@ -272,11 +275,13 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
             /// <summary>The table is on a cycle of NOT NULL foreign keys, which no order of INSERTs satisfies (PLT-57, PLT-58).</summary>
             public sealed record OnCycle(Order.Cycle Cycle) : Reason;
 
-            /// <summary>A one-column key of a type with room for fewer distinct planted values than the rows (PLT-42, PLT-114).</summary>
+            /// <summary>A one-column key whose column's planted values have room for fewer distinct values than the rows, as its type or
+            /// the type the change retypes it to holds them (PLT-42, PLT-114).</summary>
             public sealed record NarrowKey(Name Column, long Room) : Reason;
 
-            /// <summary>A NOT NULL column of a type the planter writes no literal for (PLT-21, PLT-28).</summary>
-            public sealed record NoLiteral(Name Column, ColumnType Type) : Reason;
+            /// <summary>A column of a type the planter writes no literal for: NOT NULL (PLT-21, PLT-28), or nullable and read by
+            /// <see cref="Reader"/>, the first precondition that reads it, whose answer a NULL could change (PLT-22).</summary>
+            public sealed record NoLiteral(Name Column, ColumnType Type, Precondition? Reader = null) : Reason;
 
             /// <summary>A class the environment holds whose witness value the column cannot hold: one its type cannot hold, such as an
             /// accent on a code page's string (PLT-71), or any value of a class in a column of a foreign key the row meets, which must
@@ -288,6 +293,11 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
 
             /// <summary>A history table the environment answered populated (PLT-35): SQL Server refuses an INSERT into one.</summary>
             public sealed record History(Name Current) : Reason;
+
+            /// <summary>A one-column key in which the plan plants one value in <see cref="Rows"/> rows that no type's room explains: NULL,
+            /// which a key without a filter holds once at most, SQL Server refusing a second as a duplicate key (Msg 2627 for a constraint,
+            /// 2601 for an index), or the one orphan literal each child row of a parent the environment answered empty takes.</summary>
+            public sealed record Repeated(Name Column, Planted Value, int Rows) : Reason;
         }
     }
 

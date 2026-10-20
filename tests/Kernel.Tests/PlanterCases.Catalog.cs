@@ -100,6 +100,17 @@ public sealed partial class PlanterCases
             [dbo].[T] at 0
               row 1 (presence): [Id] omitted, [Doc] N'<w n="1"/>', [Extra] omitted
             """, "Doc xml", "Extra xml NULL"),
+
+        // PLT-22 and its note: a nullable column of a type the planter writes no literal for is left NULL, or to its default for xml, where
+        // no precondition reads it, as T's Doc and Shape are; where one reads it, as the NotNull answered clean reads U's Shape, a NULL
+        // could change the answer, and PLT-21's stop applies.
+        ["PLT-22"] = new(Copy(T("T", "Id int IDENTITY", "Doc xml NULL", "Shape dbo.Polygon NULL", "Note nvarchar(20) NULL").Key("Id"),
+                T("U", "Id int IDENTITY", "Shape dbo.Polygon NULL").Key("Id")),
+            [Rows(TableEmpty("T")), Rows(TableEmpty("U")), Rows(NotNull("U.Shape"))], """
+            [dbo].[T] at 0
+              row 1 (presence): [Id] omitted, [Doc] omitted, [Shape] NULL, [Note] N'w1'
+            needs a declared row of [dbo].[U]: [dbo].[U].[Shape] is read by NotNull on [dbo].[U] ([Shape]) and of the type [dbo].[Polygon], which the planter writes no literal for.
+            """),
         ["PLT-23"] = Types("""
             [dbo].[T] at 0
               row 1 (presence): [Id] omitted, [c] N'w1'

@@ -14,10 +14,11 @@ namespace DbChange.Kernel.Tests;
 /// plants (Witness.Plan). What the copy then answers when counted, and what SQL Server does with the rows, waits on WP 3.5's fixture
 /// tests. A case is its copy, its states and the plan as text (Witness.ToString), so a case reads as the catalog writes it. The cases
 /// follow v3 where its decisions differ from the catalog's: a nullable xml column no precondition reads is left to its default, since a
-/// column set and a typed xml column both read as one (PLT-20, PLT-36); a history table the environment answered populated is a need,
-/// where the catalog plants it by an UPDATE of the current table, since WP 3.5 plants by INSERT alone and SQL Server refuses an INSERT
-/// into a history table while SYSTEM_VERSIONING is ON (PLT-35); a check is planted in no column of the catalog's own, whose rejection
-/// WP 3.5 meets at the INSERT (PLT-43, PLT-44).
+/// column set and a typed xml column both read as one (PLT-20, PLT-22, PLT-36); a history table the environment answered populated is a
+/// need, where the catalog plants it by an UPDATE of the current table, since WP 3.5 plants by INSERT alone and SQL Server refuses an
+/// INSERT into a history table while SYSTEM_VERSIONING is ON (PLT-35); a check is planted in no column of the catalog's own, whose
+/// rejection WP 3.5 meets at the INSERT (PLT-43, PLT-44); and a nullable foreign-key column that is a unique key without a filter links
+/// each row to a parent, where PLT-52 leaves a nullable foreign-key column NULL, since such a key holds one NULL at most.
 /// </summary>
 public sealed partial class PlanterCases
 {
@@ -59,6 +60,7 @@ public sealed partial class PlanterCases
     [InlineData("PLT-18")]
     [InlineData("PLT-19")]
     [InlineData("PLT-20")]
+    [InlineData("PLT-22")]
     [InlineData("PLT-23")]
     [InlineData("PLT-24")]
     [InlineData("PLT-25")]
