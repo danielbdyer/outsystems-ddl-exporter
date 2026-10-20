@@ -23,9 +23,9 @@ namespace DbChange.Kernel.Tests;
 public sealed partial class PlanterCases
 {
     /// <summary>A case: the copy's schema, the states the environment answered, the plan the case names; and, where the case says so, no
-    /// existing data, the declared witnesses, and the change.</summary>
+    /// existing data, the declared witnesses, and the preconditions a person declares that hold no state yet.</summary>
     internal sealed record Case(Schema Schema, PreconditionState[] States, string Plan, bool Presence = false,
-        Witness.Declared? Declared = null);
+        Witness.Declared? Declared = null, Precondition[]? Undeclared = null);
 
     /// <summary>A table T with an identity Id and the columns written, populated.</summary>
     private static Case Types(string plan, params string[] columns) => new(
@@ -117,8 +117,8 @@ public sealed partial class PlanterCases
     public void The_plan_of_a_case_of_the_planter_catalog_names_the_rows_and_the_needs_WP_3_5_plants_and_stops_on(string id) => Plans(id);
 
     /// <summary>
-    /// Every pure case the catalog holds is ported here, so the catalog's identifiers survive the port; PLT-120 is ported for its check,
-    /// and its computed column, a kind only a plan's statements show, waits on WP 2.1's second slice.
+    /// Every pure case the catalog holds is ported here, so the catalog's identifiers survive the port; PLT-120 whole, its check and its
+    /// computed column, the need a person answers for each.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -137,10 +137,10 @@ public sealed partial class PlanterCases
     {
         var c = Cases[id];
 
-        var plan = Plan(c.Schema, c.States, c.Presence, c.Declared);
+        var plan = Plan(c.Schema, c.States, c.Presence, c.Declared, undeclared: c.Undeclared);
 
         Assert.Equal(c.Plan, plan.ToString());
-        Assert.Equal(plan, Plan(c.Schema, c.States.Reverse(), c.Presence, c.Declared));
+        Assert.Equal(plan, Plan(c.Schema, c.States.Reverse(), c.Presence, c.Declared, undeclared: c.Undeclared?.Reverse()));
     }
 
     private static string Root()

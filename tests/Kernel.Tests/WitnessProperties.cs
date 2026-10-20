@@ -313,6 +313,7 @@ public sealed class WitnessProperties
         return need.Why.Match(
             _ => false,
             _ => false,
+            _ => false,
             cycle => cycle.Cycle.Members.Contains(need.Table),
             narrow => narrow.Room < Witness.PresenceRows && Single(narrow.Column, unfiltered: false),
             literal => Witness.Literal(literal.Type, 1) is null,

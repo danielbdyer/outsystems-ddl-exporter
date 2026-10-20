@@ -40,6 +40,45 @@ public sealed record ColumnType(Name Type, long Length, bool IsMax, long Precisi
                     Integer(alias, "UddtPrecision"), Integer(alias, "UddtScale"), Collation)
                 : Unresolved(key + ", the alias type a column declares, is no element of the model with one Type target to store as."));
 
+    /// <summary>
+    /// The most bytes a value of the stored type takes in an index key, as SQL Server stores it (KeyLength, Msg 1946): a string's or a
+    /// binary's declared length, twice it for a Unicode string; a number's, a date's or a time's fixed size by its precision or scale; a
+    /// uniqueidentifier's 16, a rowversion's 8, a sql_variant's 8,016 and a hierarchyid's 892; long.MaxValue for a max type; null for an
+    /// alias, which <see cref="Stored"/> resolves first, and for a type no key holds.
+    /// </summary>
+    public long? KeyBytes
+    {
+        get
+        {
+            if (IsMax)
+            {
+                return long.MaxValue;
+            }
+
+            long Scaled(long two, long four, long seven) => Scale <= 2 ? two : Scale <= 4 ? four : seven;
+            return IsAlias ? null : Type.Base.ToLowerInvariant() switch
+            {
+                "char" or "varchar" or "binary" or "varbinary" => Length,
+                "nchar" or "nvarchar" => 2 * Length,
+                "sysname" => 256,
+                "bit" or "tinyint" => 1,
+                "smallint" => 2,
+                "int" or "real" or "smallmoney" or "smalldatetime" => 4,
+                "bigint" or "money" or "datetime" or "rowversion" or "timestamp" => 8,
+                "float" => Precision is > 0 and <= 24 ? 4 : 8,
+                "decimal" or "numeric" => Precision <= 9 ? 5 : Precision <= 19 ? 9 : Precision <= 28 ? 13 : 17,
+                "date" => 3,
+                "time" => Scaled(3, 4, 5),
+                "datetime2" => Scaled(6, 7, 8),
+                "datetimeoffset" => Scaled(8, 9, 10),
+                "uniqueidentifier" => 16,
+                "sql_variant" => 8016,
+                "hierarchyid" => 892,
+                _ => null,
+            };
+        }
+    }
+
     /// <summary>An integer facet as the model holds it; 0 where the element does not carry it.</summary>
     private static long Integer(Element element, string property) => element[property] is Value.Integer i ? i.Number : 0;
 

@@ -15,10 +15,10 @@ namespace DbChange.Kernel;
 /// </summary>
 public sealed record Precondition(Name Table, SortedArray<Name> Columns, PreconditionKind Kind) : IComparable<Precondition>
 {
-    /// <summary>The kind, the table and the columns, culture-free: <c>NotNull on [dbo].[Customer] ([Email])</c>.</summary>
+    /// <summary>The kind, the table and the columns, culture-free, and what a kind only a plan's statements show adds:
+    /// <c>NotNull on [dbo].[Customer] ([Email])</c>, <c>KeyLength on [dbo].[N] ([Big]) of [IX_N_Big] at most 1700 bytes</c>.</summary>
     public override string ToString() =>
-        Kind.Match(() => "TableEmpty", () => "NotNull", _ => "Fits", _ => "ForeignKey", _ => "Unique", _ => "Check") + " on " + Table
-        + (Columns.Count == 0 ? "" : " (" + string.Join(", ", Columns) + ")");
+        Kind.Word + " on " + Table + (Columns.Count == 0 ? "" : " (" + string.Join(", ", Columns) + ")") + Kind.Detail;
 
     public int CompareTo(Precondition? other) =>
         other is null ? 1
@@ -28,21 +28,21 @@ public sealed record Precondition(Name Table, SortedArray<Name> Columns, Precond
 }
 
 /// <summary>
-/// What a precondition asks of the rows, by the precondition table of WP 2.1: TableEmpty, that a table BlockOnPossibleDataLoss checks holds
-/// no row; NotNull, that no row holds NULL in a column made NOT NULL; Fits, that every value of a column whose type changes converts to the
-/// new type; ForeignKey, that each child row whose key columns are all non-null has its parent; Unique, that no two rows share a key within
-/// the key's filter; and Check, that no row makes the check false. The cases are closed, and sort in that order. The kinds only a plan's
-/// statements show (KeyLength, Rebuild, Computed, Temporal, Scan, Authored and SeedDrift) arrive with the second slice of WP 2.1, which
-/// matches statements by the Facsimile's vocabulary once spike S2 has measured them.
+/// What a precondition asks of the rows. By the precondition table of WP 2.1, which the property read finds: TableEmpty, that a table
+/// BlockOnPossibleDataLoss checks holds no row; NotNull, that no row holds NULL in a column made NOT NULL; Fits, that every value of a
+/// column whose type changes converts to the new type; ForeignKey, that each child row whose key columns are all non-null has its parent;
+/// Unique, that no two rows share a key within the key's filter; and Check, that no row makes the check false. Then the kinds only a plan's
+/// statements show, which <see cref="Vocabulary"/>'s rows find (Preconditions.Kinds.cs). The cases are closed, and sort in that order.
 /// </summary>
-public abstract record PreconditionKind : IComparable<PreconditionKind>
+public abstract partial record PreconditionKind : IComparable<PreconditionKind>
 {
     private PreconditionKind()
     {
     }
 
     public T Match<T>(Func<T> tableEmpty, Func<T> notNull, Func<Fits, T> fits, Func<ForeignKey, T> foreignKey, Func<Unique, T> unique,
-        Func<Check, T> check) => this switch
+        Func<Check, T> check, Func<KeyLength, T> keyLength, Func<T> rebuild, Func<Computed, T> computed, Func<Temporal, T> temporal,
+        Func<T> scan, Func<Authored, T> authored, Func<SeedDrift, T> seedDrift) => this switch
         {
             TableEmpty => tableEmpty(),
             NotNull => notNull(),
@@ -50,8 +50,19 @@ public abstract record PreconditionKind : IComparable<PreconditionKind>
             ForeignKey k => foreignKey(k),
             Unique u => unique(u),
             Check c => check(c),
+            KeyLength l => keyLength(l),
+            Rebuild => rebuild(),
+            Computed c => computed(c),
+            Temporal t => temporal(t),
+            Scan => scan(),
+            Authored a => authored(a),
+            SeedDrift s => seedDrift(s),
             _ => throw new UnreachableException(),
         };
+
+    /// <summary>The kind's name, as the Facsimile's vocabulary and v3's words write it: TableEmpty, KeyLength, SeedDrift.</summary>
+    public string Word => Match(() => "TableEmpty", () => "NotNull", _ => "Fits", _ => "ForeignKey", _ => "Unique", _ => "Check",
+        _ => "KeyLength", () => "Rebuild", _ => "Computed", _ => "Temporal", () => "Scan", _ => "Authored", _ => "SeedDrift");
 
     /// <summary>By the order the cases are declared in, then by what each holds; an order for sorting alone, which says nothing of which of
     /// two types is wider.</summary>
@@ -63,10 +74,18 @@ public abstract record PreconditionKind : IComparable<PreconditionKind>
         (Unique a, Unique b) => string.CompareOrdinal(a.Filter, b.Filter) is var f and not 0 ? f
             : SortedArray.Compare(a.FilterColumns, b.FilterColumns),
         (Check a, Check b) => string.CompareOrdinal(a.Expression, b.Expression),
+        (KeyLength a, KeyLength b) => Nullable.Compare(a.Index, b.Index) is var i and not 0 ? i : a.Clustered.CompareTo(b.Clustered),
+        (Computed a, Computed b) => string.CompareOrdinal(a.Expression, b.Expression),
+        (Temporal a, Temporal b) => a.Start.CompareTo(b.Start) is var s and not 0 ? s
+            : a.End.CompareTo(b.End) is var e and not 0 ? e : Nullable.Compare(a.Current, b.Current),
+        (Authored a, Authored b) => a.Script.CompareTo(b.Script) is var s and not 0 ? s : a.Line.CompareTo(b.Line),
+        (SeedDrift a, SeedDrift b) => a.Script.CompareTo(b.Script) is var s and not 0 ? s
+            : a.Line.CompareTo(b.Line) is var l and not 0 ? l : SortedArray.Compare(a.Code, b.Code),
         _ => Rank(this).CompareTo(Rank(other)),
     };
 
-    private static int Rank(PreconditionKind kind) => kind.Match(() => 0, () => 1, _ => 2, _ => 3, _ => 4, _ => 5);
+    private static int Rank(PreconditionKind kind) =>
+        kind.Match(() => 0, () => 1, _ => 2, _ => 3, _ => 4, _ => 5, _ => 6, () => 7, _ => 8, _ => 9, () => 10, _ => 11, _ => 12);
 
     private static int Compare(ColumnType a, ColumnType b) =>
         a.Type.CompareTo(b.Type) is var t and not 0 ? t
@@ -106,9 +125,10 @@ public abstract record PreconditionKind : IComparable<PreconditionKind>
 }
 
 /// <summary>
-/// A precondition's state in one environment: whether its table holds a row, whether a row breaks its rule, and, for Fits and Unique, the
-/// classes whose rows the table holds (<see cref="RowClasses"/>), which WP 2.3's queries count beside the violating rows; none for another
-/// kind, or where the counts named no class.
+/// A precondition's state in one environment: whether its table holds a row, whether a row breaks its rule, and, for Fits, Unique and
+/// Rebuild, the classes whose rows the table holds (<see cref="RowClasses"/>), which WP 2.3's queries count beside the violating rows; none
+/// for another kind, or where the counts named no class. A Scan or a Rebuild is never violating, and a Computed or an Authored state is a
+/// person's declaration (<see cref="ExistingData.Of"/>).
 /// </summary>
 public sealed record PreconditionState(Precondition Precondition, bool Populated, bool Violating) : IComparable<PreconditionState>
 {
@@ -123,13 +143,16 @@ public sealed record PreconditionState(Precondition Precondition, bool Populated
 }
 
 /// <summary>
-/// The value classes of Fits and the collation classes of Unique (the Facsimile's ARCHITECTURE.md §4), one flag each, so a set of them is
-/// one value: the kinds of row WP 2.3's aggregate queries count beside a precondition's violating rows, named and ordered as
-/// io/AggregateQueries.cs names its Class. Of Fits: over length, a value longer than the new type holds once its trailing spaces are gone;
-/// over bytes, longer only with them; not convertible, a value TRY_CONVERT gives NULL; an empty string; overflow, a value of the same kind
-/// beyond the new type's range; and a lossy round trip, a value ALTER COLUMN writes without an error and loses. Of Unique: exact, two keys
-/// of the same bytes; case, two that differ in letter case alone; accent, in accents alone; trailing space, in trailing spaces alone; and
-/// nulls, two keys holding NULL, which a unique index holds equal.
+/// The value classes of Fits, the collation classes of Unique and the gapped class of Rebuild (the Facsimile's ARCHITECTURE.md §4), one
+/// flag each, so a set of them is one value: the kinds of row WP 2.3's aggregate queries count beside a precondition's violating rows,
+/// named and ordered as io/AggregateQueries.cs names its Class, and gapped, which no query counts, since MIN and MAX of a column are values
+/// no form of the allowlist returns, so a state holds it only where it is given. Of Fits: over length, a value longer than the new type
+/// holds once its trailing spaces are gone; over bytes, longer only with them; not convertible, a value TRY_CONVERT gives NULL; an empty
+/// string; overflow, a value of the same kind beyond the new type's range; and a lossy round trip, a value ALTER COLUMN writes without an
+/// error and loses. Of Unique: exact, two keys of the same bytes; case, two that differ in letter case alone; accent, in accents alone;
+/// trailing space, in trailing spaces alone; and nulls, two keys holding NULL, which a unique index holds equal. Of Rebuild: gapped,
+/// identity values that skip a number or do not start at the seed, which a rebuild that keeps its ids carries into the new table (the
+/// Facsimile's PLT-82).
 /// </summary>
 [Flags]
 public enum RowClasses
@@ -146,6 +169,7 @@ public enum RowClasses
     Accent = 256,
     TrailingSpace = 512,
     Nulls = 1024,
+    Gapped = 2048,
 }
 
 /// <summary>
@@ -168,17 +192,32 @@ public sealed record PreconditionCount(Precondition Precondition, long Rows, lon
 public sealed record ExistingData(SortedArray<PreconditionState> States)
 {
     /// <summary>
-    /// The states the counts give: a precondition is populated when a count finds a row in its table and violating when one finds a row
-    /// that breaks its rule; a TableEmpty precondition is violating exactly when it is populated, since BlockOnPossibleDataLoss reads row
-    /// presence alone (law 9). Two counts of one precondition give one state, populated or violating when either says so.
+    /// The states the counts give, and the states a person declares: a precondition is populated when a count finds a row in its table and
+    /// violating when one finds a row that breaks its rule; a TableEmpty precondition is violating exactly when it is populated, since
+    /// BlockOnPossibleDataLoss reads row presence alone (law 9), and a Scan or a Rebuild never is, since no row fails its statement. Two
+    /// counts of one precondition give one state, populated or violating when either says so. A Computed or an Authored precondition is
+    /// declared and never counted, so a count of one, or a declared state of another kind, is an argument no caller passes.
     /// </summary>
-    public static ExistingData Of(IEnumerable<PreconditionCount> counts) => new(SortedArray.Of(counts.GroupBy(c => c.Precondition)
-        .Select(g =>
+    public static ExistingData Of(IEnumerable<PreconditionCount> counts, IEnumerable<PreconditionState>? declared = null)
+    {
+        var (counted, given) = (counts.ToArray(), (declared ?? []).ToArray());
+        if (counted.FirstOrDefault(c => c.Precondition.Kind.Declared) is { } count)
+        {
+            throw new ArgumentException(count.Precondition + " is declared by a person and never counted.", nameof(counts));
+        }
+
+        if (given.FirstOrDefault(s => !s.Precondition.Kind.Declared) is { } state)
+        {
+            throw new ArgumentException(state.Precondition + " is counted, and no person declares its state.", nameof(declared));
+        }
+
+        return new(SortedArray.Of(counted.GroupBy(c => c.Precondition).Select(g =>
         {
             var populated = g.Any(c => c.Rows > 0 || c.Violating > 0);
             return new PreconditionState(g.Key, populated,
-                g.Key.Kind is PreconditionKind.TableEmpty ? populated : g.Any(c => c.Violating > 0));
-        })));
+                g.Key.Kind is PreconditionKind.TableEmpty ? populated : g.Key.Kind.Breakable && g.Any(c => c.Violating > 0));
+        }).Concat(given)));
+    }
 
     /// <summary>The state this existing data holds for <paramref name="precondition"/>, or null when it holds none.</summary>
     public PreconditionState? State(Precondition precondition) => States.FirstOrDefault(s => s.Precondition == precondition);
@@ -202,12 +241,12 @@ public static class Preconditions
     /// The preconditions a change between two models asserts, by the precondition table of WP 2.1, and TableEmpty on the table each
     /// BlockOnPossibleDataLoss site of the plan checks. A column whose Nullable goes from true to false is NotNull. A column whose
     /// DataType relationship, Length, IsMax, Precision, Scale or Collation differs is Fits, whichever way it moves (decision 2.9); a
-    /// computed column declares no type, and its kind arrives with WP 2.1's second slice. A primary key, a unique constraint or a unique
-    /// index is Unique, a foreign key is ForeignKey and a check is Check, each when the after model holds it enabled and the change
-    /// creates or alters it, or when it reads a column that is Fits. ALTER COLUMN refuses a column a primary key, a foreign key or a
-    /// check reads, and most changes to one an index reads, so DacFx drops the rule and creates it again around the ALTER COLUMN (its
-    /// scripts in the Facsimile's QST-33 and QST-76 do so for a unique index), and the new one is validated against the rows; where SQL
-    /// Server alters the column in place, as it widens a varchar under a unique index, the count finds no row the change could break. A
+    /// computed column declares no type, and is Computed where the plan computes it (<see cref="Vocabulary"/>). A primary key, a unique
+    /// constraint or a unique index is Unique, a foreign key is ForeignKey and a check is Check, each when the after model holds it enabled
+    /// and the change creates or alters it, or when it reads a column that is Fits. ALTER COLUMN refuses a column a primary key, a foreign
+    /// key or a check reads, and most changes to one an index reads, so DacFx drops the rule and creates it again around the ALTER COLUMN
+    /// (its scripts in the Facsimile's QST-33 and QST-76 do so for a unique index), and the new one is validated against the rows; where
+    /// SQL Server alters the column in place, as it widens a varchar under a unique index, the count finds no row the change could break. A
     /// model that lacks an element the change names, or a relationship the table reads, is the error model.unresolved.
     /// </summary>
     public static Result<SortedArray<Precondition>> Of(SortedArray<Element> before, SortedArray<Element> after, Change change,
@@ -342,7 +381,7 @@ public static class Preconditions
     /// columns as Host, Columns, ForeignTable and ForeignColumns, paired by position; a check its table, the columns it reads and its
     /// expression as Host, ExpressionDependencies and Expression.
     /// </summary>
-    private static Result<Precondition>? Rule(Element e)
+    internal static Result<Precondition>? Rule(Element e)
     {
         var columns = Targets(e, "Columns");
         switch (e.Key.Type)

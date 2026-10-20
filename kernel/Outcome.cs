@@ -29,11 +29,12 @@ public abstract record Outcome
     /// <summary>
     /// The outcome an environment's existing data predicts for a change. Each precondition, and TableEmpty on each table a
     /// BlockOnPossibleDataLoss site checks, is read from <paramref name="existing"/>; one it holds no state for is the error
-    /// plan.uncounted, since a precondition never counted is never taken as clean. The change blocks when a table a site checks holds a
-    /// row, however clean its rows (law 9: BlockOnPossibleDataLoss reads row presence alone), or when a row breaks a rule; else it applies.
-    /// A change that blocks ships in two releases when a populated table's site stops a tightening the preconditions make on that table
-    /// (NotNull or Fits); else as <paramref name="recognized"/> names it, the shape the operation's recognize: block gives (WP 2.4); else
-    /// it is to be proved.
+    /// plan.uncounted, since a precondition never counted is never taken as clean, or plan.undeclared for a Computed or an Authored, whose
+    /// state a person declares. The change blocks when a table a site checks holds a row, however clean its rows (law 9:
+    /// BlockOnPossibleDataLoss reads row presence alone), or when a row breaks a rule, which no row of a Scan or a Rebuild does; else it
+    /// applies. A change that blocks ships in two releases when a populated table's site stops a tightening the preconditions make on that
+    /// table (NotNull or Fits); else as <paramref name="recognized"/> names it, the shape the operation's recognize: block gives (WP 2.4);
+    /// else it is to be proved.
     /// </summary>
     public static Result<Outcome> Predict(ExistingData existing, SortedArray<BlockOnPossibleDataLossSite> sites,
         SortedArray<Precondition> preconditions, SortedArray<PlanOperation> baselineDrift, string? recognized = null)
@@ -44,16 +45,23 @@ public abstract record Outcome
         {
             if (existing.State(precondition) is not { } state)
             {
-                return new Error("plan.uncounted",
-                    "The existing data holds no state for " + precondition + ", a precondition of the plan; a precondition never counted is"
-                        + " never taken as clean.",
-                    "Predict again, so that every precondition of the plan is counted in the environment.");
+                return precondition.Kind.Declared
+                    ? new Error("plan.undeclared",
+                        "The existing data holds no state for " + precondition + ", a precondition of the plan that a person declares and"
+                            + " no count answers; an undeclared precondition is never taken as clean.",
+                        "Look at the rows the statement reads in the environment, and declare a witness row for each shape it meets, or"
+                            + " that it meets none.")
+                    : new Error("plan.uncounted",
+                        "The existing data holds no state for " + precondition + ", a precondition of the plan; a precondition never"
+                            + " counted is never taken as clean.",
+                        "Predict again, so that every precondition of the plan is counted in the environment.");
             }
 
             states.Add(state);
         }
 
-        var because = SortedArray.Of(states.Where(s => s.Precondition.Kind is PreconditionKind.TableEmpty ? s.Populated : s.Violating));
+        var because = SortedArray.Of(states.Where(s => s.Precondition.Kind is PreconditionKind.TableEmpty ? s.Populated
+            : s.Precondition.Kind.Breakable && s.Violating));
         if (because.Count == 0)
         {
             return new Applies(baselineDrift);

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using DbChange.Budgets.Tests;
+using DbChange.Kernel;
 using DbChange.Tests;
 using Microsoft.SqlServer.Dac;
 using Xunit;
@@ -173,8 +174,71 @@ public sealed class BlockOnPossibleDataLossCheckTests(PlannedOnBothDacFxReleases
                 && s.Text.Contains(fragment, StringComparison.Ordinal)))
             .Select(r => kind + ": DacFx " + r.Release + "'s plan of " + change + " holds no " + statement + " with '" + fragment + "'"));
 
+    /// <summary>
+    /// WP 2.1's second slice, its done-when, and the Facsimile's QST-93: each sample change's plan, live on 170.5.96 and on 162.5.57 and
+    /// package to package on 170.5.96, read by io/PlanStatements and by the vocabulary over the property read between the base's model and
+    /// the change's, holds no statement of DacFx's own that no row matches: the Query Store block, #tmpErrors, @@ERROR and @@TRANCOUNT,
+    /// PRINT, SET, WAITFOR DELAY, the constraint verification's cursor, a default dropped and added around an ALTER COLUMN, __RefactorLog
+    /// and CREATE ROLE among them.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fixture")]
+    [MemberData(nameof(SampleChanges))]
+    public async Task Every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(
+        string change) =>
+        Assert.Empty((await Readings(change, null)).SelectMany(r => r.Reading.Unclassified
+            .Select(s => r.Plan + ": " + Vocabulary.Where(s) + ", " + s.Type + ": " + s.Text)));
+
+    /// <summary>The Facsimile's M1 (QST-95) for the rows whose case is a sample change: each row, removed, leaves a statement of that
+    /// change's live plan on 170.5.96 unclassified or takes a precondition from what the plan asserts.</summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task Removing_any_row_of_the_vocabulary_whose_case_is_a_sample_change_changes_what_that_change_s_plan_asserts()
+    {
+        var kept = new List<string>();
+        foreach (var row in Vocabulary.Rows.Where(r => r.Case.StartsWith("S2 ", StringComparison.Ordinal)))
+        {
+            var change = row.Case["S2 ".Length..];
+            var (all, without) = ((await Readings(change, null))[0].Reading,
+                (await Readings(change, [.. Vocabulary.Rows.Where(r => !ReferenceEquals(r, row))]))[0].Reading);
+            if (all.Preconditions == without.Preconditions && all.Unclassified == without.Unclassified)
+            {
+                kept.Add(row.Type + " [" + string.Join("|", row.With) + "] for " + row.Case);
+            }
+        }
+
+        Assert.Empty(kept);
+    }
+
     /// <summary>The guard's opening, which the pre-deploy script's block comment also quotes, so only a parse tells a check from it.</summary>
     private const string Guard = "RAISERROR (N'Rows were detected";
+
+    /// <summary>A sample change's three plans, each read by the vocabulary, the rows given or its own, over the property read between the
+    /// base's model and the change's, with the deploy scripts of both packages.</summary>
+    private async Task<(string Plan, Reading Reading)[]> Readings(string change, IReadOnlyList<VocabularyRow>? rows)
+    {
+        var sample = GoldenProject.SampleChanges.Single(c => c.Name == change);
+        var (before, after) = (await GoldenProject.Model(), await GoldenProject.Model(sample));
+        var made = Expect.Value(Change.Between(before.Elements, after.Elements, after.Renames));
+        var (scriptsAfter, scriptsBefore) = (Deploy(await GoldenProject.Built(sample)), Deploy(await GoldenProject.Built()));
+        Reading Read(string script)
+        {
+            var listing = Expect.Value(PlanStatements.Read(script, [], scriptsAfter, scriptsBefore));
+            var sites = BlockOnPossibleDataLoss.Sites(Expect.Value(BlockOnPossibleDataLoss.Read(script, [])));
+            return Vocabulary.Read(listing.Plan, listing.ScriptsBefore,
+                Expect.Value(Preconditions.Of(before.Elements, after.Elements, made, sites)), before.Elements, after.Elements, made, rows);
+        }
+
+        return [("170.5.96, live", Read(plans.Live170[change])), ("170.5.96, package to package", Read(plans.Package170[change])),
+            ("162.5.57, live", Read(plans.Live162[change]))];
+    }
+
+    /// <summary>A package's pre-deploy and post-deploy scripts.</summary>
+    private static PlanStatements.Scripts Deploy(string package)
+    {
+        using var opened = Expect.Value(Ssdt.Open(package));
+        return new(opened.PreDeploy, opened.PostDeploy);
+    }
 
     private static string Lines(IEnumerable<string> checks) => string.Concat(checks.Select(c => c + "\n"));
 

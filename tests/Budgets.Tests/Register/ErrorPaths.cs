@@ -119,6 +119,9 @@ internal static partial class ErrorPaths
             Failed(DbChange.Kernel.Outcome.Predict(new ExistingData([]),
                 [new BlockOnPossibleDataLossSite(Table.Name, "ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;")],
                 [], []))),
+        new("a computed column's precondition no person declared a state for", "plan.undeclared", false, (_, _) =>
+            Failed(DbChange.Kernel.Outcome.Predict(ExistingData.Of([]), [], [new Precondition(Table.Name, [Made(Name.Of("RefNum"))],
+                new PreconditionKind.Computed("(CONVERT([int],[Ref]))"))], []))),
         new("a planted precondition on a table the copy lacks and the change does not create", "plan.missing-object", false, (_, _) =>
             Failed(Witness.Plan(new Schema([]), [new Precondition(Table.Name, [], new PreconditionKind.TableEmpty())],
                 new ExistingData([])))),
@@ -566,6 +569,8 @@ internal static partial class ErrorPaths
                 "dbo.Customer.Email Fits"))),
         new("a plan's script TSql160Parser does not read", "plan.unparsed", true, (_, planted) =>
             Failed(BlockOnPossibleDataLoss.Read("INSERT INTO [dbo].[Customer] VALUES (N'" + planted + "' ,,);\nGO\n", []))),
+        new("a plan's script that does not hold the change's pre-deploy script verbatim", "plan.deploy-script", true, (_, planted) =>
+            Failed(PlanStatements.Read("PRINT N'Update complete.';\nGO\n", [], new("PRINT N'" + planted + "';", null), new(null, null)))),
         new("a BlockOnPossibleDataLoss check that reads no table", "plan.check-table", true, (_, planted) =>
             Failed(BlockOnPossibleDataLoss.Read("IF EXISTS (SELECT TOP 1 1)\n    RAISERROR (N'" + planted + "', 16, 127) WITH NOWAIT\n", []))),
         new("a BlockOnPossibleDataLoss check that reads a SQLCMD value marked sensitive", "sqlcmd.sensitive", true, (_, planted) =>

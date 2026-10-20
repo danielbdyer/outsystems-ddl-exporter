@@ -12,7 +12,8 @@ public sealed partial class PlanterCases
     private static IReadOnlyDictionary<string, Case>? cases;
 
     /// <summary>Built on first use, after every field the cases read is set.</summary>
-    internal static IReadOnlyDictionary<string, Case> Cases => cases ??= Catalog();
+    internal static IReadOnlyDictionary<string, Case> Cases =>
+        cases ??= Catalog().Concat(Kinds()).ToDictionary(c => c.Key, c => c.Value, StringComparer.Ordinal);
 
     private static Dictionary<string, Case> Catalog() => new(StringComparer.Ordinal)
     {
@@ -418,11 +419,12 @@ public sealed partial class PlanterCases
             needs a declared row of [dbo].[Order]: [dbo].[Order] holds rows in the environment that make the check [Total]>(0) false, and the planter writes no literal to make a check false, since a check's expression is free-form.
             needs a declared row of [dbo].[T]: [dbo].[T].[Flag] is a key with room for one planted value, fewer than the rows the plan plants.
             """),
-        ["PLT-120"] = new(PgCopy, [Violating(TotalPositive)], $"""
+        ["PLT-120"] = new(PgCopy.With(Cents), [Violating(TotalPositive)], $"""
             [dbo].[Order] at 4
-              row 1 (presence): {Order}
+              row 1 (presence): {Order}, [TotalCents] omitted
             needs a declared row of [dbo].[Order]: [dbo].[Order] holds rows in the environment that make the check [Total]>(0) false, and the planter writes no literal to make a check false, since a check's expression is free-form.
-            """),
+            needs a declared row of [dbo].[Order]: [dbo].[Order].[TotalCents] is computed as (CAST([Total]*(100) AS [int])) over every row of the table, and the planter reads no expression, so it writes no value the expression fails on.
+            """, Undeclared: [TotalCents]),
         ["PLT-125"] = new(PgCopy, [Rows(ForeignKey("Customer", "Account", ("AccountId", "Id")))], """
             [dbo].[Account] at 0
               row 1 (presence): [Id] omitted, [Name] N'w1', [Region] N'w1'

@@ -144,12 +144,13 @@ internal static class PlanterCopies
     /// <summary>A precondition whose table the environment answered empty.</summary>
     public static PreconditionState Empty(Precondition precondition) => new(precondition, false, false);
 
-    /// <summary>The plan for a copy at the states given, or with presence rows alone where none is given an existing data.</summary>
+    /// <summary>The plan for a copy at the states given, or with presence rows alone where none is given an existing data; beside them,
+    /// the preconditions a person declares that the existing data holds no state for.</summary>
     public static Witness Plan(Schema schema, IEnumerable<PreconditionState> states, bool presence = false,
-        Witness.Declared? declared = null, Change? change = null)
+        Witness.Declared? declared = null, Change? change = null, IEnumerable<Precondition>? undeclared = null)
     {
         var all = states.ToArray();
-        return Ok(Witness.Plan(schema, SortedArray.Of(all.Select(s => s.Precondition)), presence ? null : new ExistingData(SortedArray.Of(all)),
-            change, declared));
+        return Ok(Witness.Plan(schema, SortedArray.Of(all.Select(s => s.Precondition).Concat(undeclared ?? [])),
+            presence ? null : new ExistingData(SortedArray.Of(all)), change, declared));
     }
 }

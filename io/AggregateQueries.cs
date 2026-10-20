@@ -204,6 +204,9 @@ public static partial class AggregateQueries
         /// <summary>A precondition the table's rows answer: TableEmpty, violated by every row there is.</summary>
         public static Part Rows(Precondition precondition) => new(precondition, [], [], [], (rows, _) => (rows, []));
 
+        /// <summary>A precondition whose table's rows are counted and that no row violates: a Scan, a Rebuild.</summary>
+        public static Part Presence(Precondition precondition) => new(precondition, [], [], [], (_, _) => (0, []));
+
         /// <summary>A precondition one item counts the violating rows of.</summary>
         public static Part Violating(Precondition precondition, BooleanExpression when,
             params IReadOnlyList<(TableReference Table, BooleanExpression On)> joins) =>
@@ -294,8 +297,15 @@ public static partial class AggregateQueries
     private static Counts Unanswering(TableQuery query, string why) =>
         new([], [], SortedArray.Of(query.Preconditions.Select(p => new Unanswered(p, why))));
 
-    /// <summary>The part each kind's builder asks of its table's query; none for a precondition whose columns name a collation
-    /// Collation.Of refuses, which no query writes.</summary>
+    /// <summary>
+    /// The part each kind's builder asks of its table's query; none for a precondition whose columns name a collation Collation.Of refuses,
+    /// which no query writes. A Scan or a Rebuild counts the table's rows and no violating row, since no value fails its statement; a
+    /// rebuild's identity gaps are not counted, MIN and MAX of a column being values no form of the allowlist returns, so a copy planted
+    /// from the count keeps its ids in sequence. A Computed or an Authored is declared by a person and never counted. A Temporal's rows
+    /// whose period ends before it starts or overlaps another's and a SeedDrift's rows that disagree with the seed's own are counts no
+    /// form of the allowlist holds, the one setting two values of the data against each other and the other sending the seed's values,
+    /// so both read not predictable read-only. KeyLength's builder is AggregateQueries.Length.cs.
+    /// </summary>
     private static Asked Ask(Coordinates.Counted counted, Context context, List<Finding> notes) =>
         context.Refused(counted) is ({ } where, { } name)
             ? Asked.Not("the model gives " + where + " the collation '" + name + "', which is no SQL Server collation name")
@@ -307,7 +317,18 @@ public static partial class AggregateQueries
                 fits => Fits(counted, fits, context, notes),
                 key => ForeignKey(counted, key, context),
                 unique => Unique(counted, unique, context),
-                check => Check(counted, check, context));
+                check => Check(counted, check, context),
+                length => KeyLength(counted, length, context),
+                () => Part.Presence(counted.Precondition),
+                _ => Asked.Not(Declared),
+                _ => Asked.Not("its count, of the rows whose period ends before it starts or overlaps another row's, sets two values"
+                    + " of the data against each other, which no form of the allowlist holds"),
+                () => Part.Presence(counted.Precondition),
+                _ => Asked.Not(Declared),
+                _ => Asked.Not("its count, of the rows whose key or code disagrees with the seed's own, would send the seed's values,"
+                    + " which no form of the allowlist holds"));
+
+    private const string Declared = "a person declares its state, and no query counts it";
 
     /// <summary>The table a counted precondition reads, as the environment names it.</summary>
     private static Name TableOf(Coordinates.Counted counted) =>

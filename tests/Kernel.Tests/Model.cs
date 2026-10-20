@@ -111,6 +111,26 @@ internal sealed record Model(ImmutableList<Model.Column> Columns, ImmutableList<
     public Model Default(string name, string table, string column, string expression) =>
         Add("DefaultConstraint", name, table, [column], text: expression);
 
+    /// <summary>The model with a computed column written as T.RefNum, its expression as the model writes it, added after its table's last
+    /// or put in place of the column of its name; a computed column declares no type.</summary>
+    public Model Computed(string column, string expression, bool persisted = false) =>
+        With(column + " int NULL").Altering(column, c => c with { Expression = expression, Persisted = persisted });
+
+    /// <summary>The model with the column written as Category.Id an IDENTITY (1, 1).</summary>
+    public Model Identity(string column) => Altering(column, c => c with { Identity = true });
+
+    /// <summary>The model with the table's period: its two columns GENERATED ALWAYS AS ROW START and ROW END.</summary>
+    public Model Period(string table, string start, string end) =>
+        Altering(table + "." + start, c => c with { Generated = "GeneratedAlwaysAsRowStart" })
+            .Altering(table + "." + end, c => c with { Generated = "GeneratedAlwaysAsRowEnd" });
+
+    /// <summary>The model with the column written as Customer.Email changed.</summary>
+    private Model Altering(string column, Func<Column, Column> change)
+    {
+        var path = ColumnPath(column);
+        return this with { Columns = Columns.Select(c => (c.Schema, c.Table, c.Name) == path ? change(c) : c).ToImmutableList() };
+    }
+
     /// <summary>The model without the rule of that name.</summary>
     public Model Dropping(string name) => this with { Rules = Rules.RemoveAll(r => r.Name == name) };
 
@@ -139,8 +159,10 @@ internal sealed record Model(ImmutableList<Model.Column> Columns, ImmutableList<
     /// Latin1_General_CS_AS.</summary>
     public static ColumnType Type(string written) => Parse("T.c " + written).Type;
 
-    /// <summary>A column as the model holds it.</summary>
-    public sealed record Column(string Schema, string Table, string Name, ColumnType Type, bool Nullable);
+    /// <summary>A column as the model holds it: a computed one with its expression, persisted or not; an IDENTITY (1, 1); and one
+    /// GENERATED ALWAYS, by its GeneratedAlwaysType.</summary>
+    public sealed record Column(string Schema, string Table, string Name, ColumnType Type, bool Nullable, string? Expression = null,
+        bool Persisted = false, bool Identity = false, string? Generated = null);
 
     /// <summary>
     /// A key, an index, a constraint or a default: its element type, its table's schema and the table, its name, its columns in order (a
@@ -223,11 +245,16 @@ internal sealed record Model(ImmutableList<Model.Column> Columns, ImmutableList<
 
         foreach (var c in Columns)
         {
+            (string, Value)[] computed = c.Expression is null ? [] : [("Persisted", Bool(c.Persisted))];
+            (string, Value)[] identity = c.Identity ? [("IdentityIncrement", Int(1)), ("IdentitySeed", Int(1)), ("IsIdentity", Bool(true))] : [];
+            (string, Value)[] generated = c.Generated is { } member ? [("GeneratedAlwaysType", new Value.Enumeration("ColumnGeneratedAlwaysType",
+                member))] : [];
             yield return New(Key(Table(c.Schema, c.Table), "Column", c.Name),
-                [("Collation", c.Type.Collation is { } collation ? Text(collation) : new Value.Null()), ("Expression", new Value.Null()),
+                [("Collation", c.Type.Collation is { } collation ? Text(collation) : new Value.Null()),
+                    ("Expression", c.Expression is { } expression ? new Value.Script(expression) : new Value.Null()),
                     ("IsMax", Bool(c.Type.IsMax)), ("Length", Int(c.Type.Length)), ("Nullable", Bool(c.Nullable)),
-                    ("Precision", Int(c.Type.Precision)), ("Scale", Int(c.Type.Scale))],
-                [("DataType", [Ok(ElementKey.Of("DataType", c.Type.Type))])]);
+                    ("Precision", Int(c.Type.Precision)), ("Scale", Int(c.Type.Scale)), .. computed, .. identity, .. generated],
+                c.Expression is null ? [("DataType", [Ok(ElementKey.Of("DataType", c.Type.Type))])] : []);
         }
 
         foreach (var r in Rules)

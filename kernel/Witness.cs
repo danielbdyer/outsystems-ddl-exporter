@@ -36,7 +36,8 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
     /// rules of WP 2.1 (<see cref="Coordinates"/>): an object it renames or moves under the key it had, and one it creates nowhere, since
     /// a table the change creates holds no row and a column it creates holds its default. <paramref name="declared"/> is what the
     /// change's declared witnesses plant. A precondition on an object the copy does not hold and the change does not create is the error
-    /// plan.missing-object, and one the existing data holds no state for, plan.uncounted, since neither is ever read as empty. Existing
+    /// plan.missing-object, and one the existing data holds no state for, plan.uncounted, since neither is ever read as empty; but a
+    /// Computed or an Authored, whose state a person declares, is a need for a declared row while no clean state is declared. Existing
     /// data that no rows hold is plan.contradictory-answers, the Facsimile's answers-invalid (PLT-60): a ForeignKey answered clean over a
     /// parent that holds no row, answered empty or created by the change, on a populated table where no column of the key admits NULL, or
     /// where the row of a class holds a value in every column of the key.
@@ -54,7 +55,7 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
             }
 
             var state = existing?.State(precondition);
-            if (existing is not null && state is null)
+            if (existing is not null && state is null && !precondition.Kind.Declared)
             {
                 return new Error("plan.uncounted",
                     "The existing data holds no state for " + precondition + ", a precondition of the change; a precondition never counted"
@@ -209,18 +210,20 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
     /// <summary>
     /// A table the planter writes no row for, and why (the Facsimile's planter-needs-row), which a person answers by declaring the rows in
     /// the change's declared witnesses (WP 3.5). A check the environment answered violating is answered by one declared row that makes it
-    /// false, and the plan keeps the table's other rows; any other reason makes the declared witnesses plant the table whole
-    /// (<see cref="Whole"/>). Its exit, 8 needs-input, joins cli/exits.frozen with the verb that first raises it (the operator's ruling of
-    /// 2026-10-19). Needs sort by table, then by message.
+    /// false, and a Computed, an Authored or a violating SeedDrift by one declared row of its own, and the plan keeps the table's other
+    /// rows; any other reason makes the declared witnesses plant the table whole (<see cref="Whole"/>). Its exit, 8 needs-input, joins
+    /// cli/exits.frozen with the verb that first raises it (the operator's ruling of 2026-10-19). Needs sort by table, then by message.
     /// </summary>
     public sealed record NeedsRow(Name Table, NeedsRow.Reason Why) : IComparable<NeedsRow>
     {
-        /// <summary>Whether the declared witnesses plant the table whole; false for a check that a declared row makes false.</summary>
-        public bool Whole => Why is not Reason.FalseCheck;
+        /// <summary>Whether the declared witnesses plant the table whole; false for a check that a declared row makes false, and for a
+        /// precondition one declared row witnesses.</summary>
+        public bool Whole => Why is not (Reason.FalseCheck or Reason.Declares);
 
         public string Message => Why.Match(
             c => Table + " holds rows in the environment that make the check " + (c.Check.Kind as PreconditionKind.Check)?.Expression
                 + " false, and the planter writes no literal to make a check false, since a check's expression is free-form",
+            d => Witnessed(Table, d.Witness),
             r => Table + " rejects the planted literals: SQL Server refused the planted row by the check "
                 + (r.Check.Constraint?.ToString() ?? r.Check.Expression.Content),
             c => c.Cycle.Error.Message.TrimEnd('.'),
@@ -243,6 +246,10 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
 
         public string Remedy => Why is Reason.FalseCheck c
             ? "Declare one row of " + Table + " that makes the check false, as a witness of " + c.Check + "."
+            : Why is Reason.Declares { Witness: var witness } ? (witness.Kind is PreconditionKind.Authored
+                ? "Look at the rows the statement reads in the environment, and declare one row of " + Table + " for each shape it"
+                    + " meets, as a witness of " + witness + ", or that it meets none."
+                : "Declare one row of " + Table + " as a witness of " + witness + ".")
             : Why is Reason.OnCycle cycle ? cycle.Cycle.Error.Remedy
             : "Declare the rows of " + Table + " in the change's declared witnesses, which then plant the table whole.";
 
@@ -256,11 +263,12 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
             {
             }
 
-            public T Match<T>(Func<FalseCheck, T> falseCheck, Func<Rejects, T> rejects, Func<OnCycle, T> onCycle,
-                Func<NarrowKey, T> narrowKey, Func<NoLiteral, T> noLiteral, Func<NoClassValue, T> noClassValue,
+            public T Match<T>(Func<FalseCheck, T> falseCheck, Func<Declares, T> declares, Func<Rejects, T> rejects,
+                Func<OnCycle, T> onCycle, Func<NarrowKey, T> narrowKey, Func<NoLiteral, T> noLiteral, Func<NoClassValue, T> noClassValue,
                 Func<NoCleanValue, T> noCleanValue, Func<History, T> history, Func<Repeated, T> repeated) => this switch
                 {
                     FalseCheck c => falseCheck(c),
+                    Declares d => declares(d),
                     Rejects r => rejects(r),
                     OnCycle c => onCycle(c),
                     NarrowKey k => narrowKey(k),
@@ -274,6 +282,11 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
 
             /// <summary>A Check precondition the environment answered violating (PLT-78).</summary>
             public sealed record FalseCheck(Precondition Check) : Reason;
+
+            /// <summary>A precondition only a declared row witnesses: a Computed, whose expression the planter does not read (PLT-120,
+            /// PLT-127); an Authored, whose shapes a person looks at; or a SeedDrift the environment answered violating, whose row holds
+            /// the seed's own code under a key the seed does not use (the Facsimile's QST-111).</summary>
+            public sealed record Declares(Precondition Witness) : Reason;
 
             /// <summary>A check of the copy that refused a planted row, SQL Server's Msg 547 at the INSERT, which WP 3.5 names when it
             /// meets one (PLT-44): the planter reads no check's expression.</summary>
@@ -372,6 +385,13 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
         else if (p.Kind is PreconditionKind.Unique unique)
         {
             kind = unique with { FilterColumns = Places(unique.FilterColumns) };
+        }
+        else if (p.Kind is PreconditionKind.Temporal period)
+        {
+            kind = period with
+            {
+                Start = Place(table, tableKey, period.Start) ?? period.Start, End = Place(table, tableKey, period.End) ?? period.End,
+            };
         }
 
         var here = new Precondition(table.Name, Places(p.Columns), kind);

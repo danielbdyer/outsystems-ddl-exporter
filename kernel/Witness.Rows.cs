@@ -42,12 +42,12 @@ public sealed partial record Witness
             foreach (var table in schema.Tables.Where(t => !owned.Contains(t.Name)))
             {
                 var states = at.GetValueOrDefault(table.Name) ?? [];
-                if (presenceMode ? table.Versioning is not Versioning.History : states.Any(l => l.State!.Populated))
+                if (presenceMode ? table.Versioning is not Versioning.History : states.Any(l => l.State is { Populated: true }))
                 {
                     rows[table.Name] = presenceMode ? PresenceRows : 1;
                     presence.Add(table.Name);
                 }
-                else if (!presenceMode && states.Length > 0)
+                else if (!presenceMode && states.Any(l => l.State is not null))
                 {
                     empty.Add(table.Name);
                 }
@@ -449,7 +449,7 @@ public sealed partial record Witness
         private void Need(Name table, NeedsRow.Reason reason)
         {
             needs.Add(new NeedsRow(table, reason));
-            if (reason is not NeedsRow.Reason.FalseCheck)
+            if (reason is not (NeedsRow.Reason.FalseCheck or NeedsRow.Reason.Declares))
             {
                 taken.Add(table);
             }
