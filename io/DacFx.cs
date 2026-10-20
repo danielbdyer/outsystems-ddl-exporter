@@ -270,6 +270,9 @@ public static class DacFx
     /// </summary>
     internal sealed record DacFxFailure(SortedArray<DacFxMessage> Messages, SqlException? Sql, string Text)
     {
+        /// <summary>io/ServerProbe's refusal of DacFx's xp_msver call, where the chain holds it.</summary>
+        public ServerProbe.Refused? Refused { get; init; }
+
         /// <summary>The failure as a message quotes it: its messages, or the chain's text where it carries none.</summary>
         public string Quoted => Messages.Count > 0 ? string.Join(' ', Messages.Select(m => m.ToString())) : Text;
     }
@@ -298,7 +301,7 @@ public static class DacFx
             : Chain(chain).SelectMany(x => x.Message.Split('\n')).Select(line => DacFxMessage.Parse(line.Trim())).OfType<DacFxMessage>()
             .Where(m => m.MessageType != DacFxMessageType.Message);
         return new DacFxFailure(SortedArray.Of(parsed.Distinct()), Chain(chain).OfType<SqlException>().FirstOrDefault(),
-            string.Join(' ', said));
+            string.Join(' ', said)) { Refused = Chain(chain).OfType<ServerProbe.Refused>().FirstOrDefault() };
     }
 
     /// <summary>
@@ -307,7 +310,8 @@ public static class DacFx
     /// anything else is dacfx.failed quoting DacFx's messages, or the chain's text where it gives none.
     /// </summary>
     internal static Error Failed(SqlServer.Database target, DacFxFailure failure, bool transactional = true) =>
-        failure.Sql is { } sql ? target.ErrorOf(sql.Number, sql.Message, fatal: sql.Class >= 20)
+        failure.Refused is { } refused ? Probed(target.Target.ToString(), refused)
+        : failure.Sql is { } sql ? target.ErrorOf(sql.Number, sql.Message, fatal: sql.Class >= 20)
         : failure.Messages.FirstOrDefault(m => m.SqlServerNumber is not null) is { SqlServerNumber: { } number }
             ? target.ErrorOf(number, failure.Quoted + (transactional ? "" : Partial), fatal: false)
         : new Error("dacfx.failed",
@@ -331,7 +335,8 @@ public static class DacFx
         }
         catch (Exception e) when (e is DacServicesException or DacModelException or SqlException or IOException
             or UnauthorizedAccessException or InvalidDataException
-            or XmlException or ArgumentException or FormatException or InvalidOperationException)
+            or XmlException or ArgumentException or FormatException or InvalidOperationException
+            || Chain(e).OfType<ServerProbe.Refused>().Any())
         {
             cancel.ThrowIfCancellationRequested();
             return failed(Failure(e));
@@ -354,9 +359,14 @@ public static class DacFx
     private const string Partial = " The copy may hold part of the change, since the profile sets IncludeTransactionalScripts False.";
 
     /// <summary>DacFx's failure against what no database names: dacfx.failed, quoting its messages.</summary>
-    private static Error Unsourced(string target, DacFxFailure failure) =>
-        new Error("dacfx.failed", "DacFx failed against " + target + " with no SQL Server error inside: " + failure.Quoted,
+    private static Error Unsourced(string target, DacFxFailure failure) => failure.Refused is { } refused ? Probed(target, refused)
+        : new Error("dacfx.failed", "DacFx failed against " + target + " with no SQL Server error inside: " + failure.Quoted,
         "Correct what DacFx names in the project or the publish profile, then run the step again.");
+
+    /// <summary>A failure whose chain holds io/ServerProbe's refusal: dacfx.failed naming the call, whatever DacFx's own messages say.
+    /// </summary>
+    private static Error Probed(string target, ServerProbe.Refused refused) =>
+        new Error("dacfx.failed", "DacFx failed against " + target + ": " + refused.Message, ServerProbe.Refused.Remedy);
 
     /// <summary>A failure as its error quotes it: each message once, on one line; the chain's text where it has none.</summary>
 

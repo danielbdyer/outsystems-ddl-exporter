@@ -358,7 +358,8 @@ public static class Classify
     /// then stands in their entry. An element moved from an element the change drops onto one it creates, as a key is when its table is
     /// dropped and created under another name, stands in their entry when every target it gains is created and every one it loses is
     /// dropped. Columns put in another order, or an index whose key gains a created column, is an alteration of its own, which DacFx plans
-    /// as a rebuild of the table or of the index.
+    /// as a rebuild of the table or of the index; a table's, unless the profile sets IgnoreColumnOrder, as the pipeline's does. Classify
+    /// does not read the profile, so the change goes to proof.
     /// </summary>
     private static bool InPlaceOf(Change.Alteration alteration, Change change, Dictionary<ElementKey, ElementKey> created,
         Dictionary<ElementKey, ElementKey> dropped)

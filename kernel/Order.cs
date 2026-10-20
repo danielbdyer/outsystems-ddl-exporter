@@ -49,8 +49,16 @@ public sealed record Order(SortedArray<Order.Step> Tables, SortedArray<Order.Def
         var block = Components(mandatory);
         var cycles = Enumerable.Range(0, tables.Count).GroupBy(t => block[t])
             .Where(g => g.Count() > 1 || mandatory[g.First()].Contains(g.First()))
-            .Select(g => new Cycle(SortedArray.Of(g.Select(t => tables[t].Name)), Path(g.Min(), mandatory, block, tables)));
+            .Select(g => Reported(SortedArray.Of(g.Select(t => tables[t].Name)), Path(g.Min(), mandatory, block, tables)));
         return new Order(Placed(kept, block, tables), SortedArray.Of(deferred), SortedArray.Of(cycles));
+
+        // A cycle with the NOT NULL foreign keys from each table of its path to the next.
+        Cycle Reported(SortedArray<Name> members, SortedArray<Step> path) => new(members, path)
+        {
+            Keys = SortedArray.Of(path.SelectMany((s, i) => edges[index[s.Table]]
+                .Where(e => !e.Reference.Optional && e.Parent == index[path[(i + 1) % path.Count].Table]).Select(e => e.Reference.Key))
+                .Distinct()),
+        };
     }
 
     /// <summary>A table at its place in the order, from 0.</summary>
@@ -74,17 +82,27 @@ public sealed record Order(SortedArray<Order.Step> Tables, SortedArray<Order.Def
     /// </summary>
     public sealed record Cycle(SortedArray<Name> Members, SortedArray<Step> Path) : IComparable<Cycle>
     {
+        /// <summary>Every NOT NULL foreign key from a table of the path to the next one, which the error names (PLT-57).</summary>
+        public SortedArray<ElementKey> Keys { get; init; } = [];
+
         /// <summary>The error the planter stops with, naming the tables and the path, the first table repeated at its end.</summary>
         public Error Error => new("synthetic-copy.cycle",
             (Members.Count == 1 ? Members[0] + " references itself through a NOT NULL foreign key"
                 : string.Join(", ", Members.Take(Members.Count - 1)) + " and " + Members[^1]
                     + " reference one another through NOT NULL foreign keys")
-                + " (" + string.Join(" → ", Path.Select(s => s.Table).Append(Path[0].Table)) + "), so no order of INSERTs plants a row in "
-                + (Members.Count == 1 ? "it." : "any of them."),
+                + " (" + string.Join(" → ", Path.Select(s => s.Table).Append(Path[0].Table)) + Named(Keys)
+                + "), so no order of INSERTs plants a row in " + (Members.Count == 1 ? "it." : "any of them."),
             "Write a row of each table named into the change's declared witnesses, or make a column of one of those foreign keys"
                 + " nullable.");
 
         public int CompareTo(Cycle? other) => other is null ? 1 : SortedArray.Compare(Members, other.Members);
+
+        private static string Named(SortedArray<ElementKey> keys) => keys.Count switch
+        {
+            0 => "",
+            1 => "; foreign key " + keys[0].Path,
+            _ => "; foreign keys " + string.Join(", ", keys.Take(keys.Count - 1).Select(k => k.Path)) + " and " + keys[^1].Path,
+        };
     }
 
     /// <summary>Tarjan's strongly connected components, iterative, visiting the tables in order: each table's component, numbered in

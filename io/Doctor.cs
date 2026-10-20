@@ -346,11 +346,6 @@ public static class Doctor
         var source = new SqlConnectionStringBuilder(connection).DataSource.Trim();
         source = source.StartsWith("tcp:", StringComparison.OrdinalIgnoreCase) ? source[4..]
             : source.StartsWith("admin:", StringComparison.OrdinalIgnoreCase) ? source[6..] : source;
-        if (source.Length == 0)
-        {
-            return ("localhost", 1433);
-        }
-
         if (source.StartsWith('\\') || ((string[])["np:", "lpc:", "(localdb)"]).Any(
             other => source.StartsWith(other, StringComparison.OrdinalIgnoreCase)))
         {

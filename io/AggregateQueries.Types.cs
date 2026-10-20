@@ -18,7 +18,8 @@ namespace DbChange.Io;
 /// meets hierarchyid, xml or a spatial or CLR type is parsed into it, and the parse's error quotes the string (Msg 6522), so the rewriter
 /// reads no such meeting. ISNULL converts its second argument to the type of its first whatever their precedence, and that conversion's
 /// error quotes the value too (Msg 220 for an integer into tinyint or smallint, Msg 232 for a float), so the rewriter reads none but a
-/// string's into a string type, which never fails, where the query writes the first argument as itself.
+/// string's into a string type, which never fails, and a literal's, which quotes no row, where the query writes the first argument as
+/// itself.
 /// </summary>
 public static partial class AggregateQueries
 {
@@ -132,8 +133,9 @@ public static partial class AggregateQueries
         /// That conversion leaves <see cref="Why"/>, as measured on SQL Server 2022: ISNULL(CAST(NULL AS tinyint), [Num]) raises Msg 220
         /// quoting a Num of 98765, and a column the change creates, which the query writes as NULL, converts nothing in the query where
         /// it does in the deployment. A string into a string type is read where the query writes the first argument as itself, since
-        /// SQL Server truncates it or writes '?' without an error, as the deployment does. Null for any other call, and for ABS of a
-        /// string, which SQL Server converts to float.
+        /// SQL Server truncates it or writes '?' without an error, as the deployment does, and so is a literal, whose conversion reads no
+        /// row's value: ISNULL([Flag], (0)) over a bit column. Null for any other call, and for ABS of a string, which SQL Server
+        /// converts to float.
         /// </summary>
         private Typed? Function(FunctionCall f)
         {
@@ -151,7 +153,9 @@ public static partial class AggregateQueries
                     return first;
                 case "ISNULL" when f.Parameters.Count == 2:
                     var second = TypeOf(f.Parameters[1]);
-                    if (first is { TakesStrings: true } && second is { IsString: true })
+                    var held = !Untyped(f.Parameters[0]);
+                    var constant = held && Constant(f.Parameters[1]);
+                    if (first is { TakesStrings: true } && second is { IsString: true } && !constant)
                     {
                         f.Parameters[1] = Converted(f.Parameters[1], first, every: false);
                     }
@@ -163,7 +167,7 @@ public static partial class AggregateQueries
 
                     // The literal NULL as the first argument takes the second's type, and converts nothing.
                     var converts = first != Typed.Null && second != Typed.Null && (first is null || second is null || !first.Same(second));
-                    var kept = first is { IsString: true } && second is { IsString: true } && !Untyped(f.Parameters[0]);
+                    var kept = constant || (first is { IsString: true } && second is { IsString: true } && held);
                     if (converts && !kept)
                     {
                         Why ??= "SQL Server converts ISNULL's second argument to the type of its first with no CONVERT written, on the"
@@ -190,6 +194,17 @@ public static partial class AggregateQueries
                 + " parses the string into with no CONVERT written, and the error of a string that does not parse quotes it";
             return true;
         }
+
+        /// <summary>Whether a value is a literal, a number, a string or binary, in parentheses or not and with a sign or not: its
+        /// conversion reads no row's value, and the query converts it as the check's validation does.</summary>
+        private static bool Constant(ScalarExpression value) => value switch
+        {
+            IntegerLiteral or NumericLiteral or RealLiteral or MoneyLiteral or StringLiteral or BinaryLiteral => true,
+            ParenthesisExpression p => Constant(p.Expression),
+            UnaryExpression { UnaryExpressionType: UnaryExpressionType.Negative or UnaryExpressionType.Positive } u =>
+                Constant(u.Expression),
+            _ => false,
+        };
 
         /// <summary>Whether the query writes NULL here, in parentheses or not, as it does for a column the change creates: SQL Server gives
         /// that NULL no type, and the column's type stands in the rewriter's map alone.</summary>

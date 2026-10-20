@@ -12,7 +12,7 @@ namespace DbChange.Kernel.Tests;
 /// a column, a table and a schema move; a column-list change or a table rebuild on a table Change Data Capture tracks, refused; DML in a
 /// changed pre-deploy script, a data-modifying step; a check written with IN, named with the OR form as its remedy; and a change no block
 /// matches, unclassified. The seeded blocks under tests/Golden/patterns/ are held to the golden sample changes by Io.Tests'
-/// ClassifyTests.
+/// SampleClassificationTests.
 /// </summary>
 public sealed class ClassifyTests
 {
@@ -101,7 +101,8 @@ public sealed class ClassifyTests
             Of(Base, Base.With("CustomerHistory.Id int NOT NULL").Elements).Lines);
     }
 
-    /// <summary>A table whose columns stay but stand in another order, which DacFx plans as a rebuild of the table, and an index whose key
+    /// <summary>A table whose columns stay but stand in another order, which DacFx plans as a rebuild of the table unless the profile sets
+    /// IgnoreColumnOrder, as the pipeline's does (Classify does not read the profile, so the change goes to proof), and an index whose key
     /// gains a created column or puts its columns in another order, which DacFx drops and creates again, are each an altered entry of its
     /// own that no block here recognizes, not part of the created column's entry and not no change.</summary>
     [Fact]
@@ -137,8 +138,8 @@ public sealed class ClassifyTests
     public void A_clause_recognizes_an_alteration_only_when_it_accounts_for_every_property_the_alteration_changes(string column,
         string line)
     {
-        Assert.Equal(line, Classified(Base, Base.With(column)).Lines.First());
-        Assert.Equal("narrow Column [dbo].[Customer].[Phone]", Classified(Base.With("Customer.Phone nvarchar(max) NULL"), Base).Lines.First());
+        Assert.Equal([line], Classified(Base, Base.With(column)).Lines);
+        Assert.Equal(["narrow Column [dbo].[Customer].[Phone]"], Classified(Base.With("Customer.Phone nvarchar(max) NULL"), Base).Lines);
     }
 
     [Fact]

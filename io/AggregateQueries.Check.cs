@@ -20,10 +20,10 @@ namespace DbChange.Io;
 /// predictable read-only, as it does for PARSE, which has no TRY_ form the allowlist admits, for an operand whose type dbchange does not
 /// read beside one SQL Server may convert, for an expression the allowlist refuses, and for the two errors no TRY_ form stops, each of
 /// which quotes the row's value: a string set against hierarchyid, xml or a spatial or CLR type, which SQL Server parses (Msg 6522), and
-/// a LIKE whose escape character is read from a row (Msg 506). So does ISNULL's conversion of its second argument to the type of its
-/// first, whose error quotes the value too (Msg 220 for an integer into tinyint or smallint, Msg 232 for a float), save a string's into
-/// a string type, which never fails (Types.cs). A COLLATE the expression writes stands on what the query writes in its place, as
-/// Collation.Of admits its name.
+/// a LIKE whose escape character is read from a row (Msg 506). So does ISNULL's conversion of its second argument to the type of its first,
+/// whose error quotes the value too (Msg 220 for an integer into tinyint or smallint, Msg 232 for a float), save a string's into a string
+/// type, which never fails, and a literal's, whose error can quote only the check's own text (Types.cs). A COLLATE the expression writes
+/// stands on what the query writes in its place, as Collation.Of admits its name.
 /// </summary>
 public static partial class AggregateQueries
 {

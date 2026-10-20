@@ -16,8 +16,8 @@ namespace DbChange.Io;
 /// catalog) holds no entry; the values feed only DacFxOperationTelemetry, which io/Telemetry turns off, and DacFx runs the call inside
 /// catch (Exception). The observer here watches SqlClient's WriteCommandBefore event, which SqlClient raises on the calling thread before
 /// it sends a command, and throws for exactly the commands Refuses names; it never alters a command, reads no parameter, logs nothing
-/// and touches nothing on the server. The exception is an InvalidOperationException, which io/DacFx.Guard maps to dacfx.failed, so a
-/// DacFx release that stops catching it fails the read naming the call, never silently.
+/// and touches nothing on the server. The exception is <see cref="Refused"/>, which io/DacFx recognises anywhere in an exception's chain
+/// and maps to dacfx.failed naming the call, so a DacFx release that stops catching it, or wraps it, fails the read, never silently.
 /// </summary>
 public static class ServerProbe
 {
@@ -59,9 +59,20 @@ public static class ServerProbe
     };
 
     /// <summary>The exception the observer throws, its message naming the call and the rule that refuses it.</summary>
-    internal static InvalidOperationException Refusal() =>
+    internal static Refused Refusal() =>
         new("dbchange refused DacFx's EXEC of xp_msver before SqlClient sent it: the principal that reads an environment sends no EXEC "
             + "(R14). DacFx asks xp_msver for the host's platform, processor count and memory, for its telemetry alone.");
+
+    /// <summary>
+    /// The refusal of DacFx's xp_msver call. DacFx 170.5.96 catches it; one that lets it out, wrapped or not, fails as dacfx.failed with
+    /// <see cref="Remedy"/>, since no change to the project or the publish profile clears it.
+    /// </summary>
+    public sealed class Refused(string message) : InvalidOperationException(message)
+    {
+        /// <summary>What a reader does when DacFx does not catch the refusal.</summary>
+        public const string Remedy = "The DacFx release dbchange runs no longer catches the refusal of its xp_msver call: keep the DacFx "
+            + "pin in dbchange/ledgers/toolchain.md at 170.5.96 until io/ServerProbe is revisited for the newer release.";
+    }
 
     private static bool Is(string name) => string.Equals(name, Name, StringComparison.OrdinalIgnoreCase);
 

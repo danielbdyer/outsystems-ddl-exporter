@@ -435,7 +435,7 @@ public sealed class AggregateQueriesTests
     /// (Esc), which raises Msg 506 quoting a value of more than one character; a COLLATE whose name Collation.Of refuses; and ISNULL's
     /// second argument converted to the type of its first, whose error quotes the row's value (Msg 220 for an int into tinyint), or which
     /// the query cannot convert where the first is a column the change creates (New, NewCode), read as NULL. A string into a string type,
-    /// which never fails, is counted where the first is the column as held.
+    /// which never fails, and a literal, which reads no row (Tiny is tinyint, Flag bit), are counted where the first is the column as held.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -450,6 +450,10 @@ public sealed class AggregateQueriesTests
     [InlineData("UPPER([Ref])>(0)", "")]
     [InlineData("COALESCE([Ref],(0))>(0)", "")]
     [InlineData("ISNULL([Ref],'0')>(0)", "")]
+    [InlineData("ISNULL([Tiny],(0))>(0)", "")]
+    [InlineData("ISNULL([Flag],(0))=(1)", "")]
+    [InlineData("ISNULL([Tiny],'0')>(0)", "")]
+    [InlineData("ISNULL([New],(0))>(0)", "ISNULL's second argument")]
     [InlineData("ISNULL(CAST(NULL AS [tinyint]),[Other])>(0)", "ISNULL's second argument")]
     [InlineData("ISNULL([New],[Other])>(0)", "ISNULL's second argument")]
     [InlineData("ISNULL([NewCode],[Ref])<>'x'", "ISNULL's second argument")]
@@ -472,8 +476,8 @@ public sealed class AggregateQueriesTests
     [InlineData("[Ref] COLLATE Latin1_General_Bogus='x'", "the collation 'Latin1_General_Bogus', which is no SQL Server collation name")]
     public void A_check_that_converts_is_counted_through_its_TRY_form_or_reads_not_predictable_read_only(string expression, string why)
     {
-        var model = T.With("T.Hid hierarchyid NULL", "T.Esc varchar(10) NULL");
-        var reads = new[] { "Ref", "Other", "Id", "Hid", "Esc", "New", "NewCode" }
+        var model = T.With("T.Hid hierarchyid NULL", "T.Esc varchar(10) NULL", "T.Tiny tinyint NULL", "T.Flag bit NULL");
+        var reads = new[] { "Ref", "Other", "Id", "Hid", "Esc", "New", "NewCode", "Tiny", "Flag" }
             .Where(c => expression.Contains("[" + c + "]", StringComparison.Ordinal)).ToArray();
         var head = model.With("T.New tinyint NULL", "T.NewCode varchar(1) NULL");
         var queries = new Case(model, head.Check("CK_T_Probe", "T", expression, reads)).Queries();
@@ -482,7 +486,10 @@ public sealed class AggregateQueriesTests
         {
             Assert.Empty(queries.NotPredictable);
             Assert.Contains(queries.Tables.SelectMany(t => t.Preconditions), p => p.Kind is PreconditionKind.Check);
-            Assert.Contains("TRY_", Assert.Single(queries.Tables).Query.Statement, StringComparison.Ordinal);
+            if (expression.Contains("[Ref]", StringComparison.Ordinal))
+            {
+                Assert.Contains("TRY_", Assert.Single(queries.Tables).Query.Statement, StringComparison.Ordinal);
+            }
         }
         else
         {
