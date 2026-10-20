@@ -67,6 +67,17 @@ public static partial class Vocabulary
     }
 
     /// <summary>
+    /// What a program of releases asks (the Facsimile's F8, QST-83): what <paramref name="target"/> asks, the plan from the environment's
+    /// schema straight to the last release's model, and the Authored and SeedDrift preconditions of each of <paramref name="releases"/>,
+    /// each release's plan read with its own deploy scripts. A release's script meets the rows the final target's preconditions describe:
+    /// a first release's pre-deploy ALTER … NOT NULL meets the NULLs the final target's NotNull counts, which its own plan, over an
+    /// unchanged model, never asks.
+    /// </summary>
+    public static SortedArray<Precondition> Program(Reading target, IEnumerable<Reading> releases) =>
+        SortedArray.Of(target.Preconditions.Concat(releases.SelectMany(r => r.Preconditions)
+            .Where(p => p.Kind is PreconditionKind.Authored or PreconditionKind.SeedDrift)).Distinct());
+
+    /// <summary>
     /// What a precondition of the property read stands as: a ForeignKey or a Check the plan validates after a statement the change adds to
     /// the post-deploy script that writes into its table, or into a ForeignKey's parent, is answered by rows a person authored, since DacFx
     /// validates its new constraints after the post-deploy script (spike S2, on both releases), so the Authored of that statement stands

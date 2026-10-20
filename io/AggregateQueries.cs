@@ -301,7 +301,8 @@ public static partial class AggregateQueries
     /// The part each kind's builder asks of its table's query; none for a precondition whose columns name a collation Collation.Of refuses,
     /// which no query writes. A Scan or a Rebuild counts the table's rows and no violating row, since no value fails its statement; a
     /// rebuild's identity gaps are not counted, MIN and MAX of a column being values no form of the allowlist returns, so a copy planted
-    /// from the count keeps its ids in sequence. A Computed or an Authored is declared by a person and never counted. A Temporal's rows
+    /// from the count keeps its ids in sequence. A Computed or an Authored is declared by a person and never counted: Coordinates.Of
+    /// places one as Coordinates.Declared, and a Counted that holds one reads not predictable read-only. A Temporal's rows
     /// whose period ends before it starts or overlaps another's and a SeedDrift's rows that disagree with the seed's own are counts no
     /// form of the allowlist holds, the one setting two values of the data against each other and the other sending the seed's values,
     /// so both read not predictable read-only. KeyLength's builder is AggregateQueries.Length.cs.

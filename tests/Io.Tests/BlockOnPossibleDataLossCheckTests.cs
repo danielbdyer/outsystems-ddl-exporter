@@ -184,7 +184,7 @@ public sealed class BlockOnPossibleDataLossCheckTests(PlannedOnBothDacFxReleases
     [Theory]
     [Trait("Category", "fixture")]
     [MemberData(nameof(SampleChanges))]
-    public async Task Every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(
+    public async Task QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(
         string change) =>
         Assert.Empty((await Readings(change, null)).SelectMany(r => r.Reading.Unclassified
             .Select(s => r.Plan + ": " + Vocabulary.Where(s) + ", " + s.Type + ": " + s.Text)));
@@ -193,7 +193,7 @@ public sealed class BlockOnPossibleDataLossCheckTests(PlannedOnBothDacFxReleases
     /// change's live plan on 170.5.96 unclassified or takes a precondition from what the plan asserts.</summary>
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task Removing_any_row_of_the_vocabulary_whose_case_is_a_sample_change_changes_what_that_change_s_plan_asserts()
+    public async Task QST_95_removing_any_row_of_the_vocabulary_whose_case_is_a_sample_change_changes_what_that_change_s_plan_asserts()
     {
         var kept = new List<string>();
         foreach (var row in Vocabulary.Rows.Where(r => r.Case.StartsWith("S2 ", StringComparison.Ordinal)))

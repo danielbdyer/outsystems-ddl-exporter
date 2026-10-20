@@ -132,7 +132,7 @@ public static partial class PlanStatements
             {
                 listed.Add(new PlanStatement(ordinal + listed.Count, part, line, depth, type, text)
                 {
-                    Words = read.Words, Objects = read.Objects, Columns = read.Columns, Key = read.Key,
+                    Words = read.Words, Objects = read.Objects, Columns = read.Columns, Key = read.Key, Included = read.Included,
                 });
             }
 

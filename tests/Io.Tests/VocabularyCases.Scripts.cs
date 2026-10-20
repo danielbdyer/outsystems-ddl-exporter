@@ -13,7 +13,13 @@ public sealed partial class VocabularyCases
     /// <summary>v3's case of a changed deploy script that executes a procedure no row reads, beside one a row reads.</summary>
     internal const string ExecutedByAScript = "a procedure a changed post-deploy script executes";
 
+    /// <summary>v3's case of a table the change creates and a changed post-deploy INSERT fills before DacFx validates its foreign key, as
+    /// QST-59's seed fills a new parent: the key's rows are the script's, so it stands as an Authored, which a person declares.</summary>
+    internal const string FilledByAPostDeployScript = "a table the change creates that a changed post-deploy script fills";
+
     private const string Executes = "EXEC [dbo].[pFixOrders];\nGO\nEXEC sp_addextendedproperty N'MS_Description', N'Fixed', N'SCHEMA', N'dbo';";
+
+    private const string ChildRows = "INSERT INTO dbo.Child (Id, CustomerId) VALUES (1, 1);";
 
     private static readonly Rename ContactPhoneRenamed = Ok(Rename.Of(Model.ColumnKey("Customer.ContactPhone"), "MobileNumber"));
 
@@ -201,6 +207,24 @@ public sealed partial class VocabularyCases
             PreDeploy: TwoRelease, PreDeployBefore: ""),
         [ExecutedByAScript] = new(Pg, Pg, "PRINT N'Update complete.';\nGO\n" + Executes + "\nGO\n", [], Unclassified: [1],
             PostDeploy: Executes, PostDeployBefore: ""),
+        [FilledByAPostDeployScript] = new(Pg, Pg.With("Child.Id int NOT NULL", "Child.CustomerId int NOT NULL")
+                .PrimaryKey("PK_Child", "Child", "Id").ForeignKey("FK_Child_Customer", "Child", ["CustomerId"], "Customer", ["Id"]), $"""
+            CREATE TABLE [dbo].[Child] (
+                [Id]         INT NOT NULL,
+                [CustomerId] INT NOT NULL,
+                CONSTRAINT [PK_Child] PRIMARY KEY CLUSTERED ([Id] ASC)
+            );
+            GO
+            ALTER TABLE [dbo].[Child] WITH NOCHECK
+                ADD CONSTRAINT [FK_Child_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id]);
+            GO
+            {ChildRows}
+            GO
+            PRINT N'Checking existing data against newly created constraints';
+            GO
+            ALTER TABLE [dbo].[Child] WITH CHECK CHECK CONSTRAINT [FK_Child_Customer];
+            GO
+            """, [Unique("Child", "Id"), Authored("Child", ScriptPart.PostDeploy, 1, "CustomerId")], PostDeploy: ChildRows),
 
         // Unknown statements: one that reads rows and that no row matches is an unclassified change, by its line.
         ["QST-14"] = new(Pg, Pg,

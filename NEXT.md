@@ -19,7 +19,7 @@ DacFx's `xp_msver` call, so the read-only principal sends no `EXEC`. Wave 5 land
 - Run the sql-windows job on the branch: DacFx 162.5.57 plans LocalDB 17.0 as Sql160, and no run of the 162 half there is measured.
 
 ## Next
-- WP 2.5 reads the plan by `PlanStatements.Read` and `Vocabulary.Read`; an unclassified statement sends the change to proof.
+- WP 2.5 chains `Vocabulary.Read` and `Coordinates.Of`: a `Declared` takes a person's state; an unclassified statement goes to proof.
 - S4's decision line, from the "S4 |" rows of the sql-ubuntu and sql-windows jobs' summaries (WP 3.4 landed `LocalServer`'s
   sweep, first-connect retry and copy cache); its laptop half, the SSDT repository's own schema on LocalDB 16.x, waits on S6.
 - WP 7.1, the citations rewritten. Then WP 2.5, which reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into

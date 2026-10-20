@@ -55,9 +55,10 @@ public sealed record PlanObject(PlanRole Role, Name Name, string? Database = nul
 /// 0 for a batch's own and one more inside each IF, BEGIN … END or TRY … CATCH, each listed before the statements it holds; ScriptDom's
 /// name for its type, such as CreateIndexStatement; and its text as io's Sql160ScriptGenerator writes it, white space collapsed. Beside
 /// these: the words io reads off its tree (<see cref="Words"/>); the objects it names, each in its role; the columns it names on its
-/// target, or in its own expressions where it has none; and a MERGE's key, the target columns its ON matches. An ALTER TABLE that adds or
-/// drops several elements is one statement for each element, at one line, so each element is read on its own. Statements sort by their
-/// place.
+/// target, or in its own expressions where it has none, a key's columns for an index or a key constraint; a MERGE's key, the target
+/// columns its ON matches; and an index's INCLUDE columns (<see cref="Included"/>). An ALTER TABLE that adds or drops several elements is
+/// one statement for each element, at one line, so each element is read on its own, and a CREATE TABLE is one statement for the table and
+/// one for each PRIMARY KEY or UNIQUE constraint it declares, as an ALTER TABLE's added constraint is. Statements sort by their place.
 /// </summary>
 public sealed record PlanStatement(int Ordinal, ScriptPart Part, int Line, int Depth, string Type, string Text)
     : IComparable<PlanStatement>
@@ -65,14 +66,14 @@ public sealed record PlanStatement(int Ordinal, ScriptPart Part, int Line, int D
     /// <summary>
     /// What io reads off the statement's tree, in T-SQL's own words, a closed list: of an IF, RAISERROR 127 when it raises at state 127
     /// and has no ELSE; of an IF or a WHILE, each global variable its condition reads (@@ERROR, @@TRANCOUNT, @@ROWCOUNT, @@FETCH_STATUS);
-    /// of a CREATE INDEX, UNIQUE, CLUSTERED and WHERE; of a CREATE TABLE, PERSISTED when it holds a persisted computed column; of an
-    /// ALTER TABLE, WITH CHECK or WITH NOCHECK, and of one element added, COLUMN with NULL or NOT NULL, AS for a computed column, PERSISTED
-    /// and DEFAULT, or a constraint's PRIMARY KEY, UNIQUE, CLUSTERED, FOREIGN KEY, CHECK or DEFAULT, or PERIOD FOR SYSTEM_TIME; of one
-    /// element dropped, DROP COLUMN, DROP CONSTRAINT, DROP INDEX or DROP PERIOD; of an ALTER COLUMN, NULL or NOT NULL and COLLATE; of a
-    /// constraint's check, CHECK CONSTRAINT or NOCHECK CONSTRAINT, and ALL; of an ALTER TABLE SET, SYSTEM_VERSIONING = ON or OFF, or SET
-    /// and another option's name; of an INSERT, its source, SELECT, VALUES or EXECUTE; of a SELECT, INTO; of a MERGE, VALUES when its
-    /// source is a list of rows; of an EXECUTE, PROCEDURE and the procedure's one-part name, or DYNAMIC; of a WAITFOR, DELAY, TIME or a
-    /// statement.
+    /// of a CREATE INDEX, UNIQUE, CLUSTERED and WHERE; of a CREATE TABLE, PERSISTED when it holds a persisted computed column, and of each
+    /// key constraint it declares, PRIMARY KEY or UNIQUE and CLUSTERED; of an ALTER TABLE, WITH CHECK or WITH NOCHECK, and of one element
+    /// added, COLUMN with NULL or NOT NULL, AS for a computed column, PERSISTED and DEFAULT, or a constraint's PRIMARY KEY, UNIQUE,
+    /// CLUSTERED, FOREIGN KEY, CHECK or DEFAULT, or PERIOD FOR SYSTEM_TIME; of one element dropped, DROP COLUMN, DROP CONSTRAINT, DROP
+    /// INDEX or DROP PERIOD; of an ALTER COLUMN, NULL or NOT NULL and COLLATE; of a constraint's check, CHECK CONSTRAINT or NOCHECK
+    /// CONSTRAINT, and ALL; of an ALTER TABLE SET, SYSTEM_VERSIONING = ON or OFF, or SET and another option's name; of an INSERT, its
+    /// source, SELECT, VALUES or EXECUTE; of a SELECT, INTO; of a MERGE, VALUES when its source is a list of rows; of an EXECUTE, PROCEDURE
+    /// and the procedure's one-part name, or DYNAMIC; of a WAITFOR, DELAY, TIME or a statement.
     /// </summary>
     public SortedArray<string> Words { get; init; } = [];
 
@@ -81,6 +82,10 @@ public sealed record PlanStatement(int Ordinal, ScriptPart Part, int Line, int D
     public SortedArray<Name> Columns { get; init; } = [];
 
     public SortedArray<Name> Key { get; init; } = [];
+
+    /// <summary>A CREATE INDEX's INCLUDE columns, which the index's leaf level holds beside its key: SQL Server computes a computed one
+    /// over every row as it builds the index, and the key's limit counts none of them.</summary>
+    public SortedArray<Name> Included { get; init; } = [];
 
     /// <summary>The statement's target, null where it has none.</summary>
     public PlanObject? Target => Objects.FirstOrDefault(o => o.Role == PlanRole.Target);
@@ -101,5 +106,6 @@ public sealed record PlanStatement(int Ordinal, ScriptPart Part, int Line, int D
         : string.CompareOrdinal(string.Join('\n', Words), string.Join('\n', other.Words)) is var w and not 0 ? w
         : SortedArray.Compare(Objects, other.Objects) is var b and not 0 ? b
         : SortedArray.Compare(Columns, other.Columns) is var c and not 0 ? c
-        : SortedArray.Compare(Key, other.Key);
+        : SortedArray.Compare(Key, other.Key) is var k and not 0 ? k
+        : SortedArray.Compare(Included, other.Included);
 }

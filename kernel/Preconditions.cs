@@ -196,7 +196,8 @@ public sealed record ExistingData(SortedArray<PreconditionState> States)
     /// violating when one finds a row that breaks its rule; a TableEmpty precondition is violating exactly when it is populated, since
     /// BlockOnPossibleDataLoss reads row presence alone (law 9), and a Scan or a Rebuild never is, since no row fails its statement. Two
     /// counts of one precondition give one state, populated or violating when either says so. A Computed or an Authored precondition is
-    /// declared and never counted, so a count of one, or a declared state of another kind, is an argument no caller passes.
+    /// declared and never counted, which Coordinates.Of places as <see cref="Coordinates.Declared"/> wherever its table is, so a count of
+    /// one, or a declared state of another kind, is an argument no caller passes.
     /// </summary>
     public static ExistingData Of(IEnumerable<PreconditionCount> counts, IEnumerable<PreconditionState>? declared = null)
     {

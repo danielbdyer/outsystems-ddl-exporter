@@ -24,8 +24,8 @@ public enum Asks
 /// A condition a row sets beside its words, which the plan or a model decides: every object the statement reads is outside the database's
 /// rows (<see cref="PlanObject.OutsideTheRows"/>); its target is; its target is DacFx's tmp_ms_xx_&lt;T&gt; and it reads &lt;T&gt;; its
 /// target is a tmp_ms_xx_ table; it reads a table another statement copies into a tmp_ms_xx_ table; its key's widest value, by the model
-/// the change brings, passes the index's limit; a column of its key is computed and not persisted there; what it drops is a clustered key
-/// or index in the model before the change.
+/// the change brings, passes the index's limit; a column of its key or its INCLUDE is computed and not persisted there; what it drops is
+/// a clustered key or index in the model before the change.
 /// </summary>
 public enum When
 {
@@ -168,6 +168,10 @@ public static partial class Vocabulary
         R("AlterTableAddTableElementStatement", Asks.KeyLength, "QST-49", ["PRIMARY KEY"], when: [When.KeyOverLimit]),
         R("AlterTableAddTableElementStatement", Asks.KeyLength, "a unique constraint over the key limit", ["UNIQUE"],
             when: [When.KeyOverLimit]),
+        R("CreateTableStatement", Asks.KeyLength, "a rebuilt table's primary key over the key limit", ["PRIMARY KEY"],
+            when: [When.OnRebuild, When.KeyOverLimit]),
+        R("CreateTableStatement", Asks.KeyLength, "a rebuilt table's unique constraint over the key limit", ["UNIQUE"],
+            when: [When.OnRebuild, When.KeyOverLimit]),
         R("InsertStatement", Asks.Rebuild, "QST-63", ["SELECT"], when: [When.IntoRebuild]),
         R("IfStatement", Asks.Rebuild, "QST-64", without: ["RAISERROR 127"], when: [When.ReadsRebuilt]),
         R("CreateTableStatement", Asks.Computed, "QST-63", ["PERSISTED"], when: [When.OnRebuild]),
@@ -259,7 +263,8 @@ public static partial class Vocabulary
         When.OnRebuild => s.Target is { } t && Copied(t.Name) is not null,
         When.ReadsRebuilt => s.In(PlanRole.Read).Any(o => context.Rebuilt.Contains(o.Name)),
         When.KeyOverLimit => s.Target is { } t && context.KeyBytes(Table(t.Name), s.Columns) > (s.Has("CLUSTERED") ? 900 : 1700),
-        When.ComputedKey => s.Target is { } t && s.Columns.Any(c => context.Computed(Table(t.Name), c) is { Persisted: false }),
+        When.ComputedKey => s.Target is { } t
+            && s.Columns.Concat(s.Included).Any(c => context.Computed(Table(t.Name), c) is { Persisted: false }),
         When.DropsClustered => s.Target is { } t && s.In(PlanRole.Element).Any(e => context.Clustered(Table(t.Name), e.Name)),
         _ => throw new ArgumentOutOfRangeException(nameof(when)),
     };
@@ -306,8 +311,11 @@ public static partial class Vocabulary
 
                 return new(asks, validated);
             case Asks.KeyLength:
-                return Raises(new Precondition(table!.Value, s.Columns, new PreconditionKind.KeyLength(
-                    s.In(PlanRole.Element).Select(e => (Name?)e.Name).FirstOrDefault(), s.Has("CLUSTERED"))));
+                // a rebuild's key constraint is DacFx's tmp_ms_xx_constraint_… until its sp_rename, so it takes the model's name
+                var index = s.Target is { } copy && Copied(copy.Name) is not null
+                    ? context.KeyOf(table!.Value, s.Has("PRIMARY KEY") ? "PrimaryKeyConstraint" : "UniqueConstraint", s.Columns)
+                    : s.In(PlanRole.Element).Select(e => (Name?)e.Name).FirstOrDefault();
+                return Raises(new Precondition(table!.Value, s.Columns, new PreconditionKind.KeyLength(index, s.Has("CLUSTERED"))));
             case Asks.Rebuild:
                 var moved = s.In(PlanRole.Read).Select(o => o.Name).First(n => s.Type == "IfStatement" ? context.Rebuilt.Contains(n)
                     : n == Copied(s.Target!.Name));
@@ -315,9 +323,15 @@ public static partial class Vocabulary
                     new PreconditionKind.Rebuild()));
             case Asks.Computed:
                 // ADD … AS … PERSISTED computes its column; a rebuild's table, each persisted column the change makes or alters; an
-                // index, each key column computed on read.
+                // index, each column of its key or its INCLUDE computed on read; and a table the change creates holds no row to compute
+                // over, so there the row asks nothing and the statement is read by its other rows, a Scan or a Unique.
                 var on = table!.Value;
-                return Raises([.. s.Columns.Select(c => (Column: c, Computed: context.Computed(on, c)))
+                if (context.Created(on))
+                {
+                    return new(Asks.Nothing, []);
+                }
+
+                return Raises([.. s.Columns.Concat(s.Included).Select(c => (Column: c, Computed: context.Computed(on, c)))
                     .Where(c => s.Type switch
                     {
                         "CreateTableStatement" => c.Computed is { Persisted: true } && context.Changed(on, c.Column),

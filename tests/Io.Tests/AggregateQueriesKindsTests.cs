@@ -17,7 +17,8 @@ namespace DbChange.Io.Tests;
 /// fixed columns' sizes, the value converted first where the change gives the column another type; SQL Server's CREATE INDEX fails with
 /// Msg 1946 on exactly the rows it counts. A key of two columns of a varying width, and one whose fixed columns alone pass the limit,
 /// read not predictable read-only. A Scan and a Rebuild count their table's rows and never a violating row. Computed and Authored are
-/// declared by a person, and Temporal and SeedDrift are counts no form of the allowlist holds, so none of the four is counted.
+/// declared by a person, which Coordinates.Of places for the person and no query counts, and Temporal and SeedDrift are counts no form of
+/// the allowlist holds, so none of the four is counted.
 /// </summary>
 public sealed class AggregateQueriesKindsTests : IDisposable
 {
@@ -63,15 +64,17 @@ public sealed class AggregateQueriesKindsTests : IDisposable
         Precondition On(PreconditionKind kind, params string[] columns) =>
             new(Model.TableName("N"), SortedArray.Of(columns.Select(c => Value(Name.Of(c)))), kind);
         var (scan, rebuild) = (On(new PreconditionKind.Scan()), On(new PreconditionKind.Rebuild(), "Id"));
-        Precondition[] unheld = [On(new PreconditionKind.Computed("(len([Big]))"), "Big"),
-            On(new PreconditionKind.Authored(ScriptPart.PostDeploy, 3), "Big"),
-            On(new PreconditionKind.Temporal(Value(Name.Of("Start")), Value(Name.Of("End")), null), "Start", "End"),
+        Precondition[] declared = [On(new PreconditionKind.Computed("(len([Big]))"), "Big"),
+            On(new PreconditionKind.Authored(ScriptPart.PostDeploy, 3), "Big")];
+        Precondition[] unheld = [On(new PreconditionKind.Temporal(Value(Name.Of("Start")), Value(Name.Of("End")), null), "Start", "End"),
             On(new PreconditionKind.SeedDrift([], ScriptPart.PostDeploy, 3), "Id")];
+        var change = Value(Change.Between(model.Elements, model.Elements, []));
 
-        var queries = Queries(model, model, [scan, rebuild, .. unheld]);
+        var queries = Queries(model, model, [scan, rebuild, .. declared, .. unheld]);
         var table = Assert.Single(queries.Tables);
         var read = AggregateQueries.Read(table, AggregateQueriesTests.Answered(table, item => item.Precondition is null ? 7 : 0));
 
+        Assert.All(declared, p => Assert.IsType<Coordinates.Declared>(Value(Coordinates.Of(p, change, model.Elements))));
         Assert.Equal(SortedArray.Of(unheld), SortedArray.Of(queries.NotPredictable.Select(u => u.Precondition)));
         Assert.Equal(SortedArray.Of(new PreconditionCount(scan, 7, 0), new PreconditionCount(rebuild, 7, 0)), read.Counted);
     }

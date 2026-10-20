@@ -23,6 +23,23 @@ public sealed partial class VocabularyCases
     /// in either order of its columns.</summary>
     internal const string MaxBesideFixed = "an index over a max column beside an int column";
 
+    /// <summary>The case of the KeyLength row over a rebuild's inline primary key: PK_D moved onto a column of 920 bytes, past the
+    /// clustered limit of 900, which DacFx makes by a rebuild whose tmp_ms_xx_D declares the key, so no ADD CONSTRAINT shows it (spike
+    /// S2).</summary>
+    internal const string RebuiltPrimaryKey = "a rebuilt table's primary key over the key limit";
+
+    /// <summary>The case of the KeyLength row over a rebuild's inline unique constraint: UQ_E_Path, over a column of 1,800 bytes, past the
+    /// limit of 1,700, declared by the tmp_ms_xx_E of a rebuild that makes E.Id an identity.</summary>
+    internal const string RebuiltUnique = "a rebuilt table's unique constraint over the key limit";
+
+    /// <summary>The case of an index that includes a computed column it does not persist: SQL Server computes the column over every row
+    /// as it builds the index's leaf level, as it does a key column's (QST-68).</summary>
+    internal const string IncludesAComputedColumn = "an index that includes a computed column not persisted";
+
+    /// <summary>The case of an index over a computed column of a table the change creates, which holds no row to compute it over: a
+    /// Scan, which the change answers, and no Computed.</summary>
+    internal const string ComputedOnANewTable = "an index over a computed column of a table the change creates";
+
     private const string Guard = "RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.', 16, 127)"
         + " WITH NOWAIT";
 
@@ -59,6 +76,10 @@ public sealed partial class VocabularyCases
         "Doc.Body nvarchar(max) NULL SQL_Latin1_General_CP1_CI_AS");
 
     private static readonly Model Rebuilt = Pg.With("P.Id int NOT NULL").PrimaryKey("PK_P", "P", "Id");
+
+    private static readonly Model D = Pg.With("D.Id int NOT NULL", "D.Path nvarchar(460) NOT NULL");
+
+    private static readonly Model E = Pg.With("E.Id int NOT NULL", "E.Path nvarchar(900) NOT NULL").PrimaryKey("PK_E", "E", "Id");
 
     private static readonly Model Versioned = Pg.With("Customer.ValidFrom datetime2(7) NOT NULL", "Customer.ValidTo datetime2(7) NOT NULL",
             "CustomerHistory.Id int NOT NULL", "CustomerHistory.ValidFrom datetime2(7) NOT NULL", "CustomerHistory.ValidTo datetime2(7) NOT NULL")
@@ -218,6 +239,64 @@ public sealed partial class VocabularyCases
         DROP TABLE [dbo].[T];
         EXECUTE sp_rename N'[dbo].[tmp_ms_xx_T]', N'T';
         EXECUTE sp_rename N'[dbo].[tmp_ms_xx_constraint_PK_T1]', N'PK_T', N'OBJECT';
+        COMMIT TRANSACTION;
+        SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+        GO
+        """;
+
+    private const string RebuildD = """
+        PRINT N'Starting rebuilding table [dbo].[D]...';
+        GO
+        BEGIN TRANSACTION;
+        SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+        SET XACT_ABORT ON;
+        CREATE TABLE [dbo].[tmp_ms_xx_D] (
+            [Id]   INT            NOT NULL,
+            [Path] NVARCHAR (460) NOT NULL,
+            CONSTRAINT [tmp_ms_xx_constraint_PK_D1] PRIMARY KEY CLUSTERED ([Path] ASC)
+        );
+        IF EXISTS (SELECT TOP 1 1
+                   FROM   [dbo].[D])
+            BEGIN
+                INSERT INTO [dbo].[tmp_ms_xx_D] ([Path], [Id])
+                SELECT   [Path],
+                         [Id]
+                FROM     [dbo].[D]
+                ORDER BY [Path] ASC;
+            END
+        DROP TABLE [dbo].[D];
+        EXECUTE sp_rename N'[dbo].[tmp_ms_xx_D]', N'D';
+        EXECUTE sp_rename N'[dbo].[tmp_ms_xx_constraint_PK_D1]', N'PK_D', N'OBJECT';
+        COMMIT TRANSACTION;
+        SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+        GO
+        """;
+
+    private const string RebuildE = """
+        BEGIN TRANSACTION;
+        SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+        SET XACT_ABORT ON;
+        CREATE TABLE [dbo].[tmp_ms_xx_E] (
+            [Id]   INT            IDENTITY (1, 1) NOT NULL,
+            [Path] NVARCHAR (900) NOT NULL,
+            CONSTRAINT [tmp_ms_xx_constraint_PK_E1] PRIMARY KEY CLUSTERED ([Id] ASC),
+            CONSTRAINT [tmp_ms_xx_constraint_UQ_E_Path1] UNIQUE NONCLUSTERED ([Path] ASC)
+        );
+        IF EXISTS (SELECT TOP 1 1
+                   FROM   [dbo].[E])
+            BEGIN
+                SET IDENTITY_INSERT [dbo].[tmp_ms_xx_E] ON;
+                INSERT INTO [dbo].[tmp_ms_xx_E] ([Id], [Path])
+                SELECT   [Id],
+                         [Path]
+                FROM     [dbo].[E]
+                ORDER BY [Id] ASC;
+                SET IDENTITY_INSERT [dbo].[tmp_ms_xx_E] OFF;
+            END
+        DROP TABLE [dbo].[E];
+        EXECUTE sp_rename N'[dbo].[tmp_ms_xx_E]', N'E';
+        EXECUTE sp_rename N'[dbo].[tmp_ms_xx_constraint_PK_E1]', N'PK_E', N'OBJECT';
+        EXECUTE sp_rename N'[dbo].[tmp_ms_xx_constraint_UQ_E_Path1]', N'UQ_E_Path', N'OBJECT';
         COMMIT TRANSACTION;
         SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
         GO
@@ -452,6 +531,10 @@ public sealed partial class VocabularyCases
                 ON [dbo].[N]([Big] ASC, [Id] ASC);
             GO
             """, [KeyLength("N", "IX_N_Big_Id", false, "Big", "Id")]),
+        [RebuiltPrimaryKey] = new(D.PrimaryKey("PK_D", "D", "Id"), D.PrimaryKey("PK_D", "D", "Path"), RebuildD,
+            [Unique("D", "Path"), KeyLength("D", "PK_D", true, "Path"), Rebuild("D")]),
+        [RebuiltUnique] = new(E, E.Identity("E.Id").UniqueConstraint("UQ_E_Path", "E", "Path"), RebuildE,
+            [Unique("E", "Path"), KeyLength("E", "UQ_E_Path", false, "Path"), Rebuild("E", "Id")]),
 
         // ForeignKey and Check stand where a statement validates them; Authored where a post-deploy seed filled the parent first.
         ["QST-50"] = new(Pg, Pg.ForeignKey("FK_Order_Customer", "Order", ["CustomerId"], "Customer", ["Id"]), """
@@ -546,5 +629,23 @@ public sealed partial class VocabularyCases
                 ON [dbo].[T]([RefNum] ASC);
             GO
             """, [Computed("T.RefNum", "(CONVERT (INT, [Ref]))")]),
+        [IncludesAComputedColumn] = new(T.Computed("T.RefNum", "(CONVERT (INT, [Ref]))"),
+            T.Computed("T.RefNum", "(CONVERT (INT, [Ref]))").Index("IX_T_Id", "T", ["Id"], "RefNum"), """
+            CREATE NONCLUSTERED INDEX [IX_T_Id]
+                ON [dbo].[T]([Id] ASC)
+                INCLUDE([RefNum]);
+            GO
+            """, [Computed("T.RefNum", "(CONVERT (INT, [Ref]))")]),
+        [ComputedOnANewTable] = new(Pg, T.Computed("T.RefNum", "(CONVERT (INT, [Ref]))").Index("IX_T_RefNum", "T", ["RefNum"]), """
+            CREATE TABLE [dbo].[T] (
+                [Id]     INT          NOT NULL,
+                [Ref]    VARCHAR (20) NULL,
+                [RefNum] AS (CONVERT (INT, [Ref]))
+            );
+            GO
+            CREATE NONCLUSTERED INDEX [IX_T_RefNum]
+                ON [dbo].[T]([RefNum] ASC);
+            GO
+            """, [Scan("T")]),
     };
 }

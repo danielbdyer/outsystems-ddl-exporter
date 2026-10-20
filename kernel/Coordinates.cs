@@ -11,7 +11,9 @@ namespace DbChange.Kernel;
 /// is answered with no rows and none violating; a column it creates holds one value in every existing row of its table, its default when
 /// it is NOT NULL and NULL when it allows NULL (<see cref="Place.Default"/>), which WP 2.3's queries read where the column would stand. An
 /// object the change renames or moves, or one in a table it renames or moves, is counted under the key it had. Anything else is counted
-/// where it is. An object the environment does not hold under that key is the error plan.missing-object. The cases are closed.
+/// where it is. An object the environment does not hold under that key is the error plan.missing-object. A Computed or an Authored, whose
+/// state a person declares, is placed by the same rules and answered by neither a count nor the change (<see cref="Declared"/>). The cases
+/// are closed.
 /// </summary>
 public abstract record Coordinates
 {
@@ -19,10 +21,11 @@ public abstract record Coordinates
     {
     }
 
-    public T Match<T>(Func<Answered, T> answered, Func<Counted, T> counted) => this switch
+    public T Match<T>(Func<Answered, T> answered, Func<Counted, T> counted, Func<Declared, T> declared) => this switch
     {
         Answered a => answered(a),
         Counted c => counted(c),
+        Declared d => declared(d),
         _ => throw new UnreachableException(),
     };
 
@@ -31,9 +34,10 @@ public abstract record Coordinates
     public static Result<Coordinates> Of(Precondition precondition, Change change, SortedArray<Element> environment) =>
         Of(precondition, change, environment, Collation.CaseSensitive);
 
-    /// <summary>Where <paramref name="precondition"/> is answered: from <paramref name="change"/>, or by a count in
-    /// <paramref name="environment"/>, the model of the environment the change is planned against, its names compared under
-    /// <paramref name="collation"/> as Change.Between compares them; a place names each object as the environment spells it.</summary>
+    /// <summary>Where <paramref name="precondition"/> is answered: from <paramref name="change"/>, by a count in
+    /// <paramref name="environment"/>, the model of the environment the change is planned against, or by a person for a Computed or an
+    /// Authored; names are compared under <paramref name="collation"/> as Change.Between compares them, and a place names each object as
+    /// the environment spells it.</summary>
     public static Result<Coordinates> Of(Precondition precondition, Change change, SortedArray<Element> environment, Collation collation)
     {
         var comparer = ElementKey.Comparer(collation);
@@ -49,7 +53,7 @@ public abstract record Coordinates
             return error;
         }
 
-        if (made.Contains(table))
+        if (made.Contains(table) && !precondition.Kind.Declared)
         {
             return new Answered(new PreconditionCount(precondition, 0, 0));
         }
@@ -100,7 +104,8 @@ public abstract record Coordinates
             }
         }
 
-        return new Counted(precondition, SortedArray.Of(places));
+        var placed = SortedArray.Of(places);
+        return precondition.Kind.Declared ? new Declared(precondition, placed) : new Counted(precondition, placed);
     }
 
     /// <summary>
@@ -126,11 +131,21 @@ public abstract record Coordinates
             _ => null,
         };
 
-    /// <summary>The change creates the precondition's table, which holds no row: the count is known, no rows and none violating.</summary>
+    /// <summary>The change creates the table of a precondition a count answers, which holds no row: the count is known, no rows and none
+    /// violating.</summary>
     public sealed record Answered(PreconditionCount Count) : Coordinates;
 
     /// <summary>Counted in the environment: each table and column the precondition reads, and where the environment holds it.</summary>
     public sealed record Counted(Precondition Precondition, SortedArray<Place> Places) : Coordinates;
+
+    /// <summary>
+    /// A Computed or an Authored, whose state a person declares (<see cref="ExistingData.Of"/>'s declared states) and no count gives: each
+    /// table and column it reads, where the environment holds it or nowhere for one the change creates, which the person looks at. It is
+    /// never answered from the change, even on a table the change creates: a deploy script can fill that table before the statement that
+    /// reads it, as a post-deploy INSERT fills a new table before DacFx validates its foreign key (the Facsimile's QST-59), so an empty
+    /// table is no answer.
+    /// </summary>
+    public sealed record Declared(Precondition Precondition, SortedArray<Place> Places) : Coordinates;
 }
 
 /// <summary>

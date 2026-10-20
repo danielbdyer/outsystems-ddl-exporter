@@ -8,8 +8,9 @@ namespace DbChange.Io.Tests;
 /// <summary>
 /// io/PlanStatements, the listing kernel/Vocabulary reads (WP 2.1's second slice): a deploy script's statements found in DacFx's script by
 /// the script's text, each at the script's own line, and DacFx's own at the plan's; the statements an IF, a BEGIN … END and a TRY … CATCH
-/// hold listed one deeper, and a WHILE's body not; an ALTER TABLE of several elements one statement for each; and a deploy script the
-/// plan does not hold verbatim refused.
+/// hold listed one deeper, and a WHILE's body not; an ALTER TABLE of several elements one statement for each, and a CREATE TABLE one for
+/// the table and one for each key constraint it declares; an index's INCLUDE columns apart from its key; and a deploy script the plan does
+/// not hold verbatim refused.
 /// </summary>
 public sealed class PlanStatementsTests
 {
@@ -58,6 +59,29 @@ public sealed class PlanStatementsTests
             listing.Plan.Select(s => s.Line + " " + string.Join(",", s.Columns) + " " + string.Join("|", s.Words)
                 + string.Concat(s.Objects.Where(o => o.Role != PlanRole.Target).Select(o => " " + o.Role + ":" + o.Name))));
         Assert.All(listing.Plan, s => Assert.Equal(("AlterTableAddTableElementStatement", "[dbo].[T]"), (s.Type, s.Target!.Name.ToString())));
+    }
+
+    /// <summary>
+    /// A rebuild's CREATE TABLE declares its keys inline, a table's and a column's, where an ALTER TABLE would add them: each is a statement
+    /// of its own over its key's columns, with its words, so the vocabulary reads a key over its limit there; and a CREATE INDEX's INCLUDE
+    /// columns stand apart from its key, which they never widen.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_CREATE_TABLE_is_one_statement_for_the_table_and_one_for_each_key_it_declares_and_an_index_s_INCLUDE_stands_apart_from_its_key()
+    {
+        const string plan = "CREATE TABLE [dbo].[tmp_ms_xx_T] ([Id] INT NOT NULL PRIMARY KEY NONCLUSTERED, [Code] NVARCHAR (50) NOT NULL,\n"
+            + "    [N] AS ([Id] * 2) PERSISTED, CONSTRAINT [tmp_ms_xx_constraint_UQ_T1] UNIQUE CLUSTERED ([Code] ASC, [Id] ASC));\nGO\n"
+            + "CREATE NONCLUSTERED INDEX [IX_T_Code] ON [dbo].[T]([Code] ASC) INCLUDE([N], [Id]);\nGO\n";
+
+        var listing = Expect.Value(PlanStatements.Read(plan, [], new(null, null), new(null, null)));
+
+        Assert.Equal(["CreateTableStatement [Code],[Id],[N] PERSISTED",
+            "CreateTableStatement [Code],[Id] CLUSTERED|UNIQUE Element:[tmp_ms_xx_constraint_UQ_T1]", "CreateTableStatement [Id] PRIMARY KEY",
+            "CreateIndexStatement [Code] Element:[IX_T_Code] INCLUDE [Id],[N]"],
+            listing.Plan.Select(s => s.Type + " " + string.Join(",", s.Columns) + Words(s)
+                + string.Concat(s.Objects.Where(o => o.Role != PlanRole.Target).Select(o => " " + o.Role + ":" + o.Name))
+                + (s.Included.Count == 0 ? "" : " INCLUDE " + string.Join(",", s.Included))));
     }
 
     [Fact]

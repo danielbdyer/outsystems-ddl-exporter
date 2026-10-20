@@ -25,10 +25,24 @@ public sealed partial class VocabularyCases
         string? PreDeploy = null, string? PostDeploy = null, string? PreDeployBefore = null, string? PostDeployBefore = null,
         Rename[]? Renames = null);
 
+    /// <summary>A program of releases: the plan of its final target against the environment's schema, the releases before it, each read
+    /// with its own deploy scripts, and the preconditions the program asks.</summary>
+    internal sealed record ProgramCase(Case Target, Case[] Releases, Precondition[] Expected);
+
     private static IReadOnlyDictionary<string, Case>? cases;
+
+    private static IReadOnlyDictionary<string, ProgramCase>? programs;
 
     internal static IReadOnlyDictionary<string, Case> Cases =>
         cases ??= Framed().Concat(Scripted()).ToDictionary(c => c.Key, c => c.Value, StringComparer.Ordinal);
+
+    /// <summary>The catalog's program: R1 is QST-82's two-release pre-deploy over an unchanged model, and R2, its final target, QST-16's
+    /// ALTER … NOT NULL planned against the environment's schema; R2 has no pre-deploy script.</summary>
+    internal static IReadOnlyDictionary<string, ProgramCase> Programs => programs ??= new Dictionary<string, ProgramCase>(StringComparer.Ordinal)
+    {
+        ["QST-83"] = new(Cases["QST-16"], [Cases["QST-82"]], [TableEmpty("Customer"), NotNull("Customer.Email"),
+            Authored("Customer", ScriptPart.PreDeploy, 1, "Email"), Authored("Customer", ScriptPart.PreDeploy, 6, "Email")]),
+    };
 
     /// <summary>The SQLCMD value a plan of the catalog's names, as DacFx's header gives it.</summary>
     private static readonly SqlCmdValue[] Values = [new(Ok(SqlCmdName.Of("case", "DatabaseName")), "bd_probe", false)];
@@ -54,6 +68,8 @@ public sealed partial class VocabularyCases
     [InlineData("QST-49")]
     [InlineData(UniqueOverTheLimit)]
     [InlineData(MaxBesideFixed)]
+    [InlineData(RebuiltPrimaryKey)]
+    [InlineData(RebuiltUnique)]
     [InlineData("QST-50")]
     [InlineData("QST-55")]
     [InlineData("QST-56")]
@@ -66,6 +82,8 @@ public sealed partial class VocabularyCases
     [InlineData("QST-66")]
     [InlineData("QST-67")]
     [InlineData("QST-68")]
+    [InlineData(IncludesAComputedColumn)]
+    [InlineData(ComputedOnANewTable)]
     [InlineData("QST-69")]
     [InlineData("QST-70")]
     [InlineData("QST-71")]
@@ -80,6 +98,7 @@ public sealed partial class VocabularyCases
     [InlineData("QST-81")]
     [InlineData("QST-82")]
     [InlineData(ExecutedByAScript)]
+    [InlineData(FilledByAPostDeployScript)]
     [InlineData("QST-84")]
     [InlineData("QST-85")]
     [InlineData("QST-86")]
@@ -104,7 +123,8 @@ public sealed partial class VocabularyCases
     }
 
     /// <summary>QST-94: a statement of DacFx's own that reads existing rows and that no row matches is unclassified, by its line,
-    /// whatever its shape, and asks nothing the prediction could take as an answer.</summary>
+    /// whatever its shape, and asks nothing the prediction could take as an answer; the reading's one finding is the warning that sends
+    /// the change to proof, about that line.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("QST-94", "UPDATE [dbo].[Customer] SET [Email] = N'' WHERE [Email] IS NULL;")]
@@ -124,6 +144,23 @@ public sealed partial class VocabularyCases
 
         Assert.Equal("3", Lines(reading.Unclassified.Select(s => s.Line)));
         Assert.Empty(reading.Preconditions);
+        Assert.Equal([(Severity.Warning, "plan.unclassified-statement", "Line 3 of the plan's script")],
+            reading.Findings.Select(f => (f.Severity, f.Code, f.Subject)));
+    }
+
+    /// <summary>
+    /// QST-83, the Facsimile's F8: a program of two releases asks what its final target's plan asks, QST-16's TableEmpty and NotNull, and
+    /// the two Authored of its first release's pre-deploy script, QST-82's, whose ALTER … NOT NULL meets the NULLs the final target's
+    /// NotNull counts, where the first release's plan alone asks only its two Authored.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("QST-83")]
+    public void A_program_of_releases_asks_what_its_final_target_asks_and_the_authored_preconditions_of_every_release(string id)
+    {
+        var program = Programs[id];
+
+        Assert.Equal(SortedArray.Of(program.Expected), Vocabulary.Program(Read(program.Target), program.Releases.Select(r => Read(r))));
     }
 
     /// <summary>QST-99: each statement of a plan is in one class, read by its line: a BlockOnPossibleDataLoss check and an ALTER COLUMN …
@@ -140,13 +177,38 @@ public sealed partial class VocabularyCases
     }
 
     /// <summary>
+    /// The coordinate rules over the preconditions of two plans of a table the change creates, as WP 2.5 chains Coordinates.Of,
+    /// ExistingData.Of and Outcome.Predict: an index over the new table's computed column computes it over no existing row, so the plan
+    /// asks a Scan, which the change answers, and the change applies; and a changed post-deploy INSERT that fills the new table before
+    /// DacFx validates its foreign key leaves an Authored, which is declared by a person and never answered as an empty table, so the
+    /// prediction refuses it as plan.undeclared until its state is declared. Neither chain ends in an exception.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData(ComputedOnANewTable, null)]
+    [InlineData(FilledByAPostDeployScript, "plan.undeclared")]
+    public void A_plan_over_a_table_the_change_creates_is_answered_from_the_change_or_declared_by_a_person(string id, string? refused)
+    {
+        var c = Cases[id];
+        var change = Ok(Change.Between(c.Base.Elements, c.Head.Elements, SortedArray.Of(c.Renames ?? [])));
+        var preconditions = Read(c).Preconditions;
+
+        var located = preconditions.Select(p => Ok(Coordinates.Of(p, change, c.Base.Elements))).ToList();
+        var predicted = Outcome.Predict(ExistingData.Of(located.OfType<Coordinates.Answered>().Select(a => a.Count)), [], preconditions, []);
+
+        Assert.Equal(preconditions.Where(p => p.Kind.Declared), located.OfType<Coordinates.Declared>().Select(d => d.Precondition));
+        Assert.Equal(preconditions.Where(p => !p.Kind.Declared), located.OfType<Coordinates.Answered>().Select(a => a.Count.Precondition));
+        Assert.Equal(refused ?? "applies", predicted.Match(o => o is Outcome.Applies ? "applies" : "blocks", e => e.Code));
+    }
+
+    /// <summary>
     /// QST-95, the Facsimile's M1: each row of the vocabulary whose case is the catalog's makes its case fail when it is removed, the
     /// case then losing a precondition, asking another, or holding a statement no row matches; a row whose case is a sample change of
     /// spike S2 is held so by BlockOnPossibleDataLossCheckTests, against that change's plan.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Removing_any_row_of_the_vocabulary_whose_case_is_the_catalog_s_makes_that_case_fail()
+    public void QST_95_removing_any_row_of_the_vocabulary_whose_case_is_the_catalog_s_makes_that_case_fail()
     {
         var rows = Vocabulary.Rows.Where(r => !r.Case.StartsWith("S2 ", StringComparison.Ordinal)).ToList();
         var unnamed = rows.Where(r => !Named(r).Any()).Select(r => r.Type + " for " + r.Case);
@@ -166,7 +228,7 @@ public sealed partial class VocabularyCases
             .Select(m => m.Groups["id"].Value).ToList();
 
         Assert.NotEmpty(left);
-        Assert.DoesNotContain(left, id => !Cases.Keys.Any(k => k == id || k.StartsWith(id + " (", StringComparison.Ordinal)));
+        Assert.DoesNotContain(left, id => !Cases.Keys.Concat(Programs.Keys).Any(k => k == id || k.StartsWith(id + " (", StringComparison.Ordinal)));
     }
 
     /// <summary>The case's plan read by the vocabulary, with the rows given or the vocabulary's own.</summary>

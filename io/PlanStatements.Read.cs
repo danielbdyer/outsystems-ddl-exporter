@@ -8,17 +8,21 @@ using ColumnKind = Microsoft.SqlServer.TransactSql.ScriptDom.ColumnType;
 namespace DbChange.Io;
 
 /// <summary>
-/// What io reads off one statement's tree, in the words kernel/PlanStatement lists: the words, the objects in their roles, the columns
-/// and a key. An IF and a WHILE are read by their condition alone, since the statements an IF holds are listed after it; a CREATE or an
-/// ALTER of a view, a procedure, a function or a trigger by its name alone, since its body runs later, if ever. Elsewhere each table a
-/// FROM or a JOIN of the statement names, its target's own reference left out, is read, and each OBJECT_ID of a string names an object
-/// without reading it. An ALTER TABLE that adds or drops several elements is read once for each.
+/// What io reads off one statement's tree, in the words kernel/PlanStatement lists: the words, the objects in their roles, the columns,
+/// a key and an index's INCLUDE columns. An IF and a WHILE are read by their condition alone, since the statements an IF holds are listed
+/// after it; a CREATE or an ALTER of a view, a procedure, a function or a trigger by its name alone, since its body runs later, if ever.
+/// Elsewhere each table a FROM or a JOIN of the statement names, its target's own reference left out, is read, and each OBJECT_ID of a
+/// string names an object without reading it. An ALTER TABLE that adds or drops several elements is read once for each, and a CREATE
+/// TABLE once for the table and once for each key constraint it declares.
 /// </summary>
 public static partial class PlanStatements
 {
-    /// <summary>What one statement, or one element of an ALTER TABLE, gives the vocabulary.</summary>
+    /// <summary>What one statement, or one element of an ALTER TABLE or a CREATE TABLE, gives the vocabulary.</summary>
     private sealed record Parts(SortedArray<string> Words, SortedArray<PlanObject> Objects, SortedArray<Name> Columns,
-        SortedArray<Name> Key);
+        SortedArray<Name> Key)
+    {
+        public SortedArray<Name> Included { get; init; } = [];
+    }
 
     private static IEnumerable<Parts> Of(TSqlStatement statement) => statement switch
     {
@@ -26,10 +30,8 @@ public static partial class PlanStatements
         WhileStatement w => [Condition(w.Predicate, [])],
         CreateIndexStatement c => [Made([.. When(c.Unique, "UNIQUE"), .. When(c.Clustered == true, "CLUSTERED"),
             .. When(c.FilterPredicate is not null, "WHERE")], [Object(PlanRole.Target, c.OnName), Element(c.Name)],
-            c.Columns.Select(k => Last(k.Column)))],
-        CreateTableStatement t => [Made(When(t.Definition?.ColumnDefinitions.Any(d => d is { ComputedColumnExpression: not null,
-            IsPersisted: true }) == true, "PERSISTED"), [Object(PlanRole.Target, t.SchemaObjectName)],
-            t.Definition?.ColumnDefinitions.Select(d => d.ColumnIdentifier))],
+            c.Columns.Select(k => Last(k.Column))) with { Included = Names(Lasts(c.IncludeColumns)) }],
+        CreateTableStatement t => Created(t),
         AlterTableAddTableElementStatement a => Added(a),
         AlterTableDropTableElementStatement d => d.AlterTableDropTableElements.Select(e => Dropped(d, e)),
         AlterTableAlterColumnStatement a => [Made([.. Nullability(a.AlterTableAlterColumnOption),
@@ -125,6 +127,28 @@ public static partial class PlanStatements
         {
             yield return Made([.. with, "PERIOD FOR SYSTEM_TIME"], [target], [period.StartTimeColumn, period.EndTimeColumn],
                 [period.StartTimeColumn]);
+        }
+    }
+
+    /// <summary>
+    /// A CREATE TABLE: the table, PERSISTED where it holds a persisted computed column, over its columns; then each PRIMARY KEY or UNIQUE
+    /// constraint it declares, of the table or of one column, its own statement over its key's columns with its words, PRIMARY KEY or
+    /// UNIQUE and CLUSTERED, as an ALTER TABLE's added constraint is, so the key a rebuild's tmp_ms_xx_ table declares inline is read as
+    /// its ADD CONSTRAINT would be (spike S2: a clustered primary key redefined arrives as a rebuild, never as ADD CONSTRAINT).
+    /// </summary>
+    private static IEnumerable<Parts> Created(CreateTableStatement t)
+    {
+        var target = Object(PlanRole.Target, t.SchemaObjectName);
+        var columns = t.Definition?.ColumnDefinitions ?? [];
+        yield return Made(When(columns.Any(d => d is { ComputedColumnExpression: not null, IsPersisted: true }), "PERSISTED"), [target],
+            columns.Select(d => d.ColumnIdentifier));
+        var keys = (t.Definition?.TableConstraints ?? []).OfType<UniqueConstraintDefinition>()
+            .Select(u => (Key: u, Columns: u.Columns.Select(c => Last(c.Column))))
+            .Concat(columns.SelectMany(d => d.Constraints.OfType<UniqueConstraintDefinition>()
+                .Select(u => (Key: u, Columns: (IEnumerable<Identifier>)[d.ColumnIdentifier]))));
+        foreach (var (key, on) in keys)
+        {
+            yield return Made(Constrains(key), [target, Element(key.ConstraintIdentifier)], on);
         }
     }
 

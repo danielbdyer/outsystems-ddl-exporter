@@ -372,7 +372,7 @@ public sealed class QuestionCases
         ["QST-80"] = "VocabularyCases: SeedDrift (WP 2.1, second slice)",
         ["QST-81"] = "VocabularyCases: Authored (WP 2.1, second slice)",
         ["QST-82"] = "VocabularyCases: Authored (WP 2.1, second slice)",
-        ["QST-83"] = "Authored over a program of releases, whose questions are the final target's and every release's (WP 4.4)",
+        ["QST-83"] = "VocabularyCases: Authored over a program of releases, the final target's and every release's (WP 2.1, second slice)",
         ["QST-84"] = "VocabularyCases: an unknown statement (WP 2.1, second slice)",
         ["QST-85"] = "VocabularyCases: an unknown statement (WP 2.1, second slice)",
         ["QST-86"] = "VocabularyCases: an unknown statement (WP 2.1, second slice)",

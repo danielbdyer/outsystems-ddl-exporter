@@ -102,6 +102,16 @@ public static partial class Vocabulary
                 && before.GetValueOrDefault(held)?["Clustered"] is Value.Boolean { IsTrue: true });
         }
 
+        /// <summary>The one-part name of the table's primary key or unique constraint, as <paramref name="type"/> says, whose key is those
+        /// columns in the model the change brings, null where it holds none: the name a rebuild's key constraint takes once DacFx renames
+        /// it from tmp_ms_xx_constraint_.</summary>
+        public Name? KeyOf(Name table, string type, SortedArray<Name> columns) =>
+            TableKey(after, table) is { } host
+            && after.Values.FirstOrDefault(e => e.Key.Type == type && On(e, "Host") == host
+                && SortedArray.Of((e.Relationships.FirstOrDefault(r => r.Name == "Columns")?.Targets ?? []).Select(t => t.Key.Name))
+                    == columns) is { } key
+            && Name.Of(key.Key.Name.Base) is Result<Name>.Ok { Value: var name } ? name : null;
+
         /// <summary>The table's identity column in the model the change brings, or null where it has none.</summary>
         public Name? Identity(Name table) => Columns(after, table)
             .FirstOrDefault(c => c["IsIdentity"] is Value.Boolean { IsTrue: true })?.Key.Name;
