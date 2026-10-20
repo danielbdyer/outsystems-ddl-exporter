@@ -13,11 +13,12 @@ public static partial class SqlServer
     /// <summary>
     /// The aggregate-query allowlist, closed (WP 1.4): one SELECT whose outermost select list holds COUNT or COUNT_BIG of * or of DISTINCT
     /// a column, SUM(CASE WHEN … THEN 1 ELSE 0 END), MIN or MAX over LEN or DATALENGTH of a column, CASE WHEN EXISTS (…) THEN 1 ELSE 0 END
-    /// or an integer literal; beneath it, names of one or two parts, TRY_ conversions, and the few functions held here. A boundary is a
-    /// length or a literal, never read from the data: each predicate, in a join's ON as in a WHERE, reads at most one value from the data
-    /// (a column, a length or an aggregate), save = or &lt;&gt; between two columns, an equi-join or an orphan check; and a subquery's
-    /// select list carries only columns, literals and the answers above, so a derived column is never two values combined. Every other
-    /// form is refused with where it stands and what it is, and none of the query's literals is quoted.
+    /// or an integer literal, and, in a query of catalog views alone, SUM of sys.partitions' rows (WP 2.3); beneath it, names of one or two
+    /// parts, TRY_ conversions, and the few functions held here. A boundary is a length or a literal, never read from the data: each
+    /// predicate, in a join's ON as in a WHERE, reads at most one value from the data (a column, a length or an aggregate), save = or
+    /// &lt;&gt; between two columns, an equi-join or an orphan check; and a subquery's select list carries only columns, literals and the
+    /// answers above, so a derived column is never two values combined. Every other form is refused with where it stands and what it is,
+    /// and none of the query's literals is quoted.
     /// </summary>
     private static class Allowlist
     {
@@ -95,7 +96,7 @@ public static partial class SqlServer
             : outermost && q.UniqueRowFilter == UniqueRowFilter.Distinct ? new Offence(q, "DISTINCT in the outermost select")
             : First(q.SelectElements, e => (e, outermost) switch
             {
-                (SelectScalarExpression x, true) => Answer(x.Expression),
+                (SelectScalarExpression x, true) => PartitionRows(x.Expression, q) ? null : Answer(x.Expression),
                 (SelectScalarExpression x, false) => Carried(x.Expression),
                 (SelectStarExpression star, false) =>
                     star.Qualifier is null || star.Qualifier.Count <= 2 ? null : Parts(star, star.Qualifier.Count),
@@ -154,6 +155,55 @@ public static partial class SqlServer
                     (_, _, [ColumnReferenceExpression { ColumnType: ColumnType.Regular }]) => new Offence(f, name + " over a bare column"),
                     _ => new Offence(f, name + " over other than LEN or DATALENGTH of a column"),
                 };
+        }
+
+        /// <summary>
+        /// SUM of the rows column of sys.partitions, in a query whose every table, those of its subqueries included, is a catalog view of
+        /// the sys schema named in two parts: the row count SQL Server keeps for each partition, which a login holding VIEW DEFINITION
+        /// alone reads (§17 item 21), so TableEmpty is read without a row of the table (WP 2.3). The one form that sums a column; a
+        /// column of any other table, or sys.partitions beside or filtered by a table outside the sys schema, is SUM over a bare column.
+        /// The schema, the view, the column and the alias are compared ordinally, as the builders write them, since a case-sensitive
+        /// database holds a schema SYS or Sys apart from sys, and [SYS].[partitions] there is a user's table (measured on SQL Server 2022).
+        /// </summary>
+        private static bool PartitionRows(ScalarExpression x, QuerySpecification q) =>
+            x is ParenthesisExpression p ? PartitionRows(p.Expression, q)
+            : x is FunctionCall { CallTarget: null, OverClause: null, WithinGroupClause: null,
+                UniqueRowFilter: UniqueRowFilter.NotSpecified,
+                Parameters: [ColumnReferenceExpression { ColumnType: ColumnType.Regular } column] } sum
+            && string.Equals(sum.FunctionName.Value, "SUM", StringComparison.OrdinalIgnoreCase)
+            && column.MultiPartIdentifier.Identifiers is { Count: 1 or 2 } parts
+            && string.Equals(parts[^1].Value, "rows", StringComparison.Ordinal)
+            && q.FromClause is { } from && Catalog(from.TableReferences) is { Count: > 0 } tables
+            && TSql.TableReferences(q).All(t =>
+                t.SchemaObject is { ServerIdentifier: null, DatabaseIdentifier: null, SchemaIdentifier.Value: var schema }
+                && string.Equals(schema, "sys", StringComparison.Ordinal))
+            && tables.Any(t => string.Equals(t.SchemaObject.BaseIdentifier.Value, "partitions", StringComparison.Ordinal)
+                && (parts.Count == 1 ? tables.Count == 1
+                    : string.Equals(parts[0].Value, t.Alias?.Value ?? t.SchemaObject.BaseIdentifier.Value, StringComparison.Ordinal)));
+
+        /// <summary>The tables a FROM clause names, through its joins; null when it holds anything but named tables and joins.</summary>
+        private static List<NamedTableReference>? Catalog(IEnumerable<TableReference> references)
+        {
+            var named = new List<NamedTableReference>();
+            foreach (var reference in references)
+            {
+                var found = reference switch
+                {
+                    NamedTableReference n => [n],
+                    QualifiedJoin j => Catalog([j.FirstTableReference, j.SecondTableReference]),
+                    UnqualifiedJoin j => Catalog([j.FirstTableReference, j.SecondTableReference]),
+                    JoinParenthesisTableReference p => Catalog([p.Join]),
+                    _ => null,
+                };
+                if (found is null)
+                {
+                    return null;
+                }
+
+                named.AddRange(found);
+            }
+
+            return named;
         }
 
         /// <summary>A CASE whose one WHEN answers 1 and whose ELSE answers 0.</summary>

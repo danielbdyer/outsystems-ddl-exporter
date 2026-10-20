@@ -27,6 +27,19 @@ internal static class TSql
         return LineEndings.Lf(script).Trim();
     }
 
+    /// <summary>A predicate the model writes, a check's expression or an index's filter, as ScriptDom reads it; null when it does not
+    /// parse.</summary>
+    internal static BooleanExpression? Predicate(string text) =>
+        Parser().ParseBooleanExpression(new StringReader(text), out var errors) is { } parsed && errors.Count == 0 ? parsed : null;
+
+    /// <summary>A scalar expression the model writes, a default's, as ScriptDom reads it; null when it does not parse.</summary>
+    internal static ScalarExpression? Scalar(string text) =>
+        Parser().ParseExpression(new StringReader(text), out var errors) is { } parsed && errors.Count == 0 ? parsed : null;
+
+    /// <summary>A data type written as a declaration writes it, nvarchar(max) or decimal(18,2); null when it does not parse.</summary>
+    internal static DataTypeReference? DataType(string text) =>
+        Parser().ParseScalarDataType(new StringReader(text), out var errors) is { } parsed && errors.Count == 0 ? parsed : null;
+
     /// <summary>
     /// The parts of an object's name of one to four parts, unquoted as ScriptDom reads them ([a]]b] is a]b); null when the text is no such
     /// name.
@@ -39,11 +52,17 @@ internal static class TSql
     /// Each object a tree reads by name in a FROM or a JOIN, once, its parts quoted as QUOTENAME quotes them, in the order the tree first
     /// names them.
     /// </summary>
-    internal static IReadOnlyList<string> TablesNamed(TSqlFragment fragment)
+    internal static IReadOnlyList<string> TablesNamed(TSqlFragment fragment) =>
+        [.. TableReferences(fragment).Select(node => string.Join('.',
+                node.SchemaObject.Identifiers.Select(i => "[" + i.Value.Replace("]", "]]", StringComparison.Ordinal) + "]")))
+            .Distinct(StringComparer.Ordinal)];
+
+    /// <summary>Each table a tree names in a FROM or a JOIN, a subquery's included, in the order the tree names them.</summary>
+    internal static IReadOnlyList<NamedTableReference> TableReferences(TSqlFragment fragment)
     {
         var named = new Named();
         fragment.Accept(named);
-        return [.. named.Found.Distinct(StringComparer.Ordinal)];
+        return named.Found;
     }
 
     /// <summary>
@@ -54,10 +73,8 @@ internal static class TSql
 
     private sealed class Named : TSqlFragmentVisitor
     {
-        public List<string> Found { get; } = [];
+        public List<NamedTableReference> Found { get; } = [];
 
-        public override void Visit(NamedTableReference node) =>
-            Found.Add(string.Join('.',
-                node.SchemaObject.Identifiers.Select(i => "[" + i.Value.Replace("]", "]]", StringComparison.Ordinal) + "]")));
+        public override void Visit(NamedTableReference node) => Found.Add(node);
     }
 }

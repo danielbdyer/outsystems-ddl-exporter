@@ -16,8 +16,9 @@ namespace DbChange.Io;
 /// every answer an integer. io/DacFx reads a database and plans against it. A resolved connection is never printed, logged or put in an
 /// error, and a named environment's SQL Server messages are withheld, since they can quote a row (§18). Objects are keyed by kernel/Name,
 /// compared ordinally with case, so two databases whose collations fold case differently read the same schema alike; dbchange sets no
-/// collation and no SET option of its own, and DacFx reads each database's own. An error's code names what went wrong; cli/Contract.cs maps
-/// its category to the exit.
+/// collation on a connection, and DacFx reads each database's own. The SET options dbchange sends are an aggregate query's session
+/// alone, LANGUAGE and DATEFORMAT, which decide how a string converts to a date (WP 2.3). An error's code names what went wrong;
+/// cli/Contract.cs maps its category to the exit.
 /// </summary>
 public static partial class SqlServer
 {

@@ -69,6 +69,25 @@ from   dbo.Customer ;
 === admit: one statement ended by a batch separator
 SELECT COUNT(*) FROM dbo.Status;
 GO
+=== admit: SUM of sys.partitions' rows, TableEmpty read from the catalog
+SELECT COUNT_BIG(*), SUM(p.rows) FROM sys.partitions AS p INNER JOIN sys.objects AS o ON o.object_id = p.object_id
+INNER JOIN sys.schemas AS s ON s.schema_id = o.schema_id WHERE s.name = N'dbo' AND o.name = N'Customer' AND p.index_id IN (0, 1);
+=== refuse: SUM of a column named rows of a table outside the catalog
+SELECT SUM(rows) FROM dbo.Customer;
+=== refuse: SUM of sys.partitions' rows beside a table outside the catalog
+SELECT SUM(p.rows) FROM sys.partitions AS p INNER JOIN dbo.Customer AS c ON c.Id = p.partition_number;
+=== refuse: SUM of sys.partitions' rows filtered by IN over a table outside the catalog
+SELECT SUM(p.rows) FROM sys.partitions AS p WHERE p.object_id IN (SELECT c.Id FROM dbo.Customer AS c);
+=== refuse: SUM of sys.partitions' rows filtered by EXISTS over a table outside the catalog
+SELECT SUM(p.rows) FROM sys.partitions AS p WHERE EXISTS (SELECT 1 FROM dbo.Customer AS c WHERE c.Email LIKE N'a%');
+=== refuse: SUM of a column of sys.partitions other than rows
+SELECT SUM(p.partition_number) FROM sys.partitions AS p;
+=== refuse: SUM of the rows column of a catalog view other than sys.partitions
+SELECT SUM(i.rows) FROM sys.sysindexes AS i INNER JOIN sys.partitions AS p ON p.object_id = i.id;
+=== refuse: SUM of the rows column of SYS.partitions, a user's table where a case-sensitive database holds a schema SYS apart from sys
+SELECT SUM(p.rows) FROM SYS.partitions AS p;
+=== refuse: SUM of the rows column of [Sys].[partitions], a user's table where a case-sensitive database holds a schema Sys apart from sys
+SELECT SUM(p.rows) FROM [Sys].[partitions] AS p;
 === refuse: MAX over a bare column
 SELECT MAX(Email) FROM dbo.Customer;
 === refuse: MIN over a bare column
