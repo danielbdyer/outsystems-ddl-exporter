@@ -1,5 +1,4 @@
 {
-  "localServer": "docker",
   "environments": {
     "dev": {
       "host": "dev-sql.corp.example",

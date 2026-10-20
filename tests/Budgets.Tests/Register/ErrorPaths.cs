@@ -335,8 +335,6 @@ internal static partial class ErrorPaths
             ReadEnvironments(scratch, Dev(connection: "env:" + planted))),
         new("a file reference that is a connection string", "reference.malformed", true, (_, planted) =>
             Failed(SecretReference.Of("--connection", "file:Server=db;User ID=sa;Password=" + planted))),
-        new("a local server that is neither docker nor localdb", "environments.malformed", true, (scratch, planted) =>
-            Failed(Io.EnvironmentsFile.Read(RepositoryAt(scratch, "{ \"environments\": {}, \"localServer\": " + Quoted(planted) + " }")))),
         new("a host given with its port", "environments.host", true, (_, planted) =>
             Failed(Host.Of("environments.dev.host in dbchange/environments.json", planted + ",1433"))),
         new("an environment misnamed", "environments.environment-name", true, (scratch, planted) =>

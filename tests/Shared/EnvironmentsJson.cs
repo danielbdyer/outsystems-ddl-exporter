@@ -12,7 +12,7 @@ namespace DbChange.Tests;
 /// dbchange/environments.json as a record, field for field in the file's own names, written under a repository root; a key left null is
 /// left out of the file. A malformed environments file, which no record can hold, is written as its text by <see cref="WriteText"/>.
 /// </summary>
-internal sealed record EnvironmentsJson(IReadOnlyDictionary<string, EnvironmentsJson.Environment> Environments, string? LocalServer = null)
+internal sealed record EnvironmentsJson(IReadOnlyDictionary<string, EnvironmentsJson.Environment> Environments)
 {
     /// <summary>The profile the golden project commits, at the path the SSDT repository keeps it.</summary>
     public const string Pipeline = "dbchange/profiles/pipeline.publish.xml";
@@ -87,12 +87,6 @@ internal sealed record EnvironmentsJson(IReadOnlyDictionary<string, Environments
             environments[name] = entry;
         }
 
-        var environmentsFile = new JsonObject { ["environments"] = environments };
-        if (LocalServer is not null)
-        {
-            environmentsFile["localServer"] = LocalServer;
-        }
-
-        return environmentsFile.ToJsonString(Written) + "\n";
+        return new JsonObject { ["environments"] = environments }.ToJsonString(Written) + "\n";
     }
 }

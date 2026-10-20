@@ -8,29 +8,26 @@ using System.Text.RegularExpressions;
 namespace DbChange.Kernel;
 
 /// <summary>
-/// dbchange/environments.json as a value (V3_MILESTONES.md WP 1.5, §4 row 14): the environments it names, each once, in name order, and the
-/// local server it prefers, when it names one. io reads the file once for a verb and hands this to what resolves a target, to R15 and
-/// to the lookup of a copy's profile.
+/// dbchange/environments.json as a value (V3_MILESTONES.md WP 1.5, §4 row 14): the environments it names, each once, in name order. io
+/// reads the file once for a verb and hands this to what resolves a target, to R15 and to the lookup of a copy's profile. The local server
+/// is chosen by io/LocalServer alone (DBCHANGE_SQL, ~/.dbchange/sql.env, LocalDB), so the file names none.
 /// </summary>
 public sealed record Environments
 {
-    private Environments(SortedArray<NamedEnvironment> all, LocalServerKind? localServer) => (All, LocalServer) = (all, localServer);
+    private Environments(SortedArray<NamedEnvironment> all) => All = all;
 
     /// <summary>Every environment the environments file names, by name.</summary>
     public SortedArray<NamedEnvironment> All { get; }
 
-    /// <summary>The local server the environments file prefers, the key localServer; null when it names none.</summary>
-    public LocalServerKind? LocalServer { get; }
-
     /// <summary>The environments given, or environments.environment-name when two share a name; the error leads with
     /// <paramref name="subject"/>.</summary>
-    public static Result<Environments> Of(string subject, IEnumerable<NamedEnvironment> environments, LocalServerKind? localServer)
+    public static Result<Environments> Of(string subject, IEnumerable<NamedEnvironment> environments)
     {
         var all = SortedArray.Of(environments);
         return all.Where((e, i) => i > 0 && all[i - 1].Name == e.Name).FirstOrDefault() is { } repeated
             ? new Error("environments.environment-name", subject + " names " + repeated.Target + " twice.",
                 "Keep one entry for each environment.")
-            : new Environments(all, localServer);
+            : new Environments(all);
     }
 
     /// <summary>The environment the environments file names by <paramref name="name"/>, or null.</summary>
@@ -39,39 +36,6 @@ public sealed record Environments
     /// <summary>The publish profile every environment names, which a copy is planned under when no profile is named for it; null when two
     /// differ or none is named.</summary>
     public PublishProfilePath? SharedProfile => All.Select(e => e.Profile).Distinct().ToList() is [var shared] ? shared : null;
-}
-
-/// <summary>
-/// Which SQL Server the environments file prefers to hold copies (VALUES.md O1): Docker, the dbchange-sql container; or LocalDb, where
-/// Docker cannot run. The key localServer, written docker or localdb. The cases are closed.
-/// </summary>
-public abstract record LocalServerKind
-{
-    private LocalServerKind()
-    {
-    }
-
-    /// <summary>The kind <paramref name="text"/> names, or environments.malformed led by <paramref name="subject"/>.</summary>
-    public static Result<LocalServerKind> Of(string subject, string? text) => text switch
-    {
-        "docker" => new Docker(),
-        "localdb" => new LocalDb(),
-        _ => new Error("environments.malformed", subject + " is not docker or localdb.", "Write " + subject + " as docker or localdb."),
-    };
-
-    public T Match<T>(Func<T> docker, Func<T> localDb) => this switch
-    {
-        Docker => docker(),
-        LocalDb => localDb(),
-        _ => throw new UnreachableException(),
-    };
-
-    /// <summary>As the environments file writes it.</summary>
-    public sealed override string ToString() => Match(() => "docker", () => "localdb");
-
-    public sealed record Docker : LocalServerKind;
-
-    public sealed record LocalDb : LocalServerKind;
 }
 
 /// <summary>
