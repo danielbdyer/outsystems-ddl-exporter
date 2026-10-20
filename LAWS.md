@@ -107,6 +107,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | O5 | A killed run is swept by the next | `DbChange.Io.Tests.CopyLifetimeTests.A_killed_run_is_swept_by_the_next` |
 | O5 | LocalServer names a copy for its host and process registers it and Drop removes the database and its row | `DbChange.Io.Tests.CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |
 | O5 | The sweep chooses only this host's copies on this server registered more than a day ago | `DbChange.Io.Tests.LocalServerTests.The_sweep_chooses_only_this_host_s_copies_on_this_server_registered_more_than_a_day_ago` |
+| O6 | A synthetic name another checkout's database holds is copy foreign to Create and Restore and the database stands | `DbChange.Io.Tests.CopyCacheTests.A_synthetic_name_another_checkout_s_database_holds_is_copy_foreign_to_Create_and_Restore_and_the_database_stands` |
 | O6 | Two concurrent runs share nothing | `DbChange.Io.Tests.CopyLifetimeTests.Two_concurrent_runs_share_nothing` |
 | O6 | Two drops and two sweeps of one copy at once all succeed and leave neither its database nor its row | `DbChange.Io.Tests.CopyLifetimeTests.Two_drops_and_two_sweeps_of_one_copy_at_once_all_succeed_and_leave_neither_its_database_nor_its_row` |
 | O6 | Check drift of the synthetic copy built at the golden base exits 0 and up again answers it current | `DbChange.Io.Tests.SyntheticCopyTests.Check_drift_of_the_synthetic_copy_built_at_the_golden_base_exits_0_and_up_again_answers_it_current` |

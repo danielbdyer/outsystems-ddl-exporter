@@ -5,6 +5,7 @@ using DbChange.Kernel;
 using DbChange.Tests;
 using Xunit;
 using static DbChange.Tests.Expect;
+using Elements = DbChange.Kernel.Tests.KernelProperties;
 
 namespace DbChange.Io.Tests;
 
@@ -16,10 +17,11 @@ namespace DbChange.Io.Tests;
 /// </summary>
 public sealed class SyntheticCopyInputTests
 {
-    /// <summary>The literals a repository's model defines: a seeded name, a check's LIKE pattern and a default's bytes.</summary>
+    /// <summary>The literals a repository's model defines: a seeded name, a seeded postal code, a check's LIKE pattern and a default's
+    /// bytes.</summary>
     private static readonly IReadOnlySet<string> Repository = new HashSet<string>(StringComparer.Ordinal)
     {
-        "Acme Holdings", "ABC%", "0x0A0B",
+        "Acme Holdings", "98101", "ABC%", "0x0A0B",
     };
 
     /// <summary>An existing data holding each kind of precondition, a Fits and a Unique with their classes, a clean and an empty answer,
@@ -120,7 +122,10 @@ public sealed class SyntheticCopyInputTests
     /// <summary>
     /// PAR-033: each statement or literal a declared witness may not carry is refused by its line of dbchange/witnesses.sql: a statement
     /// before any header, a header naming no table or no precondition, a block that does not parse, a second batch, a statement other
-    /// than DML, an INSERT of EXEC's rows, a read through OPENROWSET, and a literal neither synthetic nor the repository's.
+    /// than DML, an INSERT of EXEC's rows, a read through OPENROWSET, a table on a linked server, as the INSERT's target, the source of
+    /// an INSERT ... SELECT or MERGE's USING, a table or a function in another database of the local server, and a literal neither
+    /// synthetic nor the repository's. The block runs as one batch on the copy's connection, so a four-part name would write to a
+    /// linked environment or copy its rows into the copy.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -133,6 +138,14 @@ public sealed class SyntheticCopyInputTests
     [InlineData("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) EXEC dbo.Rows;", "witness.not-dml", 2)]
     [InlineData("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) SELECT r.BulkColumn FROM OPENROWSET(BULK N'wB', SINGLE_CLOB) AS r;",
         "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nINSERT INTO [prod-sql].[Catalog].[dbo].[Customer] (Name) VALUES (N'w1');", "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nDELETE FROM dbo.T;\nINSERT INTO dbo.T (Name, Email)\n  SELECT Name, Email FROM [prod-sql].[Catalog]"
+        + ".[dbo].[Customer];", "witness.not-dml", 3)]
+    [InlineData("-- plants: [dbo].[T]\nMERGE dbo.T AS t USING [prod-sql].[Catalog].[dbo].[Customer] AS s ON t.Id = s.Id\n"
+        + "  WHEN NOT MATCHED THEN INSERT (Name) VALUES (s.Name);", "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nUPDATE dbo.T SET C = N'wA';\nINSERT INTO dbo.T (Name) SELECT Name FROM OtherDb.dbo.Customer;",
+        "witness.not-dml", 3)]
+    [InlineData("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) VALUES (OtherDb.dbo.Secret(1));", "witness.not-dml", 2)]
     [InlineData("-- plants: [dbo].[T]\nUPDATE dbo.T SET C = N'wA';\nUPDATE dbo.T\n  SET C = N'Bob';", "witness.not-synthetic", 4)]
     public void A_declared_witness_is_refused_by_its_line_for_each_statement_or_literal_it_may_not_carry(string text, string code,
         int line)
@@ -145,8 +158,9 @@ public sealed class SyntheticCopyInputTests
     /// <summary>
     /// VALUES.md P1 and law 12′ in its planted form: a declared literal enters a copy when it is empty, carries the planter's mark w, is
     /// a literal the repository's model defines (or one under a LIKE pattern it defines, the wildcards dropped, then the mark), is
-    /// written as a number, an ISO date or time, or one of the planter's two uniqueidentifier forms, or is binary that is empty, begins
-    /// with 0x77, or the model defines. Any other value can have come from an environment, and is refused without being quoted.
+    /// written as an ISO date or time or as one of the planter's two uniqueidentifier forms, or is binary that is empty, begins with
+    /// 0x77, or the model defines. A string of digits, a phone number among them, enters only where the model defines it, since a
+    /// number is written as a numeric literal. Any other value can have come from an environment, and is refused without being quoted.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -155,7 +169,12 @@ public sealed class SyntheticCopyInputTests
     [InlineData("N''", true)]
     [InlineData("N'Acme Holdings'", true)]
     [InlineData("N'ABCw1'", true)]
-    [InlineData("N'42'", true)]
+    [InlineData("N'98101'", true)]
+    [InlineData("42", true)]
+    [InlineData("N'42'", false)]
+    [InlineData("N'2065550101'", false)]
+    [InlineData("N'+12065550101'", false)]
+    [InlineData("'4111111111111111'", false)]
     [InlineData("'2026-10-20'", true)]
     [InlineData("'2026-10-20T10:00:00.1234567'", true)]
     [InlineData("'12:30:00'", true)]
@@ -223,6 +242,46 @@ public sealed class SyntheticCopyInputTests
         Assert.EndsWith("populated and violating (exact).", refused[3].Message, StringComparison.Ordinal);
         Assert.Contains("holds no such precondition", refused[4].Message, StringComparison.Ordinal);
         Assert.Contains("counts no answer to it", refused[5].Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Step 8 (the Facsimile's F2): the plan from the base to the copy, operation by operation. The drop and the create of a foreign key
+    /// the copy keeps disabled as the environment holds it are one note, synthetic-copy.disabled, since a deploy plans the same against
+    /// the environment; the refresh DacFx adds for a view over a table it alters is a consequence, no difference of its own; a check the
+    /// repository writes with IN, dropped and created, is one warning that names the OR form SQL Server stores, as an extract reads it,
+    /// and as check drift names it; and the alter of the table is synthetic-copy.identity.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Step_8_finds_a_difference_in_each_operation_of_the_plan_from_the_base_but_a_kept_disabled_key_s_and_a_consequence()
+    {
+        var (key, check) = (Elements.Key("ForeignKeyConstraint", "dbo", "FK_CustomerAddress_Customer"),
+            Elements.Key("CheckConstraint", "dbo", "CK_Order_StatusText"));
+        var (table, view) = (Elements.Key("Table", "dbo", "Order"), Elements.Key("View", "dbo", "vCustomerOrders"));
+        const string Stored = "[StatusText]=N'Cancelled' OR [StatusText]=N'Shipped' OR [StatusText]=N'Pending'";
+        SortedArray<Element> Model(string expression) =>
+            [Elements.New(table, []), Elements.New(check, [("Expression", new Value.Script(expression))])];
+        var plan = new DeployReport(
+        [
+            new PlanOperation(new PlanOperationKind.Drop(), key, []), new PlanOperation(new PlanOperationKind.Create(), key, []),
+            new PlanOperation(new PlanOperationKind.Drop(), check, []), new PlanOperation(new PlanOperationKind.Create(), check, []),
+            new PlanOperation(new PlanOperationKind.Refresh(), view, []), new PlanOperation(new PlanOperationKind.Alter(), table, []),
+        ], []);
+        var notes = new List<Finding>();
+
+        var differences = SyntheticCopy.Differences(plan, Model(Stored), Model("StatusText IN (N'Pending', N'Shipped', N'Cancelled')"),
+            Collation.CaseSensitive, new HashSet<ElementKey> { key }, notes);
+
+        Assert.Equal([("synthetic-copy.identity", "Table [dbo].[Order]"),
+                ("synthetic-copy.check-written-with-in", "CheckConstraint [dbo].[CK_Order_StatusText]")],
+            differences.Select(f => (f.Code, f.Subject)));
+        Assert.All(differences, f => Assert.Equal(Severity.Warning, f.Severity));
+        Assert.Equal("The plan from the base to the copy would alter Table [dbo].[Order], so the copy's schema differs from the repository "
+            + "at the ref.", differences[0].Message);
+        Assert.EndsWith(": CHECK (" + Stored + ").", differences[1].Remedy, StringComparison.Ordinal);
+        var kept = Assert.Single(notes);
+        Assert.Equal(("synthetic-copy.disabled", Severity.Note, "ForeignKeyConstraint [dbo].[FK_CustomerAddress_Customer]"),
+            (kept.Code, kept.Severity, kept.Subject));
     }
 
     private static PreconditionState State(Precondition precondition, bool populated, bool violating) =>

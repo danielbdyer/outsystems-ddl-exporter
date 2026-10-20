@@ -18,10 +18,11 @@ namespace DbChange.Io.Tests;
 /// and backups it made. An environment is a registered copy the test publishes a ref to and writes rows into; its existing data is
 /// counted as the copy build counts its own (SyntheticCopy.Ask and Count, as predict will count an environment's), with the trust state
 /// of each foreign key and check read through SqlServer.Measure. No value the environment holds reaches the copy: the file holds
-/// booleans.
+/// booleans. SyntheticCopyTests.Lookups.cs holds the cases of a lookup's keys and of a table the declared witnesses plant whole, and
+/// SyntheticCopyTests.Stops.cs the cases where up stops at needs-input, answers differs, or is refused before it connects.
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
-public sealed class SyntheticCopyTests(ScratchRepository repository) : IClassFixture<ScratchRepository>
+public sealed partial class SyntheticCopyTests(ScratchRepository repository) : IClassFixture<ScratchRepository>
 {
     /// <summary>
     /// R6's five sites as one change to the golden project: Customer.ContactPhone made NOT NULL and Customer.Region narrowed to
@@ -106,18 +107,22 @@ public sealed class SyntheticCopyTests(ScratchRepository repository) : IClassFix
     /// <summary>
     /// R6 and M3's done-when: an environment at the golden base holding each of R6's sites (rows, a NULL, an orphan, a duplicate and a
     /// value over the new length), and a foreign key no row breaks, counted for the change that makes them preconditions. The copy planted
-    /// at that existing data, its duplicate declared in dbchange/witnesses.sql with a name the seed defines, answers every precondition as
-    /// the environment does, every no included; the base, published once, is restored from the cache for it; and its plan from the base is
-    /// empty, check drift --target synthetic-copy exiting 0.
+    /// at that existing data answers every precondition as the environment does, every no included; the base, published once, is restored
+    /// from the cache for it; and its plan from the base is empty, check drift --target synthetic-copy exiting 0. Without
+    /// dbchange/witnesses.sql the planter plants all five sites, the duplicate in Account among them; with the duplicate declared there,
+    /// under a name the seed defines (PAR-033), the planter plants no row of Account.
     /// </summary>
-    [Fact]
+    [Theory]
     [Trait("Category", "fixture")]
     [Trait("Exit", "M3.3")]
-    public async Task A_copy_planted_at_an_environment_holding_each_of_R6_s_sites_answers_every_precondition_as_the_environment_does()
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_copy_planted_at_an_environment_holding_each_of_R6_s_sites_answers_every_precondition_as_the_environment_does(
+        bool declared)
     {
-        var head = repository.Committed(FiveSites,
-            "-- witness: Unique on [dbo].[Account] ([Name])\nINSERT INTO dbo.Account (Name) VALUES (N'Acme Holdings');\n");
-        var profile = Profile("R6's sites");
+        var head = repository.Committed(FiveSites, declared
+            ? "-- witness: Unique on [dbo].[Account] ([Name])\nINSERT INTO dbo.Account (Name) VALUES (N'Acme Holdings');\n" : null);
+        var profile = Profile("R6's sites" + (declared ? ", the duplicate declared" : ", the planter's alone"));
         try
         {
             var existing = await Environment(repository.Base, FiveSitesRows, head, profile);
@@ -139,6 +144,8 @@ public sealed class SyntheticCopyTests(ScratchRepository repository) : IClassFix
                 (string?)answer["syntheticCopy"]!["head"]));
             Assert.Equal(JsonNode.Parse(ExistingDataFile.Text(existing))!["states"]!.ToJsonString(),
                 answer["syntheticCopy"]!["answers"]!.ToJsonString());
+            var account = Planted(answer, "[dbo].[Account]");
+            Assert.True(declared ? account == 0 : account > 0, "the planter planted " + account + " rows of [dbo].[Account]");
             var (drift, output) = Drift(repository.Base, profile);
             Assert.True(drift == 0, output);
         }
@@ -388,6 +395,10 @@ public sealed class SyntheticCopyTests(ScratchRepository repository) : IClassFix
 
     private static string Said(PreconditionState state) =>
         state.Precondition + (state.Populated ? " populated" : " empty") + (state.Violating ? " violating " : " clean ") + state.Classes;
+
+    /// <summary>The rows up planted into a table, as its answer lists them; 0 for a table the list does not name.</summary>
+    private static int Planted(JsonNode answer, string table) =>
+        answer["syntheticCopy"]!["planted"]!.AsArray().Where(p => (string)p!["table"]! == table).Sum(p => (int)p!["planted"]!);
 
     /// <summary>A connection to a database of the run's server, by its name.</summary>
     private static async Task<string> Connection(string database) =>

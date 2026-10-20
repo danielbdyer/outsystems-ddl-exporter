@@ -147,16 +147,17 @@ public static partial class SyntheticCopy
     }
 
     /// <summary>
-    /// Step 1 under the lock: the registry's row of the copy read, and its database looked for; a copy of the same inputs built to its end
-    /// answered as current; a row of other inputs, or of a build that did not end, dropped with its database; a database the registry does
-    /// not hold refused as another checkout's (copy.foreign); and a fresh copy made from the base, its inputs set on its row, planted, and
-    /// set ready where it was built to its end.
+    /// Step 1 under the lock: the local server cleared by R15 before anything connects, then the registry's row of the copy read and its
+    /// database looked for; a copy of the same inputs built to its end answered as current; a row of other inputs, or of a build that did
+    /// not end, dropped with its database; a database the registry does not hold refused as another checkout's (copy.foreign); and a fresh
+    /// copy made from the base, its inputs set on its row, planted, and set ready where it was built to its end, its schema the base's but
+    /// for the checks written with IN that every plan drops and creates (<see cref="Usable"/>).
     /// </summary>
     private static Stamped<Answer> Locked(string root, string server, ServerName serverName, CopyName name, Fingerprint baseFingerprint,
         JsonObject inputs, SqlServer.QueryLog log, Stamp stamp, string dacpac, Func<SqlServer.Copy, Inputs> planting, GitRef at,
         string commit, string? head)
     {
-        if (LocalServer.Standing(root, name, server, serverName, log).Failed(out var held, out var error))
+        if (LocalServer.Standing(root, name, server, log).Failed(out var held, out var error))
         {
             return new(stamp, error);
         }
@@ -180,9 +181,18 @@ public static partial class SyntheticCopy
 
         var reached = SqlServer.ServerOf(made.Copy, log).Match(s => stamp with { Server = s }, _ => stamp);
         return new(reached, Steps(planting(made.Copy), at, commit, head, made.Restored, made.Notes)
-            .Bind(answer => answer.Kind == Kind.Built ? LocalServer.Mark(made.Copy, new JsonObject { ["ready"] = true }).Map(_ => answer)
+            .Bind(answer => Usable(answer) ? LocalServer.Mark(made.Copy, new JsonObject { ["ready"] = true }).Map(_ => answer)
                 : Result.Ok(answer)));
     }
+
+    /// <summary>
+    /// Whether a build ended in the synthetic copy that the target synthetic-copy names and a later up with the same inputs answers as
+    /// current: built, or differing from the base by checks written with IN alone, which every plan against a database holding them drops
+    /// and creates, so the copy holds the repository's schema as SQL Server stores it, and check drift --target synthetic-copy names each
+    /// such check itself (DECISIONS.md, 2026-10-20).
+    /// </summary>
+    private static bool Usable(Answer answer) => answer.Kind == Kind.Built
+        || (answer.Kind == Kind.Differs && answer.Findings.All(f => f.Code == "synthetic-copy.check-written-with-in"));
 
     /// <summary>The inputs with the row's ready flag set as given.</summary>
     private static JsonObject Ready(JsonObject inputs, bool ready)

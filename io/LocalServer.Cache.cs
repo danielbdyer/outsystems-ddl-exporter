@@ -172,13 +172,14 @@ public static partial class LocalServer
 
     /// <summary>
     /// The backup's files listed (RESTORE FILELISTONLY: the logical name, the type, the file's id), then the backup restored into the
-    /// copy's database, each file moved under the copy's name into the server's default data folder, or its log folder for the log.
+    /// copy's database, each file moved under the copy's name into the server's default data folder, or its log folder for the log. The
+    /// RESTORE has no REPLACE, so it never writes over a database of the name another checkout made (Making's copy.foreign).
     /// </summary>
     private static Result<SqlServer.Copy> Restored(SqlServer.Copy copy, string path, SqlServer.QueryLog log) =>
         Run(copy, "RESTORE FILELISTONLY", "RESTORE FILELISTONLY FROM DISK = @path;", log,
             rows => rows.Select(r => (Logical: (string)r[0]!, Type: (string)r[2]!, Id: Convert.ToInt64(r[6], CultureInfo.InvariantCulture)))
                 .ToList(), ("@path", path))
-        .Bind(files => Run(copy, "RESTORE DATABASE",
+        .Bind(files => Making(copy, "RESTORE DATABASE",
             "DECLARE @data nvarchar(4000) = CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(4000)), "
             + "@log nvarchar(4000) = CAST(SERVERPROPERTY('InstanceDefaultLogPath') AS nvarchar(4000)); "
             + "SET @data += " + Separator("@data") + "; SET @log += " + Separator("@log") + "; "
@@ -186,7 +187,7 @@ public static partial class LocalServer
                 $"DECLARE @to{i} nvarchar(4000) = {(f.Type == "L" ? "@log" : "@data")} + @name + N'_{f.Id}{Extension(f.Type, f.Id)}'; ")))
             + "RESTORE DATABASE @name FROM DISK = @path WITH "
             + string.Join(", ", files.Select((_, i) => string.Create(CultureInfo.InvariantCulture, $"MOVE @file{i} TO @to{i}")))
-            + ", CHECKSUM, RECOVERY;", log, _ => copy,
+            + ", CHECKSUM, RECOVERY;", log,
             [("@path", path), .. files.Select((f, i) => (string.Create(CultureInfo.InvariantCulture, $"@file{i}"), f.Logical))]));
 
     /// <summary>A file's extension by its type in RESTORE FILELISTONLY: the primary data file .mdf, another .ndf, the log .ldf; a

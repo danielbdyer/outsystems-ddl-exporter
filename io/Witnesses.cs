@@ -15,9 +15,10 @@ namespace DbChange.Io;
 /// precondition of the change as dbchange writes it, whose violating row the block plants in the planter's place. Parsed here, before
 /// anything runs: a statement before the first header is witness.outside-block; a block TSql160Parser cannot read is witness.unparsed, by
 /// line and column; a block of more than one batch is witness.batch, since a block runs as one batch, so SET IDENTITY_INSERT holds for
-/// its INSERTs; a statement other than INSERT, UPDATE, DELETE, MERGE and SET IDENTITY_INSERT, or an INSERT of EXEC's rows, or a read of
-/// another server through OPENROWSET, OPENQUERY or OPENDATASOURCE, is witness.not-dml, since a declared witness changes no schema and
-/// carries nothing in; and a string or binary literal that is neither synthetic nor defined by the repository's model is
+/// its INSERTs; a statement other than INSERT, UPDATE, DELETE, MERGE and SET IDENTITY_INSERT, an INSERT of EXEC's rows, a read of another
+/// server through OPENROWSET, OPENQUERY or OPENDATASOURCE, or a name in three or four parts, of a table, a sequence or a function in
+/// another database or on another server, is witness.not-dml, since a declared witness changes no schema, reads and writes the copy alone
+/// and carries nothing in; and a string or binary literal that is neither synthetic nor defined by the repository's model is
 /// witness.not-synthetic (<see cref="Synthetic"/>). Each names its line and quotes no literal.
 /// </summary>
 public static class Witnesses
@@ -31,10 +32,10 @@ public static class Witnesses
 
     private static readonly Regex Binary = new(@"\b0[xX][0-9A-Fa-f]*", RegexOptions.CultureInvariant);
 
-    /// <summary>A string written as a number, or as a date or a time in an ISO form: it carries no mark, as a number does not (PLT-124).
-    /// </summary>
+    /// <summary>A string written as a date or a time in an ISO form, which T-SQL writes only as a string and which carries no mark
+    /// (PLT-124), or as one of the planter's two uniqueidentifier forms.</summary>
     private static readonly Regex Unmarkable = new(
-        @"\A(?:[+-]?[0-9]+(?:\.[0-9]+)?|[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[T ][0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,7})?)?)?"
+        @"\A(?:[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[T ][0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,7})?)?)?"
         + @"(?:Z|[+-][0-9]{2}:[0-9]{2})?|[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,7})?"
         + @"|(?:77777777-0000-4000-8000|FFFFFFFF-FFFF-4FFF-BFFF)-[0-9A-Fa-f]{12})\z", RegexOptions.CultureInvariant);
 
@@ -106,9 +107,11 @@ public static class Witnesses
     /// <summary>
     /// Whether a declared literal may enter a copy (VALUES.md P1; law 12′; PLT-124, PLT-84): a string that is empty, that begins with
     /// the planter's mark w, that is a literal the repository's model defines, or one of those, its LIKE wildcards dropped, followed by
-    /// the mark, as N'ABCw1' under a check of LIKE 'ABC%'; a string written as a number, an ISO date or time, or one of the planter's
-    /// two uniqueidentifier forms, which carry no mark as a number carries none; a binary value that is empty, begins with 0x77, the
-    /// mark's byte, or is one the model defines. Any other value can have come from an environment, and a committed file would carry it.
+    /// the mark, as N'ABCw1' under a check of LIKE 'ABC%'; a string written as an ISO date or time, or as one of the planter's two
+    /// uniqueidentifier forms, which carry no mark; a binary value that is empty, begins with 0x77, the mark's byte, or is one the model
+    /// defines. A number written as a numeric literal carries no mark and needs none (PLT-124); a string of digits, such as a phone or a
+    /// card number, enters only where the model defines it. Any other value can have come from an environment, and a committed file would
+    /// carry it.
     /// </summary>
     internal static bool Synthetic(Microsoft.SqlServer.TransactSql.ScriptDom.Literal literal, IReadOnlySet<string> repository) =>
         literal switch
@@ -146,8 +149,9 @@ public static class Witnesses
             if (Unwritable(statement) is { } what)
             {
                 return new Error("witness.not-dml", At(line, "holds " + what + ", and a declared witness is DML only: INSERT, UPDATE, "
-                        + "DELETE, MERGE and SET IDENTITY_INSERT, reading the copy alone"),
-                    "Remove the statement at that line; a declared witness changes no schema and reads no other server.");
+                        + "DELETE, MERGE and SET IDENTITY_INSERT, reading and writing the copy alone"),
+                    "Remove the statement at that line, or name its objects in one or two parts; a declared witness changes no schema and "
+                        + "reads no other database or server.");
             }
 
             var literals = new LiteralsFound();
@@ -163,8 +167,9 @@ public static class Witnesses
         return block;
     }
 
-    /// <summary>What a statement holds that no declared witness may: a statement other than DML, an INSERT of EXEC's rows, or a read
-    /// through OPENROWSET, OPENQUERY or OPENDATASOURCE; null for a DML statement that reads the copy alone.</summary>
+    /// <summary>What a statement holds that no declared witness may: a statement other than DML, an INSERT of EXEC's rows, a read through
+    /// OPENROWSET, OPENQUERY or OPENDATASOURCE, or a name in three or four parts; null for a DML statement that reads and writes the copy
+    /// alone.</summary>
     private static string? Unwritable(TSqlStatement statement)
     {
         if (statement is not (InsertStatement or UpdateStatement or DeleteStatement or MergeStatement or SetIdentityInsertStatement))
@@ -209,9 +214,22 @@ public static class Witnesses
         public override void Visit(Microsoft.SqlServer.TransactSql.ScriptDom.Literal node) => Found.Add(node);
     }
 
+    /// <summary>
+    /// The first object a statement reaches outside the copy. A table, a sequence or a type is a SchemaObjectName, its server and its
+    /// database parts named where it has four or three (WP 1.4's rule for Measure: names have one or two parts); a function is called
+    /// through a call target, whose two parts before the function's name are a database and a schema. The block runs as one batch on the
+    /// copy's connection, so a four-part name reaches whatever linked server the local server holds, a named environment's included, and a
+    /// three-part name another database on the local server.
+    /// </summary>
     private sealed class Outside : TSqlFragmentVisitor
     {
         public string? Found { get; private set; }
+
+        public override void Visit(SchemaObjectName node) => Found ??= node.ServerIdentifier is not null ? "a name on another server"
+            : node.DatabaseIdentifier is not null ? "a name in another database" : null;
+
+        public override void Visit(FunctionCall node) => Found ??=
+            node.CallTarget is MultiPartIdentifierCallTarget { MultiPartIdentifier.Count: >= 2 } ? "a function in another database" : null;
 
         public override void Visit(ExecuteInsertSource node) => Found ??= "an INSERT of the rows an EXEC returns";
 
