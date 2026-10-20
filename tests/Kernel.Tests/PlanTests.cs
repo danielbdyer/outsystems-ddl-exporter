@@ -138,6 +138,34 @@ public sealed class PlanTests
         Assert.Equal(["Nullable"], Assert.Single(tightened.Columns.Altered).Properties.Select(p => p.Name));
     }
 
+    /// <summary>
+    /// The operator's ruling of 2026-10-19 (spike S11's scout): SQL Server stores a check written with IN as a chain of ORs, so every plan
+    /// against a database holding it drops the check and creates it again. Drift names each check its plan drops and creates whose
+    /// repository text lists values with IN, with the text the database stores; a check written in the OR form, one with IN only inside a
+    /// string literal, and a check the plan creates without dropping it are named by none.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("([Pinned] IN (0, 1))", true)]
+    [InlineData("(Pinned not in(0))", true)]
+    [InlineData("([Pinned]=(1) OR [Pinned]=(0))", false)]
+    [InlineData("([Code]<>N'IN (A)')", false)]
+    public void A_check_its_plan_drops_and_creates_is_named_with_the_text_SQL_Server_stores_when_the_repository_writes_it_with_IN(
+        string written, bool named)
+    {
+        const string Stored = "([Pinned]=(1) OR [Pinned]=(0))";
+        var (table, check) = (Key("Table", "dbo", "Note"), Key("CheckConstraint", "dbo", "CK_Note_Pinned"));
+        SortedArray<Element> Model(string expression) => [New(table, []), New(check, [("Expression", new Value.Script(expression))])];
+        var restated = new DeployReport(
+            [new PlanOperation(new PlanOperationKind.Drop(), check, []), new PlanOperation(new PlanOperationKind.Create(), check, [])], []);
+        var created = new DeployReport([new PlanOperation(new PlanOperationKind.Create(), check, [])], []);
+
+        Assert.Equal(named ? [new CheckWrittenWithIn(check, written, Stored)] : [],
+            Assert.IsType<Drift.Differs>(Ok(Drift.Of(restated, Model(Stored), Model(written), Collation.CaseSensitive))).WrittenWithIn);
+        Assert.Empty(Assert.IsType<Drift.Differs>(Ok(Drift.Of(created, [New(table, [])], Model(written), Collation.CaseSensitive)))
+            .WrittenWithIn);
+    }
+
     /// <summary>The tables either set holds.</summary>
     private static List<ElementKey> Tables(SortedArray<Element> a, SortedArray<Element> b) =>
         [.. a.Concat(b).Select(e => e.Key).Where(k => k.Type == "Table").Distinct()];

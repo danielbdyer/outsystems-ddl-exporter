@@ -129,7 +129,7 @@ public static partial class Verbs
                 answer.Target + " differs from " + at + commit + ": the deploy plan holds "
                     + Counted(differs.Report.Operations.Count, "operation") + ".",
                 [
-                    .. Differences(answer, differs, at),
+                    .. Differences(answer, differs, at, printer),
                     .. columns.CaseOnlyRenamed.Select(pair => CaseOnly("drift.case-only-rename", pair, answer.Collation)),
                     .. printer.Findings,
                     .. standing,
@@ -140,9 +140,11 @@ public static partial class Verbs
     /// <summary>
     /// What a plan that differs says, object by object: a warning per operation that changes an object, naming it; one note listing the
     /// operations DacFx adds for the objects that depend on those (a refresh, an unbind, a rebind), none a difference of its own; a warning
-    /// per alert, quoting DacFx's text, which names types and objects and never a row; and a warning per column line.
+    /// per alert, quoting DacFx's text, which names types and objects and never a row; a warning per column line; and a warning per check
+    /// the plan drops and creates because the repository writes it with IN, naming the cause and quoting the text SQL Server stores as the
+    /// form to write (the operator's ruling of 2026-10-19), each text through the printer.
     /// </summary>
-    private static IEnumerable<Finding> Differences(DriftCheck.Answer answer, Drift.Differs differs, string at)
+    private static IEnumerable<Finding> Differences(DriftCheck.Answer answer, Drift.Differs differs, string at, Printer printer)
     {
         var remedy = "Run dbchange diff --from " + answer.Target + " --to " + at + " to see each property that differs.";
         var consequences = differs.Report.Operations.Where(o => o.Kind.IsConsequence).ToList();
@@ -165,8 +167,20 @@ public static partial class Verbs
                 _ => Finding.Warning(
                     "drift." + alert.Kind.Word, "the deploy plan", "DacFx's " + alert.Kind.Name + " alert: " + alert.Text, remedy),
             }))
-            .Concat(Columns(differs.Columns));
+            .Concat(Columns(differs.Columns))
+            .Concat(differs.WrittenWithIn.Select(check => (check.Key, Written: Printed(printer, check.Key, check.Written),
+                    Stored: Printed(printer, check.Key, check.Stored)))
+                .Select(check => Finding.Warning("drift.check-written-with-in", check.Key.ToString(),
+                    check.Key + " is written with IN in the repository, " + check.Written + ", which SQL Server stores as the chain of ORs "
+                        + check.Stored + "; DacFx compares the two texts, so every deploy plan against a database holding the check drops "
+                        + "it and creates it again.",
+                    "Write the check in the OR form SQL Server stores, which sys.check_constraints.definition shows: CHECK ("
+                        + check.Stored + ").")));
     }
+
+    /// <summary>A check's expression as the printer writes a script.</summary>
+    private static string Printed(Printer printer, ElementKey key, string expression) =>
+        printer.Json(key, "Expression", new Value.Script(expression))!.GetValue<string>();
 
     /// <summary>
     /// A warning per column that differs, read from the change's values, its key the subject: one the repository holds and the target does

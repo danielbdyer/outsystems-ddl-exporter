@@ -45,6 +45,22 @@ public sealed class ScratchRepository : IDisposable
     /// <summary>The make-mandatory sample change's commit.</summary>
     public string Head { get; }
 
+    /// <summary>
+    /// The golden project as Base commits it, with the sample change's edits applied, committed after the last commit; the commit. The
+    /// tests of one class run one at a time, so a commit made here moves no other test's ref.
+    /// </summary>
+    internal string Committed(SampleChange change)
+    {
+        scratch.Git("checkout", Base, "--", "project");
+        foreach (var edit in change.Edits)
+        {
+            edit.ApplyTo(Path.Combine(Root, "project"));
+        }
+
+        return scratch.Commit(change.Name, [.. change.Edits.Select(e => e.File).Distinct()
+            .Select(file => ("project/" + file, File.ReadAllText(Path.Combine(Root, "project", file))))]);
+    }
+
     /// <summary>dbchange run at the repository's root with --json: its exit and its answer, valid against its schema.</summary>
     public (int Exit, JsonNode Answer) Answer(params string[] arguments) => AnswerAt(Root, arguments);
 

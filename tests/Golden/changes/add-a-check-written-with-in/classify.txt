@@ -1,0 +1,2 @@
+add-check CheckConstraint [dbo].[CK_Order_StatusText]
+warning classify.check-in-list CheckConstraint [dbo].[CK_Order_StatusText]

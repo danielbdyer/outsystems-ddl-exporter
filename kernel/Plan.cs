@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace DbChange.Kernel;
 
@@ -153,8 +154,9 @@ public abstract record PlanAlertKind : IComparable<PlanAlertKind>
 
 /// <summary>
 /// Whether a database has drifted from the repository at a ref (§1 fact 4, law 2′), decided from the deploy plan of the ref's package
-/// against the target: <see cref="InSync"/> when the plan is empty; else <see cref="Differs"/>, with the plan and the columns that differ
-/// under each table the plan alters or rebuilds, which DacFx's report names as the table alone. The cases are closed.
+/// against the target: <see cref="InSync"/> when the plan is empty; else <see cref="Differs"/>, with the plan, the columns that differ
+/// under each table the plan alters or rebuilds, which DacFx's report names as the table alone, and each check the plan drops and creates
+/// because the repository writes it with IN (<see cref="CheckWrittenWithIn"/>). The cases are closed.
 /// </summary>
 public abstract record Drift
 {
@@ -177,7 +179,7 @@ public abstract record Drift
     /// The drift a plan shows: an empty plan is in sync; else the columns under each table an Alter or a TableRebuild names, from
     /// <see cref="Change.Between"/> the target's elements and the package's under the target's collation, each alteration without its
     /// Expression. A created or dropped table's operation says the whole, so its columns are not listed. A model two of whose elements
-    /// share a key is the error model.duplicate-key.
+    /// share a key is the error model.duplicate-key. The checks written with IN are <see cref="CheckWrittenWithIn.Of"/>'s.
     /// </summary>
     public static Result<Drift> Of(DeployReport plan, SortedArray<Element> target, SortedArray<Element> package, Collation collation)
     {
@@ -189,7 +191,8 @@ public abstract record Drift
         var tables = plan.Operations
             .Where(o => o.Kind is PlanOperationKind.Alter or PlanOperationKind.TableRebuild && o.Key.Type == "Table").Select(o => o.Key)
             .ToHashSet(ElementKey.Comparer(collation));
-        return Change.Between(target, package, [], collation).Map(change => (Drift)new Differs(plan, ColumnsUnder(change, tables)));
+        return Change.Between(target, package, [], collation).Map(change =>
+            (Drift)new Differs(plan, ColumnsUnder(change, tables), CheckWrittenWithIn.Of(plan, target, package, collation)));
     }
 
     /// <summary>What of a change concerns a column of one of the tables: each such column created, dropped or matched in letter case alone,
@@ -210,9 +213,50 @@ public abstract record Drift
     /// <summary>The deploy plan against the target is empty.</summary>
     public sealed record InSync : Drift;
 
-    /// <summary>The deploy plan holds operations: its deploy report, and the columns that differ under each table it alters or rebuilds,
-    /// from the target to the package.</summary>
-    public sealed record Differs(DeployReport Report, Change Columns) : Drift;
+    /// <summary>The deploy plan holds operations: its deploy report, the columns that differ under each table it alters or rebuilds,
+    /// from the target to the package, and the checks it drops and creates because the package writes them with IN.</summary>
+    public sealed record Differs(DeployReport Report, Change Columns, SortedArray<CheckWrittenWithIn> WrittenWithIn) : Drift;
+}
+
+/// <summary>
+/// A check constraint the repository writes with IN, such as <c>CHECK (Pinned IN (0, 1))</c>, which SQL Server stores as the chain of ORed
+/// equalities it expands the list into, <c>([Pinned]=(1) OR [Pinned]=(0))</c>. DacFx compares the package's text with the stored text, so
+/// every plan against a database holding the check drops it and creates it again, on DacFx 162.5.57 and 170.5.96 alike (spike S11's
+/// scout). By the operator's ruling of 2026-10-19 check drift stays strict and names the cause and the remedy, to write the check as SQL
+/// Server stores it; WP 3.5's identity step reads it the same way. The key, the text the repository writes, and the text the database
+/// stores (sys.check_constraints.definition, as an extract reads it).
+/// </summary>
+public sealed record CheckWrittenWithIn(ElementKey Key, string Written, string Stored) : IComparable<CheckWrittenWithIn>
+{
+    /// <summary>IN followed by its list, outside a string literal.</summary>
+    private static readonly Regex InList = new(@"\bIN\s*\(", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    private static readonly Regex Literal = new("'(?:[^']|'')*'", RegexOptions.CultureInvariant);
+
+    /// <summary>Whether a check's expression lists values with IN or NOT IN, the text of its string literals left out.</summary>
+    public static bool Lists(string expression) => InList.IsMatch(Literal.Replace(expression, "''"));
+
+    /// <summary>
+    /// Each check constraint the plan both drops and creates whose expression in the package lists values with IN, with its expression in
+    /// the target; a check the plan only creates or only drops is a difference of its own and is not named.
+    /// </summary>
+    public static SortedArray<CheckWrittenWithIn> Of(DeployReport plan, SortedArray<Element> target, SortedArray<Element> package,
+        Collation collation)
+    {
+        var comparer = ElementKey.Comparer(collation);
+        var (stored, written) = (Expressions(target, comparer), Expressions(package, comparer));
+        return SortedArray.Of(plan.Operations.Where(o => o.Key.Type == "CheckConstraint").GroupBy(o => o.Key, comparer)
+            .Where(g => g.Any(o => o.Kind is PlanOperationKind.Drop) && g.Any(o => o.Kind is PlanOperationKind.Create))
+            .Where(g => written.TryGetValue(g.Key, out var text) && Lists(text) && stored.ContainsKey(g.Key))
+            .Select(g => new CheckWrittenWithIn(g.Key, written[g.Key], stored[g.Key])));
+    }
+
+    /// <summary>By key.</summary>
+    public int CompareTo(CheckWrittenWithIn? other) => other is null ? 1 : Key.CompareTo(other.Key);
+
+    private static Dictionary<ElementKey, string> Expressions(SortedArray<Element> elements, IEqualityComparer<ElementKey> comparer) =>
+        elements.Where(e => e.Key.Type == "CheckConstraint" && e["Expression"] is Value.Script)
+            .ToDictionary(e => e.Key, e => ((Value.Script)e["Expression"]!).Content, comparer);
 }
 
 /// <summary>
