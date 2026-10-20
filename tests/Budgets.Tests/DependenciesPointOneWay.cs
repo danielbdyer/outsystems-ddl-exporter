@@ -81,7 +81,7 @@ public sealed class DependenciesPointOneWay
         "Checkout", "Standing", "ModelRead", "ModelRead+Source", "ModelDiff", "ModelDiff+Answer", "DriftCheck", "DriftCheck+Request",
             "DriftCheck+Answer",
         "Doctor+Readiness", "Doctor+Prerequisite", "Doctor+Item", "Ssdt+ModelElements", "SqlServer+QueryLog", "SqlServer+Reads",
-        "Write", "Json", "SchemaText", "PrintedScript", "PasswordForm", "Telemetry", "Interruption", "Runner", "Ran",
+        "Write", "Json", "SchemaText", "PrintedScript", "PasswordForm", "Telemetry", "ServerProbe", "Interruption", "Runner", "Ran",
     ];
 
     /// <summary>
