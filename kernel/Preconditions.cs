@@ -105,14 +105,47 @@ public abstract record PreconditionKind : IComparable<PreconditionKind>
     public sealed record Check(string Expression) : PreconditionKind;
 }
 
-/// <summary>A precondition's state in one environment: whether its table holds a row, and whether a row breaks its rule.</summary>
+/// <summary>
+/// A precondition's state in one environment: whether its table holds a row, whether a row breaks its rule, and, for Fits and Unique, the
+/// classes whose rows the table holds (<see cref="RowClasses"/>), which WP 2.3's queries count beside the violating rows; none for another
+/// kind, or where the counts named no class.
+/// </summary>
 public sealed record PreconditionState(Precondition Precondition, bool Populated, bool Violating) : IComparable<PreconditionState>
 {
+    public RowClasses Classes { get; init; }
+
     public int CompareTo(PreconditionState? other) =>
         other is null ? 1
         : Precondition.CompareTo(other.Precondition) is var p and not 0 ? p
         : Populated.CompareTo(other.Populated) is var r and not 0 ? r
-        : Violating.CompareTo(other.Violating);
+        : Violating.CompareTo(other.Violating) is var v and not 0 ? v
+        : ((int)Classes).CompareTo((int)other.Classes);
+}
+
+/// <summary>
+/// The value classes of Fits and the collation classes of Unique (the Facsimile's ARCHITECTURE.md §4), one flag each, so a set of them is
+/// one value: the kinds of row WP 2.3's aggregate queries count beside a precondition's violating rows, named and ordered as
+/// io/AggregateQueries.cs names its Class. Of Fits: over length, a value longer than the new type holds once its trailing spaces are gone;
+/// over bytes, longer only with them; not convertible, a value TRY_CONVERT gives NULL; an empty string; overflow, a value of the same kind
+/// beyond the new type's range; and a lossy round trip, a value ALTER COLUMN writes without an error and loses. Of Unique: exact, two keys
+/// of the same bytes; case, two that differ in letter case alone; accent, in accents alone; trailing space, in trailing spaces alone; and
+/// nulls, two keys holding NULL, which a unique index holds equal.
+/// </summary>
+[Flags]
+public enum RowClasses
+{
+    None = 0,
+    OverLength = 1,
+    OverBytes = 2,
+    NotConvertible = 4,
+    EmptyString = 8,
+    Overflow = 16,
+    LossyRoundTrip = 32,
+    Exact = 64,
+    Case = 128,
+    Accent = 256,
+    TrailingSpace = 512,
+    Nulls = 1024,
 }
 
 /// <summary>

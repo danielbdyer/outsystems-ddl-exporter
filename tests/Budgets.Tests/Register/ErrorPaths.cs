@@ -119,6 +119,25 @@ internal static partial class ErrorPaths
             Failed(DbChange.Kernel.Outcome.Predict(new ExistingData([]),
                 [new BlockOnPossibleDataLossSite(Table.Name, "ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;")],
                 [], []))),
+        new("a planted precondition on a table the copy lacks and the change does not create", "plan.missing-object", false, (_, _) =>
+            Failed(Witness.Plan(new Schema([]), [new Precondition(Table.Name, [], new PreconditionKind.TableEmpty())],
+                new ExistingData([])))),
+        new("a planted precondition the existing data holds no state for", "plan.uncounted", false, (_, _) =>
+            Failed(Witness.Plan(new Schema([new Kernel.Table(Table.Name, [], null, [], [], [], [], null)]),
+                [new Precondition(Table.Name, [], new PreconditionKind.TableEmpty())], new ExistingData([])))),
+        new("existing data answering a foreign key over a NOT NULL column clean and its parent empty", "plan.contradictory-answers", false,
+            (_, _) =>
+            {
+                var (account, id, accountId) = (Made(Name.Of("dbo", "Account")), Made(Name.Of("Id")), Made(Name.Of("AccountId")));
+                var integer = new DbChange.Kernel.ColumnType(Made(Name.Of("int")), 0, false, 0, 0, null);
+                Kernel.Table Holding(Name table, Name column) => new(table,
+                    [new Kernel.Column.Stored(1, column, false, integer, null, null, null, false, false)], null, [], [], [], [], null);
+                var foreign = new Precondition(Table.Name, [accountId],
+                    new PreconditionKind.ForeignKey(account, [new PreconditionKind.ForeignKey.Pair(accountId, id)]));
+                var accounts = new Precondition(account, [], new PreconditionKind.TableEmpty());
+                return Failed(Witness.Plan(new Schema([Holding(account, id), Holding(Table.Name, accountId)]), [accounts, foreign],
+                    new ExistingData([new PreconditionState(accounts, false, false), new PreconditionState(foreign, true, false)])));
+            }),
         new("a column renamed by typing, with no refactorlog entry", "rename.column-without-entry", false, (_, _) =>
             Refusal(["CREATE TABLE dbo.Customer (Id INT NOT NULL, Phone NVARCHAR(40) NULL);"],
                 ["CREATE TABLE dbo.Customer (Id INT NOT NULL, Mobile NVARCHAR(40) NULL);"])),
