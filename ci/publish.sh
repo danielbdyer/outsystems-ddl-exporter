@@ -20,7 +20,9 @@ fi
 rm -rf "$out"
 dotnet publish "$root/cli/cli.csproj" -c Release -f net10.0 --no-self-contained -o "$out" -nologo -v q
 
-# The restore that publish ran put both packages in the global packages folder; ask NuGet where that is.
+# The restore that publish ran put the four packages this script copies from (DacFx, the .NET Framework 4.7.2 reference
+# assemblies, Microsoft.SqlServer.Dacpacs.Master and Microsoft.SqlServer.Dacpacs.Msdb) in the global packages folder; ask NuGet
+# where that is.
 packages="$(dotnet nuget locals global-packages --list | sed -n 's/^global-packages: *//p' | tr -d '\r')"
 packages="${packages%[/\\]}"
 cp "$packages/microsoft.sqlserver.dacfx/$dacfx/lib/net10.0/"Microsoft.Data.Tools.Schema.SqlTasks*.targets "$out/"
