@@ -12,7 +12,9 @@ namespace DbChange.Io;
 /// number, date and time type and uniqueidentifier: a string compared with, added to or listed beside such a value converts with no
 /// CONVERT written, and one that does not convert raises Msg 245 or 248, which quote it. The type it converts to is the other operand's
 /// own, time, datetime2 and datetimeoffset at scale 7, as SQL Server 2022 (16.0.4305.5) plans CONVERT_IMPLICIT: tinyint for a tinyint
-/// column, decimal(5,2) for a decimal(5,2) one, numeric(2,1) for the literal 1.5, int for 0, time(7) for a time(3) column.
+/// column, decimal(5,2) for a decimal(5,2) one, numeric(2,1) for the literal 1.5, int for 0, time(7) for a time(3) column. A string that
+/// meets hierarchyid, xml or a spatial or CLR type is parsed into it, and the parse's error quotes the string (Msg 6522), so the rewriter
+/// reads no such meeting.
 /// </summary>
 public static partial class AggregateQueries
 {
@@ -41,6 +43,13 @@ public static partial class AggregateQueries
         /// <summary>A number, a date and time type or uniqueidentifier: a type a string it meets converts to, which can fail.</summary>
         public bool TakesStrings => Family is Family.Integer or Family.Bit or Family.Decimal or Family.Approximate or Family.Date
             or Family.Time or Family.DateTime or Family.DateTime2 or Family.Guid;
+
+        /// <summary>
+        /// A type SQL Server parses a string it meets into with no CONVERT written, where no TRY_ form stands, and whose failure can quote
+        /// the string: hierarchyid (Msg 6522, measured on SQL Server 2022), xml, a spatial or other CLR type, and any type of no kind the
+        /// rewriter reads. sql_variant takes a string as it is (measured), and NULL converts nothing.
+        /// </summary>
+        public bool ParsesStrings => Family == Family.Other && Base is not ("null" or "sql_variant");
 
         /// <summary>The type's place in SQL Server's data type precedence, higher above lower; -1 for NULL and a type not listed.</summary>
         public int Rank => Array.IndexOf(Precedence, Base switch { "numeric" => "decimal", "sysname" => "nvarchar", var b => b });

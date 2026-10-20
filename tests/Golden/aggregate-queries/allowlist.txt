@@ -84,6 +84,10 @@ SELECT SUM(p.rows) FROM sys.partitions AS p WHERE EXISTS (SELECT 1 FROM dbo.Cust
 SELECT SUM(p.partition_number) FROM sys.partitions AS p;
 === refuse: SUM of the rows column of a catalog view other than sys.partitions
 SELECT SUM(i.rows) FROM sys.sysindexes AS i INNER JOIN sys.partitions AS p ON p.object_id = i.id;
+=== refuse: SUM of the rows column of SYS.partitions, a user's table where a case-sensitive database holds a schema SYS apart from sys
+SELECT SUM(p.rows) FROM SYS.partitions AS p;
+=== refuse: SUM of the rows column of [Sys].[partitions], a user's table where a case-sensitive database holds a schema Sys apart from sys
+SELECT SUM(p.rows) FROM [Sys].[partitions] AS p;
 === refuse: MAX over a bare column
 SELECT MAX(Email) FROM dbo.Customer;
 === refuse: MIN over a bare column

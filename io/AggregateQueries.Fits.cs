@@ -13,20 +13,23 @@ namespace DbChange.Io;
 /// them the rows of each value class, each an item of its own (the Facsimile's ARCHITECTURE.md §4). Into a string or binary type with a
 /// length, a value too long for it, as measured value by value on SQL Server 2022 (16.0.4305.5): from a string, longer than the new length
 /// in bytes once its trailing spaces are gone, which ALTER COLUMN refuses (Msg 2628), and over bytes, longer only with them, which it
-/// trims without an error; from a binary type, longer than the new length (Msg 2628); from a number or uniqueidentifier, its string form
-/// longer (Msg 8115, 234, 292, 232 or 8170). Those are over length and violating. ALTER COLUMN writes the others without an error, a lossy
-/// round trip and never violating: tinyint, smallint or int into char or varchar as '*', a date and time type into a string cut at the
-/// new length, an integer into a binary type with its high bytes dropped, which loses a value outside 0 to 256^n - 1, and decimal, money,
-/// float or uniqueidentifier into a binary type shorter than its own bytes. Into any other type the violating rows are the non-null values
+/// trims without an error; from a number or uniqueidentifier, its string form longer (Msg 8115, 234, 292, 232 or 8170). Those are over
+/// length and violating. From a binary type a value longer than the new length is over length and decides nothing alone: ALTER COLUMN
+/// drops its bytes past the new length where they are all 0x00 (0x010200 into varbinary(2), 0x4100 into varchar(1)) and refuses it
+/// otherwise (Msg 2628), and no query the allowlist admits tells the two apart, so the site reads not predictable read-only once any such
+/// value is counted, and where none is, no row is violating. ALTER COLUMN writes the others without an error, a lossy round trip and never
+/// violating: tinyint, smallint or int into char or varchar as '*', a date and time type into a string cut at the new length, an integer
+/// into a binary type with its high bytes dropped, which loses a value outside 0 to 256^n - 1, and decimal, money, float or
+/// uniqueidentifier into a binary type shorter than its own bytes. Into any other type the violating rows are the non-null values
 /// TRY_CONVERT gives NULL, and the classes are: not convertible; an empty string, which the integer types, bit, money, float, real and the
 /// date and time types read without an error, as 0 or 1900-01-01 00:00, and decimal and uniqueidentifier refuse; overflow, a value of the
 /// same kind out of the new type's range; and a lossy round trip where one value's predicate shows it: a number into bit other than 0 or 1,
 /// the time of a date and time into date, its date into time, and an offset other than +00:00 that a datetimeoffset loses. The classes
 /// share no row; over bytes, an empty string a type reads and a lossy round trip convert without an error, so they are counted as classes
 /// and never as violating. What no count shows prints a line: characters substituted with '?' into a character type whose code page can
-/// lack them, and values rounded where the fractional digits the type holds fall. A pair of types SQL Server converts neither way, a type
-/// no count reads (xml, sql_variant, hierarchyid, a spatial or CLR type, text or image as the new type), and a binary(n) narrowed, every
-/// value of which holds n bytes whose zeros past the new length ALTER COLUMN drops without an error, read not predictable read-only.
+/// lack them, and values rounded where the fractional digits the type holds fall. A pair of types SQL Server converts neither way, and a
+/// type no count reads (xml, sql_variant, hierarchyid, a spatial or CLR type, text or image as the new type), read not predictable
+/// read-only.
 /// </summary>
 public static partial class AggregateQueries
 {
@@ -69,20 +72,21 @@ public static partial class AggregateQueries
             return Asked.Not("dbchange counts no conversion from " + Written(before) + " to " + Written(after));
         }
 
-        if (before.Type.Base.ToLowerInvariant() == "binary" && to is Family.Character or Family.Binary && !after.IsMax
-            && before.Length > Capacity(after))
-        {
-            return Asked.Not("every value of " + Written(before) + " holds " + Digits(before.Length) + " bytes, and ALTER COLUMN drops"
-                + " its zero bytes past the new length without an error, which no query the allowlist admits tells from other bytes");
-        }
-
         var subject = precondition.Table + "." + precondition.Columns[0];
         notes.AddRange(Lines(subject, before, after, from, to, context));
         var items = Misfits(name, before, after, from, to, target, context).ToList();
         var violating = items.Any(i => i.Class is null);
+
+        // From a binary type into one with a length, the one item counts the values longer than the new type, and any such value leaves
+        // the site not predictable read-only (TooLong).
+        string? Longer(IReadOnlyList<long> values) => values[0] == 0 ? null
+            : Digits(values[0]) + (values[0] == 1 ? " row holds" : " rows hold") + " a value longer than " + Written(after) + " takes, and"
+                + " ALTER COLUMN drops its bytes past the new length where they are all 0x00 and refuses it otherwise (Msg 2628), which no"
+                + " query the allowlist admits tells apart";
         return new Part(precondition, [.. items.Select(i => ((ScalarExpression)Sum(i.When), i.Class))], [],
             [.. items.Where(i => i.Class is not null).Select(i => i.Class!.Value)],
-            (_, values) => violating ? (values[0], values.Skip(1).ToArray()) : (0L, values.ToArray()));
+            (_, values) => violating ? (values[0], values.Skip(1).ToArray()) : (0L, values.ToArray()),
+            from is Family.Binary or Family.Image && items.Count > 0 && !violating ? Longer : null);
     }
 
     /// <summary>
@@ -106,8 +110,8 @@ public static partial class AggregateQueries
         BooleanExpression Over(ScalarExpression length) => Compare(length, BooleanComparisonType.GreaterThan, bytes);
         if (from is Family.Binary or Family.Image)
         {
-            // A binary value's own bytes, a trailing 0x20 among them: ALTER COLUMN keeps 0x412020 out of varchar(1) (Msg 2628).
-            yield return (null, Over(Call("DATALENGTH", ColumnRef("t", name))));
+            // A binary value's own bytes, a trailing 0x20 among them: ALTER COLUMN keeps 0x412020 out of varchar(1) (Msg 2628) and writes
+            // 0x4100 as 'A', so a value longer is over length alone, and Fits reads the site not predictable read-only once one is counted.
             yield return (Class.OverLength, Over(Call("DATALENGTH", ColumnRef("t", name))));
             yield break;
         }

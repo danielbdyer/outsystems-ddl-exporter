@@ -211,6 +211,72 @@ public sealed class AggregateQueriesCountTests : IDisposable
     }
 
     /// <summary>
+    /// Check compares under the collation its expression names: in a Latin1_General_CI_AS column holding abc, ABC and NULL, the check
+    /// [Ref] COLLATE Latin1_General_CS_AS='ABC' is false for abc alone, as is the same COLLATE on a CONVERT, and [Ref]='ABC' is false for
+    /// no row, NULL being unknown in each.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task Check_counts_under_the_collation_its_expression_names_on_a_column_and_on_a_conversion()
+    {
+        (string Expression, long Violating)[] checks = [("[Ref] COLLATE Latin1_General_CS_AS='ABC'", 1),
+            ("CONVERT([varchar](20),[Ref]) COLLATE Latin1_General_CS_AS='ABC'", 1), ("[Ref]='ABC'", 0)];
+        var environment = Model.Of("Q.Id int NOT NULL", "Q.Ref varchar(20) NULL Latin1_General_CI_AS");
+        var head = checks.Select((c, at) => (c.Expression, at))
+            .Aggregate(environment, (model, c) => model.Check("CK_Q_" + c.at, "Q", c.Expression, ["Ref"]));
+
+        var (_, counts, _) = await Counted(new Case(environment, head), "INSERT dbo.Q (Id, Ref) VALUES (1, 'abc'), (2, 'ABC'), (3, NULL);");
+
+        Assert.Equal(checks.Select(c => (c.Expression, 3L, c.Violating)), checks.Select(c => counts.Counted
+            .Single(n => n.Precondition.Kind is PreconditionKind.Check k && k.Expression == c.Expression))
+            .Select(n => (((PreconditionKind.Check)n.Precondition.Kind).Expression, n.Rows, n.Violating)));
+    }
+
+    /// <summary>
+    /// §18, a value escaping in an error, where no TRY_ form helps: SQL Server parses a string set against hierarchyid with no CONVERT
+    /// written and fails with Msg 6522, and reads LIKE's escape character from a column and fails with Msg 506, each message quoting the
+    /// planted value, as each check run as written shows. The builders read both checks not predictable read-only and write neither into
+    /// a query; the string set against sql_variant, which SQL Server compares without parsing it, is counted as the check run as written
+    /// counts it, and raises nothing; and the value appears in no count, reason or line of the run's log.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    [Trait("Value", "X2")]
+    public async Task A_check_whose_error_would_quote_a_row_s_value_reads_not_predictable_read_only_and_runs_in_no_query()
+    {
+        var planted = PlantedValue.Unique();
+        string[] quoting = ["'abc' LIKE 'a%' ESCAPE [Esc]", "[Ref]=[Hid]"];
+        const string Variant = "[Var]=[Ref]";
+        var environment = Model.Of("H.Id int NOT NULL", "H.Ref varchar(40) NULL Latin1_General_CI_AS", "H.Hid hierarchyid NULL",
+            "H.Esc varchar(40) NULL Latin1_General_CI_AS", "H.Var sql_variant NULL");
+        var head = environment.Check("CK_H_Esc", "H", quoting[0], ["Esc"]).Check("CK_H_Hid", "H", quoting[1], ["Hid", "Ref"])
+            .Check("CK_H_Var", "H", Variant, ["Ref", "Var"]);
+        using var copy = DisposableCopy.Create(root, await SqlServerFixture.ServerAsync());
+        await SqlServerFixture.ExecuteAsync(copy.Copy.Connection, Tables(environment) + "INSERT dbo.H (Id, Ref, Hid, Esc, Var) VALUES"
+            + " (1, @name, hierarchyid::Parse('/1/'), @name, @name), (2, '/1/', NULL, '!', N'x');", planted.Text);
+        string AsWritten(string check) => "SELECT SUM(CASE WHEN NOT (" + check + ") THEN 1 ELSE 0 END) FROM dbo.H;";
+        foreach (var check in quoting)
+        {
+            Assert.Contains(planted.Text, (await Assert.ThrowsAsync<SqlException>(() =>
+                SqlServerFixture.ScalarAsync(copy.Copy.Connection, AsWritten(check)))).Message, StringComparison.Ordinal);
+        }
+
+        var asWritten = await SqlServerFixture.ScalarAsync(copy.Copy.Connection, AsWritten(Variant));
+        var queries = new Case(environment, head).Queries();
+        var log = SqlServer.QueryLog.Start(root);
+
+        var counts = Value(AggregateQueries.Count(copy.Copy, queries.Tables.Single(), log));
+
+        Assert.Equal(quoting, queries.NotPredictable.Select(u => ((PreconditionKind.Check)u.Precondition.Kind).Expression));
+        Assert.Equal((Variant, 2L, (long)asWritten), counts.Counted
+            .Select(n => (((PreconditionKind.Check)n.Precondition.Kind).Expression, n.Rows, n.Violating)).Single());
+        Assert.Empty(counts.Unanswered);
+        Assert.DoesNotContain(Entries(File.ReadAllText(log.Path)), e => e.Outcome.StartsWith("failed", StringComparison.Ordinal));
+        planted.AbsentFrom(string.Join('\n', counts.Counted.Concat<object>(queries.NotPredictable).Concat(queries.Notes.Select(n => n.Message)))
+            + File.ReadAllText(log.Path));
+    }
+
+    /// <summary>
     /// TableEmpty: the table's rows, read by the table's query, and the same rows read from sys.partitions. A login holding VIEW DEFINITION
     /// alone (§17 item 21) is refused the table's rows (Msg 229) and reads sys.partitions; a table sys.partitions does not show is never
     /// read as empty.
@@ -300,14 +366,17 @@ public sealed class AggregateQueriesCountTests : IDisposable
     /// <summary>
     /// Fits into a string or binary type counts as violating exactly the rows ALTER COLUMN refuses, measured beside the count on the copy:
     /// each column holds one value too long for its new type and one that fits, or NULL, and each retype runs as ALTER COLUMN after the
-    /// count. A string, a binary value, bigint, decimal, money, float, uniqueidentifier, and int into nvarchar fail (Msg 2628, 8115, 234,
-    /// 232 or 8170) and are over length; int into varchar ('*'), a date and time type cut short, and int into varbinary past 0xFFFF apply,
-    /// a lossy round trip; trailing spaces alone, which ALTER COLUMN trims, are over bytes.
+    /// count. A string, bigint, decimal, money, float, uniqueidentifier, and int into nvarchar fail (Msg 2628, 8115, 234, 232 or 8170)
+    /// and are over length; int into varchar ('*'), a date and time type cut short, and int into varbinary past 0xFFFF apply, a lossy
+    /// round trip; trailing spaces alone, which ALTER COLUMN trims, are over bytes. From a binary type the count is exact only where no
+    /// value is longer than the new type, and then none is violating: a longer value leaves the retype not predictable read-only, since
+    /// ALTER COLUMN refuses 0x0102030405 and 0x412020 (Msg 2628) and applies to 0x010200 and 0x4100, dropping their trailing 0x00 bytes.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
     public async Task Fits_into_a_string_or_binary_type_counts_as_violating_exactly_the_rows_ALTER_COLUMN_refuses()
     {
+        const string NotPredictable = "not predictable read-only";
         (string Column, string Before, string After, string TooLong, string Fits, string Counted, string Altered)[] cases =
         [
             ("I2v", "int", "varchar(2)", "123456", "12", "violating 0, lossy-round-trip 1", "applies"),
@@ -322,8 +391,11 @@ public sealed class AggregateQueriesCountTests : IDisposable
             ("G2v", "uniqueidentifier", "varchar(10)", "'6F9619FF-8B86-D011-B42D-00C04FC964FF'", "NULL", "violating 1, over-length 1",
                 "fails, Msg 8170"),
             ("I2b", "int", "varbinary(2)", "123456", "12", "violating 0, lossy-round-trip 1", "applies"),
-            ("Vb2b", "varbinary(10)", "varbinary(2)", "0x0102030405", "0x0102", "violating 1, over-length 1", "fails, Msg 2628"),
-            ("Vb2v", "varbinary(10)", "varchar(1)", "0x412020", "0x41", "violating 1, over-length 1", "fails, Msg 2628"),
+            ("Vb2b", "varbinary(10)", "varbinary(2)", "0x0102030405", "0x0102", NotPredictable, "fails, Msg 2628"),
+            ("Vb0b", "varbinary(10)", "varbinary(2)", "0x010200", "0x0102", NotPredictable, "applies"),
+            ("Vb1b", "varbinary(10)", "varbinary(2)", "0x01", "NULL", "violating 0, over-length 0", "applies"),
+            ("Vb2v", "varbinary(10)", "varchar(1)", "0x412020", "0x41", NotPredictable, "fails, Msg 2628"),
+            ("Vb0v", "varbinary(10)", "varchar(1)", "0x4100", "0x41", NotPredictable, "applies"),
             ("S2s", "nvarchar(50)", "nvarchar(10)", "N'abcdefghijklm'", "N'abc                    '",
                 "violating 1, over-length 1, over-bytes 1", "fails, Msg 2628"),
             ("C2c", "char(20)", "char(5)", "'abcdefgh'", "'abc'", "violating 1, over-length 1, over-bytes 1", "fails, Msg 2628"),
@@ -351,11 +423,86 @@ public sealed class AggregateQueriesCountTests : IDisposable
             }
         }
 
+        string Answer(Precondition fits) => counts.Unanswered.SingleOrDefault(u => u.Precondition == fits) is { } unanswered
+            ? unanswered.Why.Split(':')[0] : Line(counts, fits) is var line && line.StartsWith("rows 2, ", StringComparison.Ordinal) ? line[8..] : line;
         Assert.Empty(queries.NotPredictable);
-        Assert.Equal(cases.Select(c => (c.Column, "rows 2, " + c.Counted, c.Altered)),
-            cases.Select((c, at) => (c.Column, Line(counts, Kind(queries, "Fits", c.Column)), altered[at])));
-        Assert.All(cases.Select((c, at) => (counts.Counted.Single(n => n.Precondition == Kind(queries, "Fits", c.Column)), altered[at])),
-            pair => Assert.Equal(pair.Item2 != "applies", pair.Item1.Violating > 0));
+        Assert.Equal(cases.Select(c => (c.Column, c.Counted, c.Altered)),
+            cases.Select((c, at) => (c.Column, Answer(Kind(queries, "Fits", c.Column)), altered[at])));
+        Assert.All(cases.Select((c, at) => (counts.Counted.SingleOrDefault(n => n.Precondition == Kind(queries, "Fits", c.Column)), altered[at]))
+            .Where(pair => pair.Item1 is not null), pair => Assert.Equal(pair.Item2 != "applies", pair.Item1!.Violating > 0));
+    }
+
+    /// <summary>
+    /// Unique over a column the change converts so that other values are equal reads not predictable read-only, and the index the planted
+    /// rows take after each ALTER COLUMN on the copy shows why: N'A' and NCHAR(256) are both 'A' as varchar under Latin1_General_CI_AS,
+    /// NCHAR(230) and 'ae' are one nvarchar value under SQL_Latin1_General_CP1_CI_AS, 0.1 and 0.100000000001 one real, and two instants at
+    /// 10:00 local time one datetime2, so CREATE UNIQUE INDEX fails (Msg 1505) where the values as held hold no duplicate; one instant at
+    /// two offsets is two datetime2 values, and NCHAR(233) and 'e' two nvarchar values under Cyrillic_General_CI_AS, so the index builds
+    /// where the values as held, or read through a COLLATE into Cyrillic_General_CI_AS, hold a duplicate. Into a UTF-8 collation the key
+    /// is counted and builds; from Latin1_General_CI_AS into Cyrillic_General_CI_AS, both varchar, it is counted, the grouping's COLLATE
+    /// writing NCHAR(233) as e as ALTER COLUMN does, and fails as counted.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task Unique_reads_not_predictable_read_only_where_the_change_converts_its_column_so_that_other_planted_values_are_equal()
+    {
+        (string Column, string Before, string After, string[] Values, string Counted, string Index)[] cases =
+        [
+            ("Code", "nvarchar(10) NULL Latin1_General_CI_AS", "varchar(10) NULL Latin1_General_CI_AS", ["N'A'", "NCHAR(256)", "N'x'"],
+                "not predictable", "fails, Msg 1505"),
+            ("Utf", "nvarchar(10) NULL Latin1_General_CI_AS", "varchar(10) NULL Latin1_General_100_CI_AS_SC_UTF8", ["N'A'", "NCHAR(256)", "N'x'"],
+                "violating 0", "builds"),
+            ("Wide", "varchar(10) NULL SQL_Latin1_General_CP1_CI_AS", "nvarchar(10) NULL SQL_Latin1_General_CP1_CI_AS",
+                ["NCHAR(230)", "'ae'", "'x'"], "not predictable", "fails, Msg 1505"),
+            ("Uni", "varchar(10) NULL Latin1_General_CI_AS", "nvarchar(10) NULL Cyrillic_General_CI_AS", ["NCHAR(233)", "'e'", "'x'"],
+                "not predictable", "builds"),
+            ("Page", "varchar(10) NULL Latin1_General_CI_AS", "varchar(10) NULL Cyrillic_General_CI_AS", ["NCHAR(233)", "'e'", "'x'"],
+                "violating 2", "fails, Msg 1505"),
+            ("Flt", "float NULL", "real NULL", ["0.1E0", "0.100000000001E0", "2.0E0"], "not predictable", "fails, Msg 1505"),
+            ("Dto", "datetimeoffset(7) NULL", "datetime2(7) NULL",
+                ["'2020-01-01T10:00:00+01:00'", "'2020-01-01T10:00:00+02:00'", "'2021-01-01T00:00:00+00:00'"], "not predictable", "fails, Msg 1505"),
+            ("Utc", "datetimeoffset(7) NULL", "datetime2(7) NULL",
+                ["'2020-01-01T10:00:00+01:00'", "'2020-01-01T09:00:00+00:00'", "'2021-01-01T00:00:00+00:00'"], "not predictable", "builds"),
+        ];
+        var environment = Model.Of(["S.Id int NOT NULL", .. cases.Select(c => "S." + c.Column + " " + c.Before)]);
+        var head = cases.Aggregate(Model.Of(["S.Id int NOT NULL", .. cases.Select(c => "S." + c.Column + " " + c.After)]),
+            (model, c) => model.UniqueIndex("UX_S_" + c.Column, "S", c.Column));
+        using var copy = DisposableCopy.Create(root, await SqlServerFixture.ServerAsync());
+        await SqlServerFixture.ExecuteAsync(copy.Copy.Connection, Tables(environment) + "INSERT dbo.S (Id, "
+            + string.Join(", ", cases.Select(c => c.Column)) + ") VALUES "
+            + string.Join(", ", Enumerable.Range(0, 3).Select(row => "(" + (row + 1) + ", " + string.Join(", ", cases.Select(c => c.Values[row])) + ")"))
+            + ";");
+        var queries = new Case(environment, head).Queries();
+
+        var counts = Value(AggregateQueries.Count(copy.Copy, queries.Tables.Single(), SqlServer.QueryLog.Start(root)));
+        var indexes = new List<string>();
+        foreach (var c in cases)
+        {
+            await SqlServerFixture.ExecuteAsync(copy.Copy.Connection, "ALTER TABLE dbo.S ALTER COLUMN [" + c.Column + "] "
+                + AggregateQueries.Written(Model.Of("S." + c.Column + " " + c.After).Columns[0].Type)
+                + (c.After.Split(' ') is [_, _, var collation] ? " COLLATE " + collation : "") + " NULL;");
+        }
+
+        foreach (var c in cases)
+        {
+            try
+            {
+                await SqlServerFixture.ExecuteAsync(copy.Copy.Connection, "CREATE UNIQUE INDEX [UX_S_" + c.Column + "] ON dbo.S ([" + c.Column + "]);");
+                indexes.Add("builds");
+            }
+            catch (SqlException e)
+            {
+                indexes.Add("fails, Msg " + e.Number);
+            }
+        }
+
+        bool Keyed(Precondition p, string column) => p.Kind is PreconditionKind.Unique && p.Columns[0].Base == column;
+        string Answer(string column) => queries.NotPredictable.Any(u => Keyed(u.Precondition, column)) ? "not predictable"
+            : "violating " + counts.Counted.Single(n => Keyed(n.Precondition, column)).Violating;
+        Assert.Equal(cases.Select(c => (c.Column, c.Counted, c.Index)), cases.Select((c, at) => (c.Column, Answer(c.Column), indexes[at])));
+        Assert.All(queries.NotPredictable.Where(u => u.Precondition.Kind is PreconditionKind.Unique),
+            u => Assert.Contains("before the key is validated, which ", u.Why, StringComparison.Ordinal));
+        Assert.Empty(counts.Unanswered);
     }
 
     /// <summary>Seven retypes on one table: a shorter string, a string to int and to decimal, a decimal to smallint, int to bit, a date and

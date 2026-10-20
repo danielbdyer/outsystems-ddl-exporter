@@ -16,14 +16,17 @@ namespace DbChange.Io;
 /// sys.partitions' for a login holding VIEW DEFINITION alone (§17 item 21); NotNull, the rows holding NULL; Fits, the rows of each value
 /// class (AggregateQueries.Fits.cs); ForeignKey, the orphans, and Unique, the rows of each collation class of duplicate (Keys.cs); Check,
 /// the rows that make the check false (Check.cs). All of one table's preconditions are items of one SELECT over the table aliased t, a key
-/// or a foreign key joining a grouped derived table that matches each row once, so one statement reads the table (decision 2.9). Every
-/// query passes AggregateQuery.Of, its text read again, and runs under the session given; no builder writes CONVERT, CAST or PARSE, only
-/// TRY_CONVERT and TRY_CAST, and a check's string that SQL Server would convert with no CONVERT written is read through TRY_CONVERT too
-/// (Check.cs, Types.cs), so none raises an error that quotes a value (§18). A table's query that fails all the same, on an overflow, is
-/// run again a precondition at a time, and each that fails is reported by its precondition and SQL Server's number, the message withheld
-/// for a named environment. A precondition no query the allowlist admits can count reads not predictable read-only, with why, as does one
-/// whose columns name a collation Collation.Of refuses, since a query writes a COLLATE's name as it stands. A column the change creates
-/// reads, where its name would stand, the value the coordinate rules give every existing row, its default or NULL (kernel/Coordinates.cs).
+/// or a foreign key joining a grouped derived table that matches each row once, so one statement reads the table (decision 2.9), the
+/// grouping of a key over it reading it again within that statement. Every query passes AggregateQuery.Of, its text read again, and runs
+/// under the session given; no builder writes CONVERT, CAST or PARSE, only TRY_CONVERT and TRY_CAST, a check's string that SQL Server
+/// would convert with no CONVERT written is read through TRY_CONVERT too (Check.cs, Types.cs), and no query counts a check SQL Server
+/// fails on with an error no TRY_ form stops, a string parsed into hierarchyid or another CLR type, or a LIKE escape read from a row, so
+/// none raises an error that quotes a value (§18). A table's query that fails all the same, on an overflow, is run again a precondition
+/// at a time, and each that fails is reported by its precondition and SQL Server's number, the message withheld for a named environment.
+/// A precondition no query the allowlist admits can count reads not predictable read-only, with why, as do one whose columns name a
+/// collation Collation.Of refuses, since a query writes a COLLATE's name as it stands, and a retype from a binary type once a value longer
+/// than the new type is counted (Fits.cs). A column the change creates reads, where its name would stand, the value the coordinate rules
+/// give every existing row, its default or NULL (kernel/Coordinates.cs).
 /// </summary>
 public static partial class AggregateQueries
 {
@@ -161,31 +164,41 @@ public static partial class AggregateQueries
                             + ", and a table it cannot see is never read as empty")])));
         }
 
-        /// <summary>Each part's count from the values its items answered, the table's rows first; a NULL, which SUM gives over no row, is
-        /// 0.</summary>
+        /// <summary>Each part's count from the values its items answered, the table's rows first, or why the values leave it not
+        /// predictable read-only; a NULL, which SUM gives over no row, is 0.</summary>
         private static Counts Reading(IReadOnlyList<Part> parts, IReadOnlyList<long?> values)
         {
             var (rows, at, counted, classes) = (values[0] ?? 0, 1, new List<PreconditionCount>(), new List<ClassCount>());
+            var unanswered = new List<Unanswered>();
             foreach (var part in parts)
             {
-                var (violating, each) = part.Read(rows, [.. values.Skip(at).Take(part.Items.Count).Select(v => v ?? 0)]);
+                IReadOnlyList<long> own = [.. values.Skip(at).Take(part.Items.Count).Select(v => v ?? 0)];
                 at += part.Items.Count;
+                if (part.Undecided?.Invoke(own) is { } why)
+                {
+                    unanswered.Add(new(part.Precondition, NotPredictable + why));
+                    continue;
+                }
+
+                var (violating, each) = part.Read(rows, own);
                 counted.Add(new PreconditionCount(part.Precondition, rows, violating));
                 classes.AddRange(part.Classes.Zip(each, (c, n) => new ClassCount(part.Precondition, c, n)));
             }
 
-            return new Counts(SortedArray.Of(counted), SortedArray.Of(classes), []);
+            return new Counts(SortedArray.Of(counted), SortedArray.Of(classes), SortedArray.Of(unanswered));
         }
     }
 
     /// <summary>
     /// What one precondition asks of its table's query: its items, each an expression over the table aliased t and the class it counts,
-    /// none for its violating rows; the grouped derived tables it joins; the classes it counts; and how its violating rows and its classes'
-    /// rows read from the table's rows and its items' values.
+    /// none for its violating rows; the grouped derived tables it joins; the classes it counts; how its violating rows and its classes'
+    /// rows read from the table's rows and its items' values; and, where its items' values can leave it not predictable read-only, why
+    /// they do, or null where they count it.
     /// </summary>
     internal sealed record Part(Precondition Precondition, IReadOnlyList<(ScalarExpression Expression, Class? Class)> Items,
         IReadOnlyList<(TableReference Table, BooleanExpression On)> Joins, IReadOnlyList<Class> Classes,
-        Func<long, IReadOnlyList<long>, (long Violating, IReadOnlyList<long> Classes)> Read)
+        Func<long, IReadOnlyList<long>, (long Violating, IReadOnlyList<long> Classes)> Read,
+        Func<IReadOnlyList<long>, string?>? Undecided = null)
     {
         /// <summary>A precondition the table's rows answer: TableEmpty, violated by every row there is.</summary>
         public static Part Rows(Precondition precondition) => new(precondition, [], [], [], (rows, _) => (rows, []));

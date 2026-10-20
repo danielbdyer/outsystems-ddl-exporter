@@ -18,8 +18,11 @@ namespace DbChange.Io;
 /// one value with and without trailing spaces; case and accent, values the collation the index is built with reads as one and a case- or
 /// accent-sensitive one as two; and two NULLs. The groups are read in three steps, each a GROUP BY the allowlist admits: by the bytes, by
 /// a binary collation, which ignores trailing spaces, then by the index's collation. A key over a column the change creates reads the value
-/// every existing row holds, so the table's rows are one group. A key or a foreign key over a column the change converts to another kind
-/// of type, or rounds, reads not predictable read-only, since the conversion can make two values one.
+/// every existing row holds, so the table's rows are one group. A key or a foreign key over a column the change converts so that other of
+/// its values are equal reads not predictable read-only (<see cref="Converted"/>), since the allowlist admits no GROUP BY of a converted
+/// value: into another kind of type, to fewer fractional digits, float into real, datetimeoffset into datetime2, which drops the offset, a
+/// Unicode string into a code page that is no UTF-8 one, which substitutes '?' or a letter near it for a character the code page lacks,
+/// and a code page's string into a Unicode one under a SQL collation or one dbchange does not know to share its code page.
 /// </summary>
 public static partial class AggregateQueries
 {
@@ -32,9 +35,9 @@ public static partial class AggregateQueries
             return Asked.Not(Unplaced(key.Pairs[missing].Column));
         }
 
-        if (children.FirstOrDefault(c => Converted(c!) is not null) is { } converted)
+        if (children.Select(c => Converted(c!, context)).FirstOrDefault(why => why is not null) is { } converted)
         {
-            return Asked.Not(Converted(converted)!);
+            return Asked.Not(converted);
         }
 
         var values = children.Select(c => Operand(c!, "t")).ToList();
@@ -55,9 +58,9 @@ public static partial class AggregateQueries
             return Asked.Not("the change creates " + created.Place.After + " on the parent, which every existing row holds as one value");
         }
 
-        if (referenced.FirstOrDefault(r => Converted(r!) is not null) is { } retyped)
+        if (referenced.Select(r => Converted(r!, context)).FirstOrDefault(why => why is not null) is { } retyped)
         {
-            return Asked.Not(Converted(retyped)!);
+            return Asked.Not(retyped);
         }
 
         // The parent's keys grouped, each compared under the parent column's collation after the change where both columns hold strings.
@@ -103,9 +106,9 @@ public static partial class AggregateQueries
                 + ", which is no literal, so the value each existing row holds is not known read-only");
         }
 
-        if (existing.FirstOrDefault(k => Converted(k) is not null) is { } retyped)
+        if (existing.Select(k => Converted(k, context)).FirstOrDefault(why => why is not null) is { } retyped)
         {
-            return Asked.Not(Converted(retyped)!);
+            return Asked.Not(retyped);
         }
 
         var nulled = created.Any(c => c!.Place.Default is null);
@@ -318,14 +321,50 @@ public static partial class AggregateQueries
             .Any(k => !excluded.Any(e => string.Equals(e, k.Place.After.Name.Base, context.Database.Comparison)));
     }
 
-    /// <summary>Why a column a key reads cannot be grouped read-only: the change converts it to another kind of type, or rounds it, before
-    /// the key is validated; null when it keeps its values.</summary>
-    private static string? Converted(Column column) =>
-        column is { Before: { } before, After: { } after } && (FamilyOf(before) != FamilyOf(after)
-            || (Fraction(after) is { } lesser && Fraction(before) is { } greater && lesser < greater))
-            ? "the change converts " + column.Place.After + " from " + Written(before) + " to " + Written(after)
-                + " before the key is validated, which can make two of its values one"
-            : null;
+    /// <summary>
+    /// Why a column a key reads cannot be grouped read-only: the change converts it before the key is validated so that other of its
+    /// values are equal (measured on SQL Server 2022, 16.0.4305.5, by ALTER COLUMN and CREATE UNIQUE INDEX, Msg 1505, and held by
+    /// AggregateQueriesCountTests); null when it keeps which values are equal. Into another kind of type, or to fewer fractional digits;
+    /// float into real, which rounds two floats to one real; datetimeoffset into datetime2, which keeps the local time and drops the
+    /// offset, so two instants at one local time are one value and one instant at two offsets two; a Unicode string into a code page that
+    /// is no UTF-8 one, which writes a character the code page lacks as '?' or a letter near it (N'A' and NCHAR(256) are both 'A' under
+    /// Latin1_General_CI_AS); and a code page's string into a Unicode one, save under a Windows collation of its code page or a UTF-8
+    /// one, since a SQL collation compares Unicode strings by other rules than its code page's ('æ' and 'ae' are two varchar values under
+    /// SQL_Latin1_General_CP1_CI_AS and one nvarchar value) and a COLLATE into another code page converts a value ALTER COLUMN keeps. A
+    /// code page's string into another code page is no reason: the grouping's COLLATE converts it as ALTER COLUMN does.
+    /// </summary>
+    private static string? Converted(Column column, Context context)
+    {
+        if (column is not { Before: { } before, After: { } after })
+        {
+            return null;
+        }
+
+        var (held, built) = (context.Collation(before), context.Collation(after));
+        var rounds = Fraction(after) is { } lesser && Fraction(before) is { } greater && lesser < greater;
+        var why = FamilyOf(before) != FamilyOf(after) || rounds ? "can make two of its values one"
+            : Single(after) && !Single(before) && FamilyOf(after) == Family.Approximate ? "rounds two floats that differ to one real"
+            : before.Type.Base.ToLowerInvariant() == "datetimeoffset" && after.Type.Base.ToLowerInvariant() == "datetime2"
+                ? "keeps each value's local time and drops its offset, so two instants can become one value and one instant two"
+            : !Character(column) || Unicode(before) == Unicode(after) || Utf8(built) ? null
+            : Unicode(before) ? "writes each character the code page of " + built + " lacks as '?' or a letter near it, so two of its"
+                + " values can become one"
+            : built.Name.StartsWith("SQL_", StringComparison.Ordinal) ? "compares its values as Unicode strings under the SQL"
+                + " collation " + built + ", which compares those by other rules than the code page's strings the column holds, so two of"
+                + " its values can become one"
+            : Bin2(held, unicode: false) is { } page && Bin2(built, unicode: false) == page ? null
+            : "converts its values from the code page of " + held + ", which " + built + " is not known to share, where the"
+                + " grouping's COLLATE would convert them into its own";
+        return why is null ? null : "the change converts " + column.Place.After + " from " + Written(before) + " to " + Written(after)
+            + " before the key is validated, which " + why;
+    }
+
+    /// <summary>Whether SQL Server stores a type as real: real itself, or float of 24 bits of mantissa or fewer.</summary>
+    private static bool Single(ColumnType type) =>
+        type.Type.Base.ToLowerInvariant() is var name && (name == "real" || (name == "float" && type.Precision is >= 1 and <= 24));
+
+    /// <summary>Whether a collation stores a code page's strings as UTF-8, which holds every character a Unicode string holds.</summary>
+    private static bool Utf8(Collation collation) => collation.Name.Split('_').Contains("UTF8");
 
     private static bool Character(Column column) => column.Before is { } type && FamilyOf(type) == Family.Character;
 

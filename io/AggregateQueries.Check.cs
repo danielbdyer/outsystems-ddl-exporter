@@ -18,7 +18,10 @@ namespace DbChange.Io;
 /// type or uniqueidentifier (Types.cs), which would otherwise raise Msg 245 quoting the row's value. Where SQL Server may skip a
 /// conversion (under OR, CASE, COALESCE or ISNULL's second argument) the rows it fails on are not known read-only, and the check reads not
 /// predictable read-only, as it does for PARSE, which has no TRY_ form the allowlist admits, for an operand whose type dbchange does not
-/// read beside one SQL Server may convert, and for an expression the allowlist refuses.
+/// read beside one SQL Server may convert, for an expression the allowlist refuses, and for the two errors no TRY_ form stops, each of
+/// which quotes the row's value: a string set against hierarchyid, xml or a spatial or CLR type, which SQL Server parses (Msg 6522), and
+/// a LIKE whose escape character is read from a row (Msg 506). A COLLATE the expression writes stands on what the query writes in its
+/// place, as Collation.Of admits its name.
 /// </summary>
 public static partial class AggregateQueries
 {
@@ -59,8 +62,9 @@ public static partial class AggregateQueries
     /// <summary>
     /// What stands where model text names the column <paramref name="name"/>, matched under the database's collation, and its type there:
     /// the column as the environment holds it, the value the change gives it, or, where <paramref name="converted"/>, the value TRY_CONVERT
-    /// to its new type gives a column the change converts; null for a column the places do not give, or one whose conversion dbchange does
-    /// not count.
+    /// to its new type gives a column the change converts, a string under its new collation: re-collated before the conversion, or after
+    /// it for a code page's string converted into a Unicode one, which ALTER COLUMN converts from the code page it is held in; null for a
+    /// column the places do not give, or one whose conversion dbchange does not count.
     /// </summary>
     private static (ScalarExpression Value, ColumnType? Type)? Read(IEnumerable<Column> columns, string name, string? alias,
         Context context, bool converted)
@@ -77,9 +81,11 @@ public static partial class AggregateQueries
         }
 
         var (from, to) = (FamilyOf(before), FamilyOf(after));
+        var (strings, widened, collation) = (from == Family.Character && to == Family.Character, !Unicode(before) && Unicode(after),
+            context.Collation(after));
         return !Converts(from, to) || TSql.DataType(Written(after)) is not { } type ? null
-            : (new TryConvertCall { DataType = type, Parameter = ColumnRef(alias, held,
-                from == Family.Character && to == Family.Character ? context.Collation(after) : null) }, after);
+            : (new TryConvertCall { DataType = type, Parameter = ColumnRef(alias, held, strings && !widened ? collation : null),
+                Collation = strings && widened ? new Identifier { Value = collation.Name } : null }, after);
     }
 
     /// <summary>
@@ -124,7 +130,14 @@ public static partial class AggregateQueries
                     i.Expression = Scalar(i.Expression, every);
                     return i;
                 case LikePredicate l:
-                    // LIKE converts both operands to strings, which never fails.
+                    // LIKE converts both operands to strings, which never fails; an escape character read from a row of more than one
+                    // character raises Msg 506, which quotes it (measured on SQL Server 2022).
+                    if (l.EscapeExpression is { } escape && !IsLiteral(escape))
+                    {
+                        Why ??= "its LIKE reads its escape character from a row, and SQL Server raises Msg 506 quoting an escape of more"
+                            + " than one character";
+                    }
+
                     (l.FirstExpression, l.SecondExpression) = (Scalar(l.FirstExpression, every), Scalar(l.SecondExpression, every));
                     l.EscapeExpression = l.EscapeExpression is null ? null : Scalar(l.EscapeExpression, every);
                     return l;
@@ -151,8 +164,32 @@ public static partial class AggregateQueries
             }
         }
 
-        /// <summary>A scalar expression; <paramref name="every"/> says SQL Server evaluates it on every row.</summary>
+        /// <summary>
+        /// A scalar expression; <paramref name="every"/> says SQL Server evaluates it on every row. A COLLATE the text writes stands on
+        /// what the query writes in its place, a column's read or a conversion's TRY_ form, its name as Collation.Of admits it, since the
+        /// generator writes the name as it stands; one Collation.Of refuses leaves <see cref="Why"/>. NULL takes none (Msg 447).
+        /// </summary>
         public ScalarExpression Scalar(ScalarExpression value, bool every)
+        {
+            var collation = value is PrimaryExpression { Collation: { } named } ? Admitted(named.Value) : null;
+            if (value is PrimaryExpression { Collation: { } refused } && collation is null)
+            {
+                Why ??= "it names the collation '" + refused.Value + "', which is no SQL Server collation name";
+            }
+
+            var rewritten = Rewritten(value, every);
+            if (collation is not { } admitted || rewritten is NullLiteral)
+            {
+                return rewritten;
+            }
+
+            var primary = rewritten as PrimaryExpression ?? new ParenthesisExpression { Expression = rewritten };
+            primary.Collation = new Identifier { Value = admitted.Name };
+            return primary;
+        }
+
+        /// <summary>A scalar expression rewritten as <see cref="Scalar"/> says, its own COLLATE aside.</summary>
+        private ScalarExpression Rewritten(ScalarExpression value, bool every)
         {
             switch (value)
             {
@@ -292,6 +329,11 @@ public static partial class AggregateQueries
                 return (subject, others);
             }
 
+            if (Parses([type, .. typed]))
+            {
+                return (subject, others);
+            }
+
             var met = typed.Where(t => t != Typed.Null).Distinct().ToList();
             if (type.IsString && met.Any(t => t!.TakesStrings))
             {
@@ -319,6 +361,11 @@ public static partial class AggregateQueries
             if (typed.Contains(null))
             {
                 Why ??= "it combines a value whose type dbchange does not read, which SQL Server may convert with no CONVERT written";
+                return (values, null);
+            }
+
+            if (Parses(typed))
+            {
                 return (values, null);
             }
 
@@ -409,6 +456,11 @@ public static partial class AggregateQueries
                         f.Parameters[1] = Converted(f.Parameters[1], first, every: false);
                     }
 
+                    if (first is { ParsesStrings: true } && second is { IsString: true })
+                    {
+                        Parses([first, second]);
+                    }
+
                     return first == Typed.Null ? second : first;
                 default:
                     return null;
@@ -428,6 +480,20 @@ public static partial class AggregateQueries
             var converted = Tried(value, parameter => new TryConvertCall { DataType = type, Parameter = parameter }, every);
             types[converted] = target;
             return converted;
+        }
+
+        /// <summary>Whether a string meets, among <paramref name="met"/>, a type SQL Server parses it into with no CONVERT written, whose
+        /// error would quote it (<see cref="Typed.ParsesStrings"/>); where one does, it leaves <see cref="Why"/>.</summary>
+        private bool Parses(IReadOnlyList<Typed?> met)
+        {
+            if (met.FirstOrDefault(t => t is { ParsesStrings: true }) is not { } parser || !met.Any(t => t is { IsString: true }))
+            {
+                return false;
+            }
+
+            Why ??= "it sets a string against a value of " + (parser.Base.Length > 0 ? parser.Base : "an alias type") + ", which SQL Server"
+                + " parses the string into with no CONVERT written, and the error of a string that does not parse quotes it";
+            return true;
         }
     }
 }

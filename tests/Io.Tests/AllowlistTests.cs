@@ -59,7 +59,8 @@ public sealed class AllowlistTests
             "SUM of a column named rows of a table outside the catalog", "SUM of sys.partitions' rows beside a table outside the catalog",
             "SUM of sys.partitions' rows filtered by IN over a table outside the catalog",
             "SUM of sys.partitions' rows filtered by EXISTS over a table outside the catalog",
-            "SUM of a column of sys.partitions other than rows", "SUM of the rows column of a catalog view other than sys.partitions"];
+            "SUM of a column of sys.partitions other than rows", "SUM of the rows column of a catalog view other than sys.partitions",
+            "SUM of the rows column of SYS.partitions, a user's table", "SUM of the rows column of [Sys].[partitions], a user's table"];
         string[] admitted = ["COUNT of every row", "COUNT_BIG of every row", "COUNT of DISTINCT", "COUNT_BIG of DISTINCT", "SUM of CASE",
             "MIN over LEN", "MAX over LEN",
             "MIN over DATALENGTH", "MAX over DATALENGTH", "CASE WHEN EXISTS", "an integer literal",

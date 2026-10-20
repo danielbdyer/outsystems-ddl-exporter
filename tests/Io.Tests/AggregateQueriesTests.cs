@@ -243,6 +243,81 @@ public sealed class AggregateQueriesTests
     }
 
     /// <summary>
+    /// A key over a column the change converts so that other values are equal reads not predictable read-only, a unique index, the
+    /// primary key it references and the foreign key alike, since the allowlist admits no GROUP BY of a converted value: a Unicode string
+    /// into a code page that is no UTF-8 one, which writes a character the code page lacks as '?' or a letter near it; a code page's string
+    /// into a Unicode one under a SQL collation, or a collation dbchange does not know to share its code page; float into real; and
+    /// datetimeoffset into datetime2, which drops the offset. A conversion that keeps which values are equal is counted: into a UTF-8
+    /// collation, into Unicode under a Windows collation of the same code page, from one code page to another, which the grouping's
+    /// COLLATE converts as ALTER COLUMN does, real into float, and datetime2 into datetimeoffset. AggregateQueriesCountTests measures each
+    /// reason on planted rows.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("nvarchar(10) NULL Latin1_General_CI_AS", "varchar(10) NULL Latin1_General_CI_AS", "as '?' or a letter near it")]
+    [InlineData("nchar(10) NULL Latin1_General_CI_AS", "char(10) NULL Latin1_General_CI_AS", "as '?' or a letter near it")]
+    [InlineData("nvarchar(10) NULL Latin1_General_CI_AS", "varchar(10) NULL Latin1_General_100_CI_AS_SC_UTF8", "")]
+    [InlineData("varchar(10) NULL SQL_Latin1_General_CP1_CI_AS", "nvarchar(10) NULL SQL_Latin1_General_CP1_CI_AS", "the SQL collation")]
+    [InlineData("varchar(10) NULL Latin1_General_CI_AS", "nvarchar(10) NULL Cyrillic_General_CI_AS", "not known to share")]
+    [InlineData("varchar(10) NULL SQL_Latin1_General_CP1_CI_AS", "nvarchar(10) NULL Latin1_General_CS_AS", "")]
+    [InlineData("varchar(10) NULL Latin1_General_CI_AS", "varchar(10) NULL Cyrillic_General_CI_AS", "")]
+    [InlineData("float NULL", "real NULL", "to one real")]
+    [InlineData("float NULL", "float(24) NULL", "to one real")]
+    [InlineData("real NULL", "float NULL", "")]
+    [InlineData("datetimeoffset(7) NULL", "datetime2(7) NULL", "offset")]
+    [InlineData("datetime2(7) NULL", "datetimeoffset(7) NULL", "")]
+    public void A_key_over_a_column_the_change_converts_so_that_other_values_are_equal_reads_not_predictable_read_only(string before,
+        string after, string why)
+    {
+        var environment = Model.Of("X.Id int NOT NULL", "X.c " + before, "P.k " + before).PrimaryKey("PK_P", "P", "k");
+        var head = Model.Of("X.Id int NOT NULL", "X.c " + after, "P.k " + after).PrimaryKey("PK_P", "P", "k")
+            .UniqueIndex("UX_X_c", "X", "c").ForeignKey("FK_X_P", "X", ["c"], "P", ["k"]);
+
+        var queries = new Case(environment, head).Queries();
+
+        var keys = queries.NotPredictable.Where(u => u.Precondition.Kind is PreconditionKind.Unique or PreconditionKind.ForeignKey).ToList();
+        var counted = queries.Tables.SelectMany(t => t.Preconditions)
+            .Where(p => p.Kind is PreconditionKind.Unique or PreconditionKind.ForeignKey).ToList();
+        Assert.Equal(why.Length == 0 ? (0, 3) : (3, 0), (keys.Count, counted.Count));
+        Assert.All(keys, u => Assert.Contains("before the key is validated, which ", u.Why, StringComparison.Ordinal));
+        Assert.All(keys, u => Assert.Contains(why, u.Why, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A retype from a binary type into a shorter one counts, as over length, the values longer than the new type: where none is, no row
+    /// is violating; where any is, the precondition reads not predictable read-only once counted, since ALTER COLUMN drops the bytes past
+    /// the new length where they are all 0x00 and refuses any other value (Msg 2628), which no query the allowlist admits tells apart.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("varbinary(10)", "varbinary(2)")]
+    [InlineData("binary(8)", "binary(4)")]
+    [InlineData("varbinary(10)", "varchar(1)")]
+    [InlineData("varbinary(max)", "nvarchar(1)")]
+    [InlineData("image", "varbinary(2)")]
+    public void A_retype_from_a_binary_type_reads_not_predictable_read_only_once_a_value_longer_than_the_new_type_is_counted(
+        string before, string after)
+    {
+        var table = Assert.Single(new Case(Model.Of("B.Id int NOT NULL", "B.v " + before + " NULL"),
+            Model.Of("B.Id int NOT NULL", "B.v " + after + " NULL")).Queries().Tables);
+        var fits = table.Preconditions.Single(p => p.Kind is PreconditionKind.Fits);
+
+        var clean = AggregateQueries.Read(table, Answered(table, item => item.Precondition is null ? 5 : 0));
+        var longer = AggregateQueries.Read(table, Answered(table, item => item.Precondition is null ? 5 : 2));
+
+        Assert.Equal([Class.OverLength], table.Classes(fits));
+        Assert.Equal(new PreconditionCount(fits, 5, 0), Assert.Single(clean.Counted));
+        Assert.Equal(new AggregateQueries.ClassCount(fits, Class.OverLength, 0), Assert.Single(clean.Classes));
+        Assert.Empty(clean.Unanswered);
+        Assert.Empty(longer.Counted);
+        Assert.Empty(longer.Classes);
+        var unanswered = Assert.Single(longer.Unanswered);
+        Assert.Equal(fits, unanswered.Precondition);
+        Assert.StartsWith("not predictable read-only: 2 rows hold a value longer than " + after + " takes, ", unanswered.Why,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The catalog's pure cases for TableEmpty, NotNull, ForeignKey and Check, each counted on the table the environment holds: a site's
     /// table by its rows, under its own schema and its bracketed name, once however many sites check it (QST-01, QST-08 to QST-12, QST-73
     /// to QST-75); NotNull by the rows holding NULL (QST-16); a foreign key by the child rows whose key columns are all non-null and that
@@ -316,7 +391,9 @@ public sealed class AggregateQueriesTests
     /// fails, wherever SQL Server converts on every row; under OR, CASE or COALESCE SQL Server may skip a conversion, PARSE has no TRY_ form
     /// the allowlist admits, SQL Server converts Ref to two types where BETWEEN's bounds differ in type, NULLIF would answer the converted
     /// value, ABS converts a string to float, and the allowlist refuses two columns set against each other, so those read not predictable
-    /// read-only, with the reason.
+    /// read-only, with the reason. So do a string set against hierarchyid (Hid) by a comparison, COALESCE or ISNULL, which SQL Server
+    /// parses with no CONVERT written and whose failure, Msg 6522, quotes the string; a LIKE that reads its escape character from a column
+    /// (Esc), which raises Msg 506 quoting a value of more than one character; and a COLLATE whose name Collation.Of refuses.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -341,10 +418,18 @@ public sealed class AggregateQueriesTests
     [InlineData("PARSE([Ref] AS int)>(0)", "PARSE")]
     [InlineData("[Other]>[Id]", "the allowlist refuses")]
     [InlineData("[Ref]=[Other]", "the allowlist refuses")]
+    [InlineData("[Ref]=[Hid]", "parses the string")]
+    [InlineData("[Hid]<>'/1/'", "parses the string")]
+    [InlineData("COALESCE([Hid],[Ref]) IS NOT NULL", "parses the string")]
+    [InlineData("ISNULL([Hid],[Ref]) IS NOT NULL", "parses the string")]
+    [InlineData("'abc' LIKE 'a%' ESCAPE [Esc]", "escape character")]
+    [InlineData("[Ref] COLLATE Latin1_General_Bogus='x'", "the collation 'Latin1_General_Bogus', which is no SQL Server collation name")]
     public void A_check_that_converts_is_counted_through_its_TRY_form_or_reads_not_predictable_read_only(string expression, string why)
     {
-        var reads = new[] { "Ref", "Other", "Id" }.Where(c => expression.Contains("[" + c + "]", StringComparison.Ordinal)).ToArray();
-        var queries = new Case(T, T.Check("CK_T_Probe", "T", expression, reads)).Queries();
+        var model = T.With("T.Hid hierarchyid NULL", "T.Esc varchar(10) NULL");
+        var reads = new[] { "Ref", "Other", "Id", "Hid", "Esc" }.Where(c => expression.Contains("[" + c + "]", StringComparison.Ordinal))
+            .ToArray();
+        var queries = new Case(model, model.Check("CK_T_Probe", "T", expression, reads)).Queries();
 
         if (why.Length == 0)
         {
@@ -390,6 +475,34 @@ public sealed class AggregateQueriesTests
     }
 
     /// <summary>
+    /// A COLLATE the check writes stands on what the query writes in its place, so the check compares under the collation it names: on
+    /// the column, on the TRY_ form of a CONVERT or a CAST, and on a literal. A column the change converts from a code page's string into
+    /// a Unicode one takes its new collation after the conversion, since ALTER COLUMN converts it from the code page it is held in
+    /// (measured on SQL Server 2022: é in a Latin1_General_CI_AS varchar stays é in a Cyrillic_General_CI_AS nvarchar, and a COLLATE
+    /// before the conversion would write it as e).
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("[Ref] COLLATE Latin1_General_CS_AS='ABC'", "NOT ([t].[Ref] COLLATE Latin1_General_CS_AS = 'ABC')")]
+    [InlineData("CONVERT([varchar](20),[Ref]) COLLATE Latin1_General_CS_AS='ABC'",
+        "NOT (TRY_CONVERT (VARCHAR (20), [t].[Ref]) COLLATE Latin1_General_CS_AS = 'ABC')")]
+    [InlineData("CAST([Ref] AS [varchar](20)) COLLATE Latin1_General_CS_AS='ABC'",
+        "NOT (TRY_CAST ([t].[Ref] AS VARCHAR (20)) COLLATE Latin1_General_CS_AS = 'ABC')")]
+    [InlineData("[Ref]='ABC' COLLATE Latin1_General_CS_AS", "NOT ([t].[Ref] = 'ABC' COLLATE Latin1_General_CS_AS)")]
+    [InlineData("[Wide]<>N'x'", "NOT (TRY_CONVERT (NVARCHAR (10), [t].[Wide]) COLLATE Cyrillic_General_CI_AS <> N'x')")]
+    public void A_COLLATE_the_check_writes_stands_on_what_the_query_writes_in_place_of_its_column_or_its_conversion(string expression,
+        string read)
+    {
+        var (environment, head) = (T.With("T.Wide varchar(10) NULL Latin1_General_CI_AS"), T.With("T.Wide nvarchar(10) NULL Cyrillic_General_CI_AS"));
+        var reads = new[] { "Ref", "Wide" }.Where(c => expression.Contains("[" + c + "]", StringComparison.Ordinal)).ToArray();
+
+        var queries = new Case(environment, head.Check("CK_T_Probe", "T", expression, reads)).Queries();
+
+        Assert.Empty(queries.NotPredictable);
+        Assert.Contains(read, Regex.Replace(Assert.Single(queries.Tables).Query.Statement, @"\s+", " "), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A collation is written into a query as its name stands, unquoted, so one Collation.Of refuses is written by no query: model text
     /// that names, for the column a Fits retype, a key and a check read, a collation closing the query and starting a DELETE leaves every
     /// precondition over the column not predictable read-only, naming the collation, whether the change's model or the environment's
@@ -422,8 +535,10 @@ public sealed class AggregateQueriesTests
     /// The safety the work package states word for word (§18, a value escaping in an error): for every pair of the types below a Fits
     /// precondition can join, each with a key, a foreign key and each check below over the column, every query the builders make, a
     /// table's and each of its preconditions' alone, is one the allowlist admits when read again as text, and none calls CONVERT, CAST or
-    /// PARSE, only their TRY_ forms; every precondition is counted by a query or read not predictable read-only. Every case is built, 31
-    /// types by 31 by 7 checks.
+    /// PARSE, only their TRY_ forms; every precondition is counted by a query or read not predictable read-only; and no check is counted
+    /// that SQL Server fails on with an error quoting a row's value: the varchar column s set against hierarchyid or xml, which SQL Server
+    /// parses s into with no CONVERT written (Msg 6522 quotes it), or read as LIKE's escape character (Msg 506 quotes it). Every case is
+    /// built, 32 types by 32 by 9 checks.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -433,18 +548,21 @@ public sealed class AggregateQueriesTests
         string[] types = ["nvarchar(50)", "nvarchar(10)", "nvarchar(max)", "varchar(20)", "varchar(20) Latin1_General_CS_AS", "char(10)",
             "nchar(10)", "text", "int", "bigint", "smallint", "tinyint", "bit", "decimal(18,2)", "decimal(9,4)", "money", "float", "real", "date",
             "time(3)", "datetime", "smalldatetime", "datetime2(7)", "datetime2(0)", "datetimeoffset(7)", "uniqueidentifier", "varbinary(16)",
-            "binary(8)", "varbinary(max)", "xml", "sql_variant"];
+            "binary(8)", "varbinary(max)", "xml", "sql_variant", "hierarchyid"];
+        const string Parsed = "[c]=[s]";
+        const string Escaped = "'abc' LIKE 'a%' ESCAPE [s]";
         string[] checks = ["[c] IS NOT NULL", "CONVERT([int],[c])>(0)", "CAST([c] AS [date])<>'20000101' OR [d]>(0)", "PARSE([c] AS int)>(0)",
-            "LEN([c])>(2)", "[c]>[d]", "[c]>(0)"];
+            "LEN([c])>(2)", "[c]>[d]", "[c]>(0)", Parsed, Escaped];
         var forbidden = new Regex(@"(?<![A-Za-z_])(CONVERT|CAST|PARSE)\s*\(", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
         // A collation is written after the nullability, as Model reads a column.
         static string Nullable(string type) => type.Split(' ') is [var name, var collation] ? name + " NULL " + collation : type + " NULL";
         string? Unsafe(string before, string after, string check)
         {
-            var environment = Pg.With("X.Id int NOT NULL", "X.c " + Nullable(before), "X.d int NULL");
-            var head = Pg.With("X.Id int NOT NULL", "X.c " + Nullable(after), "X.d int NULL").PrimaryKey("PK_X_Id", "X", "Id")
-                .UniqueIndex("UX_X_c", "X", "c").ForeignKey("FK_X_Product", "X", ["d"], "Product", ["Id"]).Check("CK_X_c", "X", check, ["c", "d"]);
+            var environment = Pg.With("X.Id int NOT NULL", "X.c " + Nullable(before), "X.d int NULL", "X.s varchar(20) NULL");
+            var head = Pg.With("X.Id int NOT NULL", "X.c " + Nullable(after), "X.d int NULL", "X.s varchar(20) NULL")
+                .PrimaryKey("PK_X_Id", "X", "Id").UniqueIndex("UX_X_c", "X", "c").ForeignKey("FK_X_Product", "X", ["d"], "Product", ["Id"])
+                .Check("CK_X_c", "X", check, ["c", "d", "s"]);
             var drawn = new Case(environment, head, ["X"]);
             var counted = drawn.Counted;
             if (AggregateQueries.Of(counted, head.Elements, environment.Elements, Database, SqlServer.Session.Assumed)
@@ -454,10 +572,13 @@ public sealed class AggregateQueriesTests
             }
 
             var statements = queries.Tables.SelectMany(t => t.Alone.Prepend(t)).Select(t => t.Query.Statement).ToList();
+            var quoting = check == Escaped || (check == Parsed && after is "hierarchyid" or "xml");
             return statements.FirstOrDefault(s => !AggregateQuery(s)) is { } refused ? "refused when read again: " + refused
                 : statements.FirstOrDefault(forbidden.IsMatch) is { } converting ? "converts: " + converting
                 : !queries.Tables.SelectMany(t => t.Preconditions).Concat(queries.NotPredictable.Select(u => u.Precondition)).Order()
                     .SequenceEqual(counted.Select(c => c.Precondition).Order()) ? "a precondition is neither counted nor unanswered"
+                : quoting && queries.Tables.SelectMany(t => t.Preconditions).Any(p => p.Kind is PreconditionKind.Check)
+                    ? "a check SQL Server fails on with an error quoting a row's value is counted"
                 : null;
         }
 
