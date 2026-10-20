@@ -104,8 +104,8 @@ directive". As design rules:
   - §6–§14, the milestones;
   - §17, the decisions, the prerequisites, and what is settled.
 - `archive/v2/ssdt-agent/facsimile/HANDOFF.md`, then the reading order in its `README.md`:
-  `ARCHITECTURE.md`, `INVARIANTS.md`, `cases/` (with `cases/90-traceability.md`, generated) and
-  `TARGET.md`. Its receipts are in `archive/v2/TWIN_SUCCESSION.md`.
+  `tests/Cases/ARCHITECTURE.md`, `tests/Cases/INVARIANTS.md`, the case catalog in `tests/Cases/` (with
+  `tests/Cases/90-traceability.md`, generated) and `TARGET.md`. Its receipts are in `archive/v2/TWIN_SUCCESSION.md`.
 - `V3_ARCHITECTURE.md`:
   - §6, the layout, budgets and C# encoding (§6.6);
   - §7, the kernel;

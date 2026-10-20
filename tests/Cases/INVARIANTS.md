@@ -7,8 +7,8 @@
 - *the **mechanism** that holds it;*
 - *the **property** its cases test.*
 
-*The cases live in `cases/`. `cases/90-traceability.md` maps every law to its cases, and
-the test project's lint (`TARGET.md` §7) refuses a law with fewer than two.*
+*The cases live beside this file. `90-traceability.md` maps every law to its cases, and
+the test project's lint (`../../archive/v2/ssdt-agent/facsimile/TARGET.md` §7) refuses a law with fewer than two.*
 
 *Vocabulary from `ARCHITECTURE.md` (§4 questions, §6 outcomes) is used without restating it.*
 
@@ -369,7 +369,7 @@ batched count. `prove` makes none.
 *Property:* a connection trace for `read` shows two sessions. One for `prove` shows zero
 environment sessions.
 
-**M4 · Budgets.** Each file stays within its line budget in `TARGET.md` §6.
+**M4 · Budgets.** Each file stays within its line budget in `../../archive/v2/ssdt-agent/facsimile/TARGET.md` §6.
 *Property:* a line-count check in CI.
 
 ## E — Evolution: the tool grows only through reviewed rows and cases
@@ -428,7 +428,7 @@ the laptop check measures it, without elevation.
 5 needs input · 6 machine not ready · 7 doesn't build · 9 needs the principal.
 *Property:* each stop kind maps to exactly one exit code as listed in ARCH §6.
 
-**A4 · Reading budget.** An agent proving one change needs to read at most 600 lines of the
+**A4 · Reading budget.** An agent proving one change needs to read at most 600 lines (2026-10-18) of the
 knowledge layer: the router, one op skill with its Proof plan, the record form, and the proving guide (written at G4).
 *Property:* a check over the files the router names for each op.
 
@@ -444,7 +444,7 @@ asserts the outcome moved.
 
 **T1 · Responsibility coverage.** Each of the 36 Twin responsibilities (ARCH §2) has either a parity
 case (the facsimile does it) or a retirement case (no verdict depends on it).
-*Property:* the lint checks the §2 rows against `cases/80-twin-parity.md`.
+*Property:* the lint checks the §2 rows against `80-twin-parity.md`.
 
 **T2 · Golden parity.** Every fact in the Twin's nightly lane (`tests/Twin.Tests.Integration/SamplePr*Tests.fs`
 and the four loop tests) reproduces under the facsimile with the same verdict.

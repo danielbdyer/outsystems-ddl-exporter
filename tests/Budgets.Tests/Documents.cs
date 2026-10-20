@@ -138,10 +138,15 @@ internal static class Documents
     /// <summary>An exit as a trait names it: M1.5.</summary>
     public static string Exit(int milestone, int exit) => string.Create(CultureInfo.InvariantCulture, $"M{milestone}.{exit}");
 
-    /// <summary>Every hand-written markdown row, less the root design documents until M8 starts: what NoRestatedCounts reads.</summary>
+    /// <summary>
+    /// Every hand-written markdown row, less the root design documents until M8 starts, and less the Facsimile's case catalog under
+    /// tests/Cases/, which moved unchanged with its case and law identifiers (V3_MILESTONES.md §3.1) and whose case blocks are data
+    /// that names the Facsimile's own files: CaseCatalog holds its grammar, its counts and its own citations. What NoRestatedCounts reads.
+    /// </summary>
     public static IEnumerable<string> HandWritten => Rows
         .Where(r => r.Kind == "hand" && r.Path.EndsWith(".md", StringComparison.Ordinal)
-            && !(!Started(OneTool) && RootDesign.Contains(r.Path)))
+            && !(!Started(OneTool) && RootDesign.Contains(r.Path))
+            && !r.Path.StartsWith(CaseCatalog.Folder + "/", StringComparison.Ordinal))
         .Select(r => r.Path);
 
     /// <summary>

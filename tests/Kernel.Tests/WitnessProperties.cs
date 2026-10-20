@@ -14,7 +14,7 @@ namespace DbChange.Kernel.Tests;
 /// a nullable column, Fits into a type of eleven, Unique on a column, a check, a foreign key to any table's Id, or, on a column of one of
 /// the table's foreign keys, which always takes a precondition, that foreign key's leg) and a state drawn for each: populated or answered
 /// empty, violating or clean, and the classes of a Fits or a Unique. The Facsimile's laws D1 (deterministic) and D3 (S-stable planting)
-/// are archive/v2/ssdt-agent/facsimile/INVARIANTS.md's.
+/// are tests/Cases/INVARIANTS.md's.
 /// </summary>
 public sealed class WitnessProperties
 {

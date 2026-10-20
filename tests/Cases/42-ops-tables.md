@@ -1,6 +1,6 @@
 # 42 · Operations on tables, seeds, structure and multi-phase programs
 
-*Op cases for the 15 table-grain operations, in `README.md`'s grammar and standard tags; one `##` heading per operation, naming its skill, its record and its Twin test class.*
+*Op cases for the table-grain operations (`90-traceability.md` lists them), in `README.md`'s grammar and standard tags; one `##` heading per operation, naming its skill, its record and its Twin test class.*
 *Unless `env` says otherwise, the environment proven is Dev (QA, UAT and Prod unread), the effective options are the pipeline's (BlockOnPossibleDataLoss=true, GenerateSmartDefaults=false, DropObjectsNotInSource=false, IncludeTransactionalScripts=true), and reference rows come from the `referenceData` lane as of base.*
 *`notChecked` uses only INVARIANTS H4's closed tokens (`unread:<env>`, `volume`, `cdc`, `workload`, `platform:<what>`, `drift-since-measure`, `engine-version`, `integration-studio`, `external-consumers`, `app-behaviour`, `declared-not-measured`, …). A case that first meets the `authored-script` stop and then proves with witness.sql writes `leg1` (the stop) and `leg2` (the verdict); a case proven per environment writes one leg per `prove <env>`. `laws` cite INVARIANTS; bare `F<n>` in `source` cites FINDINGS_AND_CHANGES.md.*
 

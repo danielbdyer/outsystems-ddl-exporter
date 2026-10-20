@@ -75,6 +75,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | L1 | A document of the repository uses no retired word and no banned form | `DbChange.Budgets.Tests.Register.Prose.A_document_of_the_repository_uses_no_retired_word_and_no_banned_form` |
 | L1 | Every test name read as words is in the register | `DbChange.Budgets.Tests.Register.TestNames.Every_test_name_read_as_words_is_in_the_register` |
 | L1 | Every text the help prints is in the register | `DbChange.Budgets.Tests.Register.TestNames.Every_text_the_help_prints_is_in_the_register` |
+| L2 | The catalog's prose restates no count and points to the generated matrix | `DbChange.Budgets.Tests.CaseCatalog.The_catalog_s_prose_restates_no_count_and_points_to_the_generated_matrix` |
 | L2 | A hand written document restates no count the build computes | `DbChange.Budgets.Tests.NoRestatedCounts.A_hand_written_document_restates_no_count_the_build_computes` |
 | L3 | Each budget holds its ceiling | `DbChange.Budgets.Tests.Budgets.Each_budget_holds_its_ceiling` |
 | L3 | Each file of a group holds the group's line ceiling | `DbChange.Budgets.Tests.Budgets.Each_file_of_a_group_holds_the_group_s_line_ceiling` |

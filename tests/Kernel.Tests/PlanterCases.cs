@@ -9,7 +9,7 @@ using static DbChange.Kernel.Tests.QuestionCases;
 namespace DbChange.Kernel.Tests;
 
 /// <summary>
-/// The Facsimile's planter catalog (archive/v2/ssdt-agent/facsimile/cases/20-planter.md) for the six kinds WP 2.1's first slice holds,
+/// The Facsimile's planter catalog (tests/Cases/20-planter.md) for the six kinds WP 2.1's first slice holds,
 /// each case under its identifier: its three pure cases whole, and of each sql or corpus case the plan, the rows and values WP 3.5
 /// plants (Witness.Plan). What the copy then answers when counted, and what SQL Server does with the rows, waits on WP 3.5's fixture
 /// tests. A case is its copy, its states and the plan as text (Witness.ToString), so a case reads as the catalog writes it. The cases
@@ -124,7 +124,7 @@ public sealed partial class PlanterCases
     [Trait("Category", "fast")]
     public void Every_pure_case_of_the_planter_catalog_is_ported()
     {
-        var pure = System.IO.File.ReadAllText(System.IO.Path.Combine(Root(), "archive/v2/ssdt-agent/facsimile/cases/20-planter.md"))
+        var pure = System.IO.File.ReadAllText(System.IO.Path.Combine(Root(), "tests/Cases/20-planter.md"))
             .Split("\n### ").Skip(1).Where(c => c.Contains("\nkind:     pure", StringComparison.Ordinal))
             .Select(c => c[..c.IndexOf(" · ", StringComparison.Ordinal)]).ToList();
 

@@ -24,7 +24,8 @@ namespace DbChange.Budgets.Tests;
 /// excuses nothing. <c>until M8</c> and <c>M0's exit</c> never excuse a path: neither says the path arrives. Nor does
 /// any milestone excuse a missing path one edit from an existing one, which is a misspelling.</item>
 /// </list>
-/// The root design documents are excluded until M8 starts; knowledge/ joins at M7.
+/// The root design documents are excluded until M8 starts, and the case catalog under tests/Cases/, whose own citations CaseCatalog
+/// holds; knowledge/ joins at M7.
 /// </summary>
 public sealed class Citations
 {

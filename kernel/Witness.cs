@@ -8,7 +8,7 @@ namespace DbChange.Kernel;
 
 /// <summary>
 /// The existing-data tier's plan (V3_MILESTONES.md WP 3.8), ported from the Facsimile's planter
-/// (archive/v2/ssdt-agent/facsimile/cases/20-planter.md): the rows WP 3.5 plants into a synthetic copy, table by table in
+/// (tests/Cases/20-planter.md): the rows WP 3.5 plants into a synthetic copy, table by table in
 /// <see cref="Order"/>'s order, each row with a typed value per column, so that the copy answers every precondition as an environment's
 /// existing data does, and holds nothing more. A table the environment answered populated takes one valid row; a precondition answered
 /// violating takes one row that breaks it for each value or collation class the environment holds, a duplicate taking two; and a table

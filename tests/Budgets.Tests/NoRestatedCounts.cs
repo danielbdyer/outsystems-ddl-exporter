@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -26,6 +27,9 @@ public sealed class NoRestatedCounts
     private static readonly Regex Dated = new(@"\b\d{4}-\d{2}-\d{2}\b", RegexOptions.CultureInvariant);
 
     public static TheoryData<string> HandWritten => new(Documents.HandWritten);
+
+    /// <summary>Each count the rule finds in a logical line, as the line writes it; none in a line that carries a date.</summary>
+    internal static IEnumerable<string> Restated(string text) => Dated.IsMatch(text) ? [] : Count.Matches(text).Select(m => m.Value);
 
     [Theory]
     [Trait("Category", "fast")]

@@ -1,8 +1,8 @@
 # The Facsimile: architecture
 
 *The successor to the Twin. Written 2026-10-18. It is specified test-first: the invariants in
-`INVARIANTS.md` and the cases under `cases/` come before any implementation, and the implementation
-is judged against them. The reasoning that led here is `../../TWIN_SUCCESSION.md`, beside
+`INVARIANTS.md` and the case files beside it come before any implementation, and the implementation
+is judged against them. The reasoning that led here is `../../archive/v2/TWIN_SUCCESSION.md`, beside
 the ssdt-agent tree (§0.1 and §6b in particular).*
 
 ---
@@ -36,13 +36,13 @@ The Twin tried to resemble the data. The facsimile only needs to agree with it.
 ## 1. What "ultra-powered minimum-viable code" means here
 
 **Minimum viable code** is the least code for which every invariant in `INVARIANTS.md` has a
-mechanism and every case in `cases/` passes. "Least" is enforced, not hoped for:
+mechanism and every case of the catalog passes. "Least" is enforced, not hoped for:
 
 - every line must be necessary to at least one case (the necessity law M1, checked by deletion);
 - every file has a line budget (M4).
 
 The whole edition is budgeted at **under 2,000 lines** of production code, C# and T-SQL together
-(`TARGET.md` §6; about 1,600 in the PowerShell fallback). That is
+(`../../archive/v2/ssdt-agent/facsimile/TARGET.md` §6, 2026-10-18; about 1,600 in the PowerShell fallback). That is
 roughly 1% of what the Twin stood on (about 5,000 lines of F# over a 114,000-line kernel).
 
 **Ultra-powered** means the power comes from leverage, not from lines:
@@ -50,7 +50,7 @@ roughly 1% of what the Twin stood on (about 5,000 lines of F# over a 114,000-lin
 1. **Microsoft writes the engine.** DacFx diffs, orders, guards and publishes. SQL Server validates.
    The facsimile only arranges for them to meet the right rows. It reimplements nothing either of
    them does.
-2. **The spec is the test.** Every case in `cases/` is written in a fixed grammar that a ~150-line
+2. **The spec is the test.** Every case of the catalog is written in a fixed grammar that a ~150-line
    runner executes directly, so there is no translation step where spec and test can drift.
 3. **Reality is the oracle.** Integration cases are *differential*. The facsimile's verdict on a
    stand-in environment must equal the verdict of publishing the same change onto a full copy of
@@ -67,7 +67,7 @@ roughly 1% of what the Twin stood on (about 5,000 lines of F# over a 114,000-lin
 ## 2. What the Twin does today, and what becomes of each part
 
 This is surveyed from `src/Twin.*`, both Twin test pools, `THE_TWIN.md`, the skill tree, the
-scripts and the workflows. Every row is backed by a case in `cases/80-twin-parity.md`: either a
+scripts and the workflows. Every row is backed by a case in `80-twin-parity.md`: either a
 **parity** case (the facsimile does it) or a **retirement** case (no verdict depends on it).
 
 | # | Twin responsibility | Disposition | The facsimile's form |
@@ -133,7 +133,7 @@ scripts and the workflows. Every row is backed by a case in `cases/80-twin-parit
 ```
 
 **A pure core with a thin shell.** Every invariant that can be stated over text and tables lives in
-eight pure functions that do no I/O. These are their logical names, which the cases use. `TARGET.md` §3
+eight pure functions that do no I/O. These are their logical names, which the cases use. `../../archive/v2/ssdt-agent/facsimile/TARGET.md` §3
 maps each to its C# member (`Get-FxQuestions` is `Questions.Derive`):
 
 | Function | In → out |
@@ -150,14 +150,14 @@ maps each to its C# member (`Get-FxQuestions` is `Questions.Derive`):
 Pure cases (`kind: pure`) run these in milliseconds with no SQL Server. The shell only calls
 Microsoft-signed tools (`sqlpackage`, `SqlLocalDB`, MSBuild via `vswhere`, `sqlcmd`), runs the
 T-SQL files, and writes files. The realization's floor, the weakest machine it must run on, is
-`TARGET.md` §1.
+`../../archive/v2/ssdt-agent/facsimile/TARGET.md` §1.
 
 **Files and budgets.** The realization (C# on .NET, with a PowerShell fallback), its layout, its
-dependencies and its line budgets are specified in `TARGET.md`:
+dependencies and its line budgets are specified in `../../archive/v2/ssdt-agent/facsimile/TARGET.md`:
 - §1 the realization and its gate;
 - §2 the layout;
-- §6 the budgets: production code under 2,000 lines;
-- Appendix A the PowerShell form, about 1,600 lines.
+- §6 the budgets of the production code;
+- Appendix A the PowerShell form.
 
 This document stays realization-neutral.
 
@@ -464,9 +464,9 @@ the tier cannot be argued with.
 
 ## 9. How every invariant is attended to
 
-1. **Traceability is generated, not hoped for.** The test project's lint (`TARGET.md` §7) refuses a catalog in
-   which any of these is missing. Until that runner exists, its prototype `tests/catalog_lint.py` does
-   the same, as a step of the ssdt-agent gates workflow:
+1. **Traceability is generated, not hoped for.** The test project's lint (`../../archive/v2/ssdt-agent/facsimile/TARGET.md` §7) refuses a catalog in
+   which any of these is missing. Until that runner exists, the catalog's lint, `Budgets.Tests: CaseCatalog`,
+   does the same in v3's fast lane, and writes `90-traceability.md`:
    - an invariant without two cases;
    - a case without an invariant;
    - a vocabulary row without a `corpus` case;
@@ -493,7 +493,7 @@ the tier cannot be argued with.
 
 | Gate | What must be true | What the team does |
 |---|---|---|
-| **G0** | This catalog is complete and audited (`cases/90-traceability.md`) | nothing changes |
+| **G0** | This catalog is complete and audited (`90-traceability.md`) | nothing changes |
 | **G1** | The pure core and the runner exist; every `pure` case is green | nothing changes |
 | **G2** | The shell and SQL exist; every `sql` and `corpus` case is green on SQL Server 2022 *and* on LocalDB (Windows CI); the differential agrees 100% | early adopters try `facsimile prove` beside the Twin |
 | **G3** | Twin parity: every `TWN` case is green, including all SamplePr facts | — |
@@ -534,7 +534,7 @@ case is updated with the receipt.
 7. Do the planter's literals satisfy the estate's real CHECK constraints often enough, or is
    `planter-needs-row` frequent?
 8. Do the tool, its probes and its planter run under the laptop's application-control policy? That
-   is the `TARGET.md` §1 gate: WDAC, AppLocker, and ConstrainedLanguage for the fallback.
+   is the `../../archive/v2/ssdt-agent/facsimile/TARGET.md` §1 gate: WDAC, AppLocker, and ConstrainedLanguage for the fallback.
 9. Does constraint validation (`WITH CHECK CHECK`) run after the post-deploy script on DacFx 162.x,
    as observed on 170.5.96? It decides whether a post-deploy-seeded lookup satisfies a new FK.
 10. Do system-named defaults (`DF__…`) and other system-named constraints keep their names through

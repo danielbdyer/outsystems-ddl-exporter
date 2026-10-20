@@ -15,7 +15,7 @@ namespace DbChange.Io.Tests;
 /// io/AggregateQueries without a server (V3_MILESTONES.md WP 2.3; VALUES.md P2): every builder's query passes the allowlist and converts
 /// a value only through TRY_CONVERT and TRY_CAST, so none raises an error that quotes a value; all of one table's preconditions are items
 /// of one SELECT; a measurement reads into each precondition's rows and violating rows; and the pure cases of the Facsimile's question
-/// catalog (archive/v2/ssdt-agent/facsimile/cases/10-questions.md) for these kinds count, under their identifiers, the rows each kind
+/// catalog (tests/Cases/10-questions.md) for these kinds count, under their identifiers, the rows each kind
 /// names and the value classes and collation classes the catalog names. Where v3 decided otherwise the case follows v3: decision 2.9
 /// makes any type change Fits, so a widening is counted and finds nothing (QST-19, QST-21, QST-33); a lossy round trip that rounds or
 /// substitutes characters is a printed line and no count (QST-22, QST-24, QST-25, QST-28, QST-30, QST-34); a digit string past int's

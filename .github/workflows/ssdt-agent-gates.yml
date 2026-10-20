@@ -48,8 +48,6 @@ jobs:
         run: node archive/v2/ssdt-agent/scripts/bake.mjs selftest
       - name: inflight-check.mjs selftest (the lag-window hold stays honest)
         run: node archive/v2/ssdt-agent/scripts/inflight-check.mjs selftest
-      - name: facsimile case catalog (grammar, laws, sources, traceability coverage)
-        run: python3 archive/v2/ssdt-agent/facsimile/tests/catalog_lint.py archive/v2/ssdt-agent/facsimile/cases
 
   build-proving-ground:
     name: proving ground compiles

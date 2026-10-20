@@ -1,6 +1,6 @@
 # 40 · Column operations
 
-*Family 40 (`OP-<slug>-nn`): the fifteen column operations, each with its standard set (README §5), one `##` apiece.
+*Family 40 (`OP-<slug>-nn`): the column operations (`90-traceability.md` lists them), each with its standard set (README §5), one `##` apiece.
 Fixtures are relative to `pg`; the effective options are pg's Pipeline profile unless a case says otherwise.
 `copy` records what the copy showed (`permissive:` for the `--permissive` arm); a stop outcome is a `process` case.*
 
