@@ -20,8 +20,7 @@ DacFx's `xp_msver` call, so the read-only principal sends no `EXEC`. Wave 5 land
 
 ## Next
 - WP 2.1's second slice: the statement kinds the plan's §4 shapes name, with the four refinements of spike S2's decision lines.
-- S4's decision line, from the "S4 |" rows of the sql-ubuntu and sql-windows jobs' summaries (WP 3.4 landed `LocalServer`'s
-  sweep, first-connect retry and copy cache); its laptop half, the SSDT repository's own schema on LocalDB 16.x, waits on S6.
+- S4's laptop half, the SSDT repository's own schema on LocalDB 16.x, waits on S6; its CI half is a decision line.
 - WP 7.1, the citations rewritten. Then WP 2.5, which reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into
   `Preconditions.Of`; WP 2.6, which moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6) and re-reads against
   `Io.Tests: SpikeReceiptTests` the cases S9 to S11 bear on: PLT-87, 88, 90, QST-55, 59, OP-toggle-trust-03 to 05, OP-add-default-04,
