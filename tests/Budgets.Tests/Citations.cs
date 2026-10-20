@@ -25,6 +25,12 @@ namespace DbChange.Budgets.Tests;
 /// any milestone excuse a missing path one edit from an existing one, which is a misspelling.</item>
 /// </list>
 /// The root design documents are excluded until M8 starts; knowledge/ joins at M7.
+/// Each document also cites in v3's forms, so a file WP 7.2 moves from v2's skills passes only once its citations are rewritten
+/// (<see cref="Forms"/>): a finding by its identifier, never by v2's file; a sample by its shape under knowledge/samples/, never by
+/// v2's sample-prs/; a handbook chapter by its title, never by its number or file name; a ledger by knowledge/ledgers/ or
+/// dbchange/ledgers/, never by v2's estate/ or a bare name. A backticked span starting archive/ is provenance and exempt. Every F&lt;n&gt;
+/// names a finding of knowledge/findings.md, or of v2's FINDINGS_AND_CHANGES.md until that file lands; and every
+/// <c>dbchange &lt;verb&gt;</c> a document under knowledge/ or ARCHITECTURE.md cites is a row of the verb table, built or not.
 /// </summary>
 public sealed class Citations
 {
@@ -60,6 +66,105 @@ public sealed class Citations
     private static readonly Regex CutoverTools = new(@"not held yet: the cutover tools", RegexOptions.CultureInvariant);
 
     public static TheoryData<string> ToolDocuments => new(Documents.Tool);
+
+    /// <summary>v2's four citation forms, each with what it cites and the form v3 cites it in.</summary>
+    private static readonly (Regex Pattern, string What, string Instead)[] Forms =
+    [
+        (new(@"(?<!archive/v2/ssdt-agent/)\bFINDINGS_AND_CHANGES\.md", RegexOptions.CultureInvariant),
+            "a finding by its file", "cite the finding by its identifier, F<n>"),
+        (new(@"(?<![\w/])(?:\.\./)*sample-prs/", RegexOptions.CultureInvariant),
+            "a sample by its v2 path", "cite knowledge/samples/<shape>.md"),
+        (new(@"handbook(?:'s)?\s+(?:file\s+)?\**\d+|\(=\s*§\d+|(?<![\w/])\d{2}-[A-Z][\w-]+\.md", RegexOptions.CultureInvariant),
+            "the handbook by number", "cite the chapter by its title"),
+        (new(@"(?<![\w/.-])(?:(?:\.\./)*(?:ssdt-agent/)?estate/|ledgers/)?"
+            + @"(?:in-flight|operations|refusals|reviewers|row-tiers|scale-datapoints|toolchain|cdc-tracked)\.md", RegexOptions.CultureInvariant),
+            "a ledger by its v2 or bare path",
+            "cite knowledge/ledgers/<name> for the template the tool seeds, or dbchange/ledgers/<name> for the SSDT repository's rows"),
+    ];
+
+    /// <summary>A backticked span starting archive/: provenance, which cites v2 by its own paths.</summary>
+    private static readonly Regex Provenance = new(@"`archive/[^`]*`", RegexOptions.CultureInvariant);
+
+    private static readonly Regex FindingCited = new(@"\bF(\d+)\b", RegexOptions.CultureInvariant);
+
+    private static readonly Regex VerbCited = new(@"`dbchange ([a-z][\w-]*)", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The findings: the <c>## F&lt;n&gt; · </c> headings of knowledge/findings.md, struck through or not, once it exists; until then
+    /// the <c>- **F&lt;n&gt; — </c> items of v2's FINDINGS_AND_CHANGES.md.
+    /// </summary>
+    private static readonly Lazy<HashSet<int>> Findings = new(() => (Repository.Contains("knowledge/findings.md")
+            ? Repository.Lines("knowledge/findings.md").Select(l => Regex.Match(l, @"^## ~*F(\d+) ·", RegexOptions.CultureInvariant))
+            : Repository.Lines("archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md")
+                .Select(l => Regex.Match(l, @"^- \*\*F(\d+) —", RegexOptions.CultureInvariant)))
+        .Where(m => m.Success).Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)).ToHashSet());
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [MemberData(nameof(ToolDocuments))]
+    public void Every_document_of_the_repository_cites_a_finding_by_identifier_a_sample_by_shape_the_handbook_by_title_and_a_ledger_by_its_path(
+        string document)
+    {
+        var verbs = document == "ARCHITECTURE.md" || document.StartsWith("knowledge/", StringComparison.Ordinal);
+        var refused = Documents.Blocks(document).SelectMany(b => InV2Form(b.Text)
+            .Concat(UnknownFindings(b.Text, Findings.Value))
+            .Concat(verbs ? UnknownVerbs(b.Text) : [])
+            .Select(r => document + ":" + b.Line.ToString(CultureInfo.InvariantCulture) + ": " + r));
+
+        Assert.Empty(refused);
+    }
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("`FINDINGS_AND_CHANGES.md` F10.", "a finding by its file")]
+    [InlineData("proven live in `../../../sample-prs/make-mandatory.md`", "a sample by its v2 path")]
+    [InlineData("**A rename with no refactorlog entry** (handbook 16 = §19.1)", "the handbook by number")]
+    [InlineData("Cite by **filename**: **08-Referential-Integrity-Basics.md**", "the handbook by number")]
+    [InlineData("`dbchange check inflight` reads `estate/in-flight.md`", "a ledger by its v2 or bare path")]
+    [InlineData("records in `ledgers/scale-datapoints.md`", "a ledger by its v2 or bare path")]
+    [InlineData("reads `dbchange/ledgers/in-flight.md`", "")]
+    [InlineData("`knowledge/ledgers/cdc-tracked.md` opens empty", "")]
+    [InlineData("`archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:140`", "")]
+    [InlineData("`archive/v2/ssdt-agent/sample-prs/make-mandatory.md` is the v2 sample", "")]
+    [InlineData("the handbook's chapter on the refactorlog", "")]
+    [InlineData("outside the handbook no document shows", "")]
+    public void A_citation_in_v2_s_form_is_refused_and_named_with_the_form_v3_cites(string line, string what) =>
+        Assert.Equal(what, string.Join(", ", Forms.Where(f => f.Pattern.IsMatch(Provenance.Replace(line, ""))).Select(f => f.What)));
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("F9 overturned F5", true)]
+    [InlineData("F20, the scale lane's first light", true)]
+    [InlineData("F21", false)]
+    [InlineData("F0", false)]
+    public void A_finding_cited_by_identifier_resolves_in_the_findings(string line, bool resolves) =>
+        Assert.Equal(resolves, !UnknownFindings(line, Enumerable.Range(1, 20).ToHashSet()).Any());
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("`dbchange prove`", true)]
+    [InlineData("`dbchange check drift --target env:dev`", true)]
+    [InlineData("`dbchange synthetic-copy up`", true)]
+    [InlineData("`dbchange measure --tables`", false)]
+    public void A_verb_a_knowledge_document_cites_is_a_row_of_the_verb_table(string line, bool resolves) =>
+        Assert.Equal(resolves, !UnknownVerbs(line).Any());
+
+    /// <summary>Each v2 form a logical line cites in, outside provenance, as the reason it is refused.</summary>
+    private static IEnumerable<string> InV2Form(string line)
+    {
+        var cited = Provenance.Replace(line, "");
+        return Forms.SelectMany(f => f.Pattern.Matches(cited).Select(m => "'" + m.Value + "' cites " + f.What + "; " + f.Instead));
+    }
+
+    private static IEnumerable<string> UnknownFindings(string line, IReadOnlySet<int> findings) =>
+        FindingCited.Matches(Provenance.Replace(line, ""))
+            .Where(m => !findings.Contains(int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)))
+            .Select(m => m.Value + " is no finding of " + (Repository.Contains("knowledge/findings.md") ? "knowledge/findings.md"
+                : "archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md") + "; cite one that exists, or record it first");
+
+    private static IEnumerable<string> UnknownVerbs(string line) =>
+        VerbCited.Matches(line).Where(m => !DbChange.Cli.Contract.Verbs.Any(v => v.Name == m.Groups[1].Value))
+            .Select(m => "'dbchange " + m.Groups[1].Value + "' is no row of the verb table (dbchange --help --json); cite the verb that exists");
 
     [Theory]
     [Trait("Category", "fast")]

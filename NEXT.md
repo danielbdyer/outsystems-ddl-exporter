@@ -10,7 +10,7 @@ and 4.
   in the v3 clone, `git switch claude/v3-architecture-design-sl95mx`, `git pull` and `ci/publish.ps1`; then, in the SSDT
   repository's clone, with `<v3 clone>\dist\dbchange\dbchange.exe` as `dbchange`, run
   `dbchange check drift --target env:dev --at <Dev's deployed tag> --json` and `dbchange read --from env:dev --json`,
-  and `sqlcmd -S <Dev's server> -d <Dev's database> -E -Q "SELECT collation_name FROM sys.databases WHERE name = DB_NAME()"`.
+  and, on Dev's database under your own login, `SELECT collation_name FROM sys.databases WHERE name = DB_NAME()`.
   Report check drift's exit code and its JSON answer (its `elapsedMs`), the read's `elapsedMs` and the `collation_name`:
   M1 exit 1 passes on exit 0, or 5 naming each differing object, in a minute.
 - At M0, install the SessionStart and SessionEnd hooks in `.claude/hooks/` as `CLAUDE.md` describes them; no agent may edit them.
@@ -23,7 +23,7 @@ and 4.
 - WP 2.1's second slice: the statement kinds the plan's §4 shapes name, with the four refinements of spike S2's decision lines.
 - WP 3.4's remainder with spike S4; it drops `kernel/Environments.cs`' unread key `localServer` (`docker` or `localdb`) and
   `tests/Golden/dbchange/environments.json`'s `docker`, with EnvironmentsTests and PublishProfilesTests.
-- WP 7.1, the citations rewritten.
+- WP 7.2 rewrites each skill's citations to the forms `Citations` accepts as it moves it; no test reads a rewrite map, so none is kept.
 - Then WP 2.5, which reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`; WP 2.6, which
   moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6); WP 3.5; then M2's exit checks.
 - Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the vendoring verb's two
