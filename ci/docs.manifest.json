@@ -38,7 +38,7 @@
       "owner": "tool",
       "reader": ["Claude Code"],
       "moment": ["session start"],
-      "budget": 30,
+      "budget": 33,
       "generator": null,
       "ancestor": ["archive/v2/CLAUDE.md", "archive/v2/ssdt-agent/CLAUDE.md"]
     },

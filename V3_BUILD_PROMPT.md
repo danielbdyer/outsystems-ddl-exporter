@@ -167,11 +167,10 @@ is held, retired, or waits only on the cutover tools:
   - `spec` for every one.
   - `safety` in addition for 1.4, 1.5, 2.2, 2.3, 2.5, 3.4, 3.7, 4.1, 5.2, 5.4 and 6.1.
   - `budgets` in addition for any work package that adds more than 300 lines.
-- **Resume.** Before a wave launches, write its `args` to `waves/<wave>-args.json` in the scratchpad, then its run ID:
-  a resume replays only agents whose arguments are the same values. Relaunch an interrupted wave with its `scriptPath`,
-  `resumeFromRunId` and those `args`. Without them, match each result in the run's `journal.jsonl` to its `started` label
-  by `agentId`, and continue each finished package by `startBranch`, with `verified` once its review passed and `roundBase`
-  for fix rounds spent. If the session ends, the next one resumes from `NEXT.md` and the branch.
+- **Resume.** Save each wave's `args` before it launches, as `CLAUDE.md` says. Without them, match each result in the
+  run's `journal.jsonl` to its `started` label by `agentId`, and continue each finished package by `startBranch`, with
+  `verified` once its review passed and `roundBase` for fix rounds spent. If the session ends, the next one resumes from
+  `NEXT.md` and the branch.
 
 ---
 
