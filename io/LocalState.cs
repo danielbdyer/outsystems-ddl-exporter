@@ -8,15 +8,15 @@ namespace DbChange.Io;
 
 /// <summary>
 /// Every path under .dbchange/, the folder dbchange keeps beside the SSDT repository's checkout, named once (R7): worktrees and their
-/// holders' locks, builds, runs, the copy registry and its lock, and the temporary folder, all under one root per run, the repository root
-/// (cli's Checkout.Root). <see cref="Made"/> creates a folder here and, with it, .dbchange/.gitignore holding "*", so the folder ignores
-/// itself in a repository whose .gitignore does not name it (git status lists nothing under it, and check-ignore names the file); when
-/// the folder is the worktrees', it also writes the stop files a ref's build needs: an empty Directory.Build.props, Directory.Build.targets
-/// and Directory.Packages.props and an empty Directory.Build.rsp, since MSBuild searches upward from a project for each of them and would
-/// otherwise reach the enclosing checkout's, so a ref builds with its own MSBuild settings alone. global.json gets no stop file: it chooses
-/// the SDK, which is the machine's toolchain, and a ref that commits its own uses it. <see cref="UserSqlEnv"/> is the one file outside a
-/// checkout, ~/.dbchange/sql.env, which ci/sql.sh and ci/sql.ps1 write; it is null where the user's profile folder is unknown (HOME unset
-/// in a container or a service), and the local server treats it as absent.
+/// holders' locks, builds, runs, the copy registry and its lock, the copy cache, and the temporary folder, all under one root per run, the
+/// repository root (cli's Checkout.Root). <see cref="Made"/> creates a folder here and, with it, .dbchange/.gitignore holding "*", so the
+/// folder ignores itself in a repository whose .gitignore does not name it (git status lists nothing under it, and check-ignore names the
+/// file); when the folder is the worktrees', it also writes the stop files a ref's build needs: an empty Directory.Build.props,
+/// Directory.Build.targets and Directory.Packages.props and an empty Directory.Build.rsp, since MSBuild searches upward from a project for
+/// each of them and would otherwise reach the enclosing checkout's, so a ref builds with its own MSBuild settings alone. global.json gets
+/// no stop file: it chooses the SDK, which is the machine's toolchain, and a ref that commits its own uses it. <see cref="UserSqlEnv"/> is
+/// the one file outside a checkout, ~/.dbchange/sql.env, which ci/sql.sh and ci/sql.ps1 write; it is null where the user's profile folder
+/// is unknown (HOME unset in a container or a service), and the local server treats it as absent.
 /// </summary>
 public sealed record LocalState(string Root)
 {
@@ -46,7 +46,24 @@ public sealed record LocalState(string Root)
 
     public string CopiesLock => Path.Combine(Folder, "copies.lock");
 
+    /// <summary>The lock a run holds over its sweep, from its read of the registry to its last drop (io/LocalServer.Sweep.cs).</summary>
+    public string SweepLock => Path.Combine(Folder, "sweep.lock");
+
     public string Temporary => Path.Combine(Folder, "tmp");
+
+    /// <summary>
+    /// The copy cache: LocalDB's backups of copies, which a restore reads again, and backups.json, the index of every backup, by key and
+    /// server, naming the file its server wrote (io/LocalServer.Cache.cs); a SQL Server on this machine writes its backups into its own
+    /// default backup folder instead.
+    /// </summary>
+    public string Cache => Path.Combine(Folder, "cache");
+
+    public string Backups => Path.Combine(Cache, "backups.json");
+
+    public string BackupsLock => Path.Combine(Cache, "backups.lock");
+
+    /// <summary>The lock a run holds on a base, by its key, from its look at the cache to the base's backup.</summary>
+    public string BaseLock(string key) => Path.Combine(Cache, key + ".lock");
 
     public static string? UserSqlEnv =>
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) is { Length: > 0 } profile

@@ -184,13 +184,13 @@ public sealed class EnvironmentsTests
     public void The_environments_file_names_each_environment_once_and_finds_one_by_its_name()
     {
         var (dev, qa) = (Expect.Value(Environment("dev")), Expect.Value(Environment("qa")));
-        var environments = Expect.Value(Environments.Of("dbchange/environments.json", [qa, dev], null));
+        var environments = Expect.Value(Environments.Of("dbchange/environments.json", [qa, dev]));
 
         Assert.Equal([dev, qa], environments.All);
         Assert.Same(qa, environments.Named(Expect.Value(EnvironmentName.Of(Where, "qa"))));
         Assert.Null(environments.Named(Expect.Value(EnvironmentName.Of(Where, "uat"))));
         Expect.Failed(Environments.Of("dbchange/environments.json",
-            [dev, qa, Expect.Value(Environment("dev", profile: "dbchange/other.publish.xml"))], null), "environments.environment-name");
+            [dev, qa, Expect.Value(Environment("dev", profile: "dbchange/other.publish.xml"))]), "environments.environment-name");
     }
 
     /// <summary>The profile a copy is planned under when no --profile names one: the one every environment names, else none
@@ -200,24 +200,13 @@ public sealed class EnvironmentsTests
     public void The_shared_profile_is_the_one_path_every_environment_names_and_else_none()
     {
         var shared = Expect.Value(Environments.Of("dbchange/environments.json",
-            [Expect.Value(Environment("dev")), Expect.Value(Environment("qa"))], null)).SharedProfile;
+            [Expect.Value(Environment("dev")), Expect.Value(Environment("qa"))])).SharedProfile;
         var differing = Expect.Value(Environments.Of("dbchange/environments.json",
-            [Expect.Value(Environment("dev")), Expect.Value(Environment("qa", profile: "dbchange/qa.publish.xml"))], null)).SharedProfile;
-        var none = Expect.Value(Environments.Of("dbchange/environments.json", [], null)).SharedProfile;
+            [Expect.Value(Environment("dev")), Expect.Value(Environment("qa", profile: "dbchange/qa.publish.xml"))])).SharedProfile;
+        var none = Expect.Value(Environments.Of("dbchange/environments.json", [])).SharedProfile;
 
         Assert.Equal((Pipeline, null, null), (shared?.ToString(), differing?.ToString(), none?.ToString()));
     }
-
-    [Theory]
-    [Trait("Category", "fast")]
-    [InlineData("docker", "docker")]
-    [InlineData("localdb", "localdb")]
-    [InlineData("Docker", null)]
-    [InlineData("podman", null)]
-    [InlineData(null, null)]
-    public void The_local_server_the_environments_file_prefers_is_docker_or_localdb(string? text, string? kind) =>
-        Assert.Equal(kind ?? "environments.malformed",
-            LocalServerKind.Of("localServer in dbchange/environments.json", text).Match(k => k.ToString(), error => error.Code));
 
     [Fact]
     [Trait("Category", "fast")]

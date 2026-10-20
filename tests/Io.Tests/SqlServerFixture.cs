@@ -29,7 +29,9 @@ public static class SqlServerFixture
 
     /// <summary>The database, then each login named after it, once no session holds it (a session that ended first is no error).</summary>
     private const string Drop =
-        "DECLARE @sql nvarchar(max) = N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ' + QUOTENAME(@name) + N';'; "
+        // A database a killed RESTORE left RESTORING takes DROP DATABASE alone: SQL Server refuses ALTER DATABASE on it (Msg 5052).
+        "DECLARE @sql nvarchar(max) = CASE WHEN DATABASEPROPERTYEX(@name, 'Status') = N'RESTORING' THEN N'' "
+        + "ELSE N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; ' END + N'DROP DATABASE ' + QUOTENAME(@name) + N';'; "
         + "IF DB_ID(@name) IS NOT NULL EXEC (@sql); "
         + "DECLARE @login sysname, @wait int; DECLARE logins CURSOR LOCAL FAST_FORWARD FOR SELECT name FROM sys.server_principals WHERE name LIKE @name + N'[_]%' AND type = 'S'; "
         + "OPEN logins; FETCH NEXT FROM logins INTO @login; WHILE @@FETCH_STATUS = 0 BEGIN "
@@ -71,7 +73,7 @@ public static class SqlServerFixture
     public static async Task<bool> LoginExistsAsync(string name) =>
         await ScalarAsync(await Master.Value, "SELECT COUNT(*) FROM sys.server_principals WHERE name = @name;", name) == 1;
 
-    /// <summary>The statement run with @name and any further parameter given, each nvarchar(128).</summary>
+    /// <summary>The statement run with @name and any further parameter given, each nvarchar(4000), which holds a backup's path.</summary>
     public static async Task ExecuteAsync(string connectionString, string sql, string? name = null,
         params (string Name, string Value)[] parameters) =>
         await RunAsync(connectionString, sql, name, parameters, c => c.ExecuteNonQueryAsync());
@@ -82,6 +84,26 @@ public static class SqlServerFixture
     /// <summary>The statement's first value as text, run with @name; null for no row or a NULL.</summary>
     public static async Task<string?> TextAsync(string connectionString, string sql, string? name = null) =>
         await RunAsync(connectionString, sql, name, [], c => c.ExecuteScalarAsync()) is string text ? text : null;
+
+    /// <summary>
+    /// Each backup .dbchange/cache/backups.json under the repository root records, deleted: one in the root's own cache goes with the
+    /// root; one in the server's default backup folder, which only the server's account can write (the mssql user), through the server's
+    /// own xp_delete_file, so a test leaves no file on the server.
+    /// </summary>
+    public static async Task DeleteBackupsAsync(string repositoryRoot)
+    {
+        var index = Path.Combine(repositoryRoot, LocalState.Name, "cache", "backups.json");
+        if (!File.Exists(index))
+        {
+            return;
+        }
+
+        foreach (var path in System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(index))!["backups"]!.AsArray()
+            .Select(b => (string)b!["path"]!).Where(p => !p.StartsWith(repositoryRoot, StringComparison.Ordinal)))
+        {
+            await ExecuteAsync(await Master.Value, "EXEC master.sys.xp_delete_file 0, @name;", path);
+        }
+    }
 
     internal static async Task DropAsync(string master, string name)
     {
@@ -174,7 +196,7 @@ public static class SqlServerFixture
             connection) { CommandTimeout = (int)LocalServer.DatabaseStatementTimeout.TotalSeconds };
         foreach (var (parameter, value) in parameters.Concat(name is null ? [] : [("@name", name)]))
         {
-            command.Parameters.Add(new SqlParameter(parameter, System.Data.SqlDbType.NVarChar, 128) { Value = value });
+            command.Parameters.Add(new SqlParameter(parameter, System.Data.SqlDbType.NVarChar, 4000) { Value = value });
         }
 
         return await run(command);

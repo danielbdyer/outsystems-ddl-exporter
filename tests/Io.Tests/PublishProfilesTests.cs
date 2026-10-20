@@ -47,8 +47,7 @@ public sealed class PublishProfilesTests : IDisposable
         Assert.Equal(["dev", "prod", "qa", "uat"], environmentsFile.All.Select(e => e.Name.ToString()));
         Assert.Equal(["dev-sql.corp.example", "prod-sql.corp.example", "qa-sql.corp.example", "uat-sql.corp.example"],
             environmentsFile.All.Select(e => e.Host.ToString()));
-        Assert.Equal(("docker", (string?)"project/profiles/pipeline.publish.xml"),
-            (environmentsFile.LocalServer?.ToString(), environmentsFile.SharedProfile?.ToString()));
+        Assert.Equal("project/profiles/pipeline.publish.xml", environmentsFile.SharedProfile?.ToString());
         Assert.Equal("env:dev (synthetic, confirmed by the dev lead on 2026-09-20)", dev.ToString());
         Assert.Equal(["env:prod (real)", "env:qa (real)", "env:uat (real)"],
             environmentsFile.All.Where(e => e != dev).Select(e => e.ToString()));
@@ -115,23 +114,10 @@ public sealed class PublishProfilesTests : IDisposable
         PlantedValue.Password.AbsentFrom(error);
     }
 
-    /// <summary>§4 row 14: beside its environments, the environments file holds the local server preference, docker or localdb and nothing
-    /// else.</summary>
-    [Theory]
-    [Trait("Category", "fast")]
-    [InlineData("\"docker\"", null)]
-    [InlineData("\"localdb\"", null)]
-    [InlineData("\"Docker\"", "environments.malformed")]
-    [InlineData("\"podman\"", "environments.malformed")]
-    [InlineData("true", "environments.malformed")]
-    public void The_local_server_preference_is_docker_or_localdb(string preference, string? code) =>
-        Assert.Equal(code,
-            EnvironmentsFile.Read(RepositoryAt("{ \"environments\": {}, \"localServer\": " + preference + " }", raw: true))
-                .Match<string?>(_ => null, r => r.Code));
-
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("{ \"environments\": {}, \"targets\": [\"qa\"] }", "targets")]
+    [InlineData("{ \"environments\": {}, \"localServer\": \"localdb\" }", "localServer")]
     [InlineData(
         "{ \"environments\": { \"dev\": { \"host\": \"dev-sql\", \"connection\": \"env:A\", \"profile\": \"dbchange/p.publish.xml\", \"Profile\": \"x\" } } }",
         "environments.dev.Profile")]

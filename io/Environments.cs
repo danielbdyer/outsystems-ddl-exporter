@@ -33,7 +33,7 @@ public static class EnvironmentsFile
 
     /// <summary>
     /// dbchange/environments.json under the repository root, read once for a verb: the environments it names, in name order, each with the
-    /// host its SQL Server runs on, and the local server it prefers.
+    /// host its SQL Server runs on.
     /// </summary>
     public static Result<Environments> Read(string repositoryRoot)
     {
@@ -45,13 +45,10 @@ public static class EnvironmentsFile
             return Literal(root, "") is { } at
                 ? new Error("environments.literal-connection", Json + " holds a literal connection string at " + at + ".",
                     "Move it into an environment variable or a file outside git, and write env:NAME or file:path at " + at + ".")
-                : (Unknown(root, "", ["environments", "localServer"]) ?? Missing(root, "", "environments"))
+                : (Unknown(root, "", ["environments"]) ?? Missing(root, "", "environments"))
                     ?? Result.All(root.GetProperty("environments").EnumerateObject()
                         .Select((e, i) => EnvironmentAt(e.Name, e.Value, Place("environments", e.Name, i))))
-                        .Bind(environments => (root.TryGetProperty("localServer", out var kind)
-                                ? LocalServerKind.Of(Where("localServer"), kind.GetString()).Map(k => (LocalServerKind?)k)
-                                : Result.Ok<LocalServerKind?>(null))
-                            .Bind(localServer => Kernel.Environments.Of(Json, environments, localServer)));
+                        .Bind(environments => Kernel.Environments.Of(Json, environments));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {

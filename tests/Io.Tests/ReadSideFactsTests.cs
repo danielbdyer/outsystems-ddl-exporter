@@ -112,7 +112,7 @@ public sealed class ReadSideFactsTests
 
         var builds = lane.IndexOf("program=\"$(bash ci/readside.sh)\"\n          echo \"DBCHANGE_READSIDE=$program\" >> \"$GITHUB_ENV\"",
             StringComparison.Ordinal);
-        var tests = lane.IndexOf("--filter Category=fixture", StringComparison.Ordinal);
+        var tests = lane.IndexOf("--filter \"Category=fixture&Spike!=S4\"", StringComparison.Ordinal);
 
         Assert.True(builds > 0 && builds < tests, "dbchange.yml's sql-ubuntu job does not set DBCHANGE_READSIDE before its fixture tests");
         Assert.Contains("dotnet-version: 9.0.314", lane, StringComparison.Ordinal);
