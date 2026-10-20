@@ -27,12 +27,14 @@ namespace DbChange.Budgets.Tests;
 /// </list>
 /// The root design documents are excluded until M8 starts; knowledge/ joins at M7.
 /// Each document also cites in v3's forms, so a file WP 7.2 moves from v2's skills passes only once its citations are rewritten
-/// (<see cref="Forms"/>): a finding by its identifier, never by v2's file, FINDINGS_AND_CHANGES.md, FINDINGS with a part or an
-/// identifier, or a bare Part n; a sample by its shape under knowledge/samples/, never by v2's sample-prs/; a handbook chapter by
-/// its title, never by its number, its file name, its file stem with a section number (<c>Operation-Reference 16.8</c>) or a
-/// pattern's number (<c>playbook Pattern 17.8</c>; a bare §n passes, because v3 cites <c>V3_MILESTONES.md §13</c>, so WP 7.2
-/// rewrites v2's bare §n by hand); a ledger by knowledge/ledgers/ or
-/// dbchange/ledgers/, never by a bare name or any path into v2's estate/. A backticked span starting archive/ is provenance and
+/// (<see cref="Forms"/>): a finding by its identifier, never by v2's file, FINDINGS_AND_CHANGES.md, or FINDINGS with a part or an
+/// identifier; a part of that file by what replaced it (value S1 for Part 1, DECISIONS.md for Part 5), never as Part n; an operation
+/// by knowledge/ops/ and a shared file by knowledge/shared/, never by v2's op/ or _index/; a step by its verb and the golden project by
+/// tests/Golden/project/, never by v2's scripts/, a .mjs name or proving-ground/; a sample by its shape under knowledge/samples/,
+/// never by v2's sample-prs/; a handbook chapter by its title, never by its number, its file name, its file stem with a section
+/// number (<c>Operation-Reference 16.8</c>) or a pattern's number (<c>playbook Pattern 17.8</c>; a bare §n passes alone, because v3
+/// cites <c>V3_MILESTONES.md §13</c>, and is refused beside a refused citation or a missing path); a ledger by knowledge/ledgers/
+/// or dbchange/ledgers/, never by a bare name or any path into v2's estate/. A backticked span starting archive/ is provenance and
 /// exempt. Every F&lt;n&gt; names a finding of knowledge/findings.md, or of v2's FINDINGS_AND_CHANGES.md until that file lands; and every
 /// <c>dbchange &lt;verb&gt;</c> a document under knowledge/ or ARCHITECTURE.md cites is a row of the verb table, built or not.
 /// </summary>
@@ -81,15 +83,18 @@ public sealed class Citations
 
     public static TheoryData<string> ToolDocuments => new(Documents.Tool);
 
-    /// <summary>v2's four citation forms, each with what it cites and the form v3 cites it in.</summary>
+    /// <summary>v2's citation forms, each with what it cites and the form v3 cites it in.</summary>
     private static readonly (Regex Pattern, string What, string Instead)[] Forms =
     [
-        (new(@"(?<!archive/v2/ssdt-agent/)\bFINDINGS_AND_CHANGES\.md|\bFINDINGS\b|(?<![\w-])Part\s+\d+\b", RegexOptions.CultureInvariant),
+        (new(@"(?<!archive/v2/ssdt-agent/)\bFINDINGS_AND_CHANGES\.md|\bFINDINGS\b", RegexOptions.CultureInvariant),
             "a finding by its file", "cite the finding by its identifier, F<n>"),
+        (new(@"(?<![\w-])Part\s+\d+\b", RegexOptions.CultureInvariant),
+            "a part of v2's findings file", "cite value S1 for Part 1 (the locked gate), the finding F<n> for Parts 2, 6 and 7, "
+            + "the operation's How it flips for Parts 3 and 4, or DECISIONS.md for Part 5"),
         (new(@"(?<![\w/])(?:\.\./)*sample-prs/", RegexOptions.CultureInvariant),
             "a sample by its v2 path", "cite knowledge/samples/<shape>.md"),
-        (new(@"(?i:handbook)(?:'s)?\s+(?:files?\s+)?\**\d+|\(=\s*§\d+|(?<![\w/])\d{2}-[A-Z][\w-]+\.md|"
-            + @"(?<![\w/-])[A-Z][A-Za-z]*(?:-[A-Za-z]+)+\s+\d+\.\d+|(?<![\w.§])`?\d{1,2}`?\s*=\s*§\d+|"
+        (new(@"(?i:handbook)(?:'s)?\s+(?:files?\s+)?\**\d+|\(=\s*§\d+(?:\.\d+)*|(?<![\w/])\d{2}-[A-Z][\w-]+\.md|"
+            + @"(?<![\w/-])[A-Z][A-Za-z]*(?:-[A-Za-z]+)+\s+\d+\.\d+|(?<![\w.§])`?\d{1,2}`?\s*=\s*§\d+(?:\.\d+)*|"
             + @"(?i:playbook\s+)?\bPattern\s+\d+\.\d+",
             RegexOptions.CultureInvariant),
             "the handbook by number", "cite the chapter by its title"),
@@ -97,6 +102,12 @@ public sealed class Citations
             + @"reviewers|row-tiers|scale-datapoints|toolchain|cdc-tracked)\.md)", RegexOptions.CultureInvariant),
             "a ledger by its v2 or bare path",
             "cite knowledge/ledgers/<name> for the template the tool seeds, or dbchange/ledgers/<name> for the SSDT repository's rows"),
+        (new(@"(?<![\w/.-])(?:\.\./)*(?:skills/)?(?:op|_index)/", RegexOptions.CultureInvariant),
+            "a skill by its v2 path", "cite knowledge/ops/<op>.md for an operation, or knowledge/shared/<name>.md for a shared file"),
+        (new(@"(?<![\w/.-])(?:\.\./)*(?:ssdt-agent/)?(?:scripts/|proving-ground\b)|\b[\w.-]+\.mjs\b", RegexOptions.CultureInvariant),
+            "a v2 script or the golden project by its v2 path",
+            "cite the dbchange verb that does the step (scripts/prove.mjs is `dbchange prove`), "
+            + "or tests/Golden/project/ for the golden project"),
     ];
 
     /// <summary>A backticked span starting archive/: provenance, which cites v2 by its own paths.</summary>
@@ -148,15 +159,15 @@ public sealed class Citations
     [InlineData("> Handbook: the Audit and Temporal reference (Operation-Reference 16.8). Cite by filename.", "the handbook by number")]
     [InlineData("the recipe in Multi-Phase-Pattern-Templates 14.2", "the handbook by number")]
     [InlineData("> Handbook: the chapter on audit columns and temporal tables, under its title.", "")]
-    [InlineData("Advances FINDINGS Part 5.", "a finding by its file")]
+    [InlineData("Advances FINDINGS Part 5.", "a finding by its file, a part of v2's findings file")]
+    [InlineData("Advances the open decision on a two-release drop, which `DECISIONS.md` records.", "")]
     [InlineData("invent a manual trust step (FINDINGS F9).", "a finding by its file")]
     [InlineData("invent a manual trust step (F9).", "")]
     [InlineData("updated (playbook Pattern 17.8 — the computed-column bridge, not a compatibility view).", "the handbook by number")]
     [InlineData("updated (the handbook's chapter on the computed-column bridge, not a compatibility view).", "")]
-    [InlineData("this estate cannot relax the gate (Part 1).", "a finding by its file")]
-    [InlineData("this estate cannot relax the gate (F7).", "")]
+    [InlineData("this estate cannot relax the gate (Part 1).", "a part of v2's findings file")]
+    [InlineData("this estate cannot relax the gate (value S1).", "")]
     [InlineData("SQL Server's Parts 1 and 2 of the setup; a partition holds part 3", "")]
-    [InlineData("Advances the open decision on a two-release drop, which `DECISIONS.md` records.", "")]
     [InlineData("a drop of a populated column waits for a second release (pre-deploy, R1)", "")]
     [InlineData("SQL Server 2022 Express and LocalDB 17.0 run the fixture lane; Kernel-Tests 3 is no stem", "")]
     [InlineData("`dbchange check inflight` reads `estate/in-flight.md`", "a ledger by its v2 or bare path")]
@@ -166,7 +177,20 @@ public sealed class Citations
     [InlineData("the tool folder `dist/estate/` and `.estate/build/`", "")]
     [InlineData("reads `dbchange/ledgers/in-flight.md`", "")]
     [InlineData("`knowledge/ledgers/cdc-tracked.md` opens empty", "")]
+    [InlineData("Read the operation's file, `skills/op/<slug>`, before writing it.", "a skill by its v2 path")]
+    [InlineData("the concern's skill under `_index/<concern>` decides", "a skill by its v2 path")]
+    [InlineData("each phase as `../../op/<op>/SKILL.md` describes it", "a skill by its v2 path")]
+    [InlineData("> Operations: [`../op/<slug>/SKILL.md`] per operation.", "a skill by its v2 path")]
+    [InlineData("Read the operation's file, `knowledge/ops/<op>.md`, and `knowledge/shared/multi-phase.md` before writing it.", "")]
+    [InlineData("`.claude/skills/*/SKILL.md` and `.github/skills/<op>/SKILL.md` are generated", "")]
+    [InlineData("the module scripts in `proving-ground/Modules/*.sql`", "a v2 script or the golden project by its v2 path")]
+    [InlineData("start the server with `scripts/warm-sql.sh start`", "a v2 script or the golden project by its v2 path")]
+    [InlineData("run `node ssdt-agent/scripts/prove.mjs verdict`", "a v2 script or the golden project by its v2 path")]
+    [InlineData("then `bake.mjs restore` brings the copy back", "a v2 script or the golden project by its v2 path")]
+    [InlineData("the module scripts in `tests/Golden/project/`; `dbchange prove` gives the verdict", "")]
+    [InlineData("`ci/sql.sh up` starts the server; the plan's step names no script", "")]
     [InlineData("`archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:140`", "")]
+    [InlineData("`archive/v2/ssdt-agent/scripts/prove.mjs` was v2's prover", "")]
     [InlineData("`archive/v2/ssdt-agent/sample-prs/make-mandatory.md` is the v2 sample", "")]
     [InlineData("the handbook's chapter on the refactorlog", "")]
     [InlineData("outside the handbook no document shows", "")]
@@ -211,12 +235,28 @@ public sealed class Citations
     public void A_verb_a_knowledge_document_cites_is_a_row_of_the_verb_table(string line, bool resolves) =>
         Assert.Equal(resolves, !UnknownVerbs(line).Any());
 
-    /// <summary>Each v2 form a logical line cites in, outside provenance, as the reason it is refused.</summary>
+    /// <summary>
+    /// Each v2 form a logical line cites in, outside provenance, as the reason it is refused; and, when one is, each section number
+    /// beside it that no form's match holds (<see cref="SectionsBeside"/>).
+    /// </summary>
     private static IEnumerable<string> InV2Form(string line)
     {
         var cited = Provenance.Replace(line, "");
-        return Forms.SelectMany(f => f.Pattern.Matches(cited).Select(m => "'" + m.Value + "' cites " + f.What + "; " + f.Instead));
+        var refused = Forms.SelectMany(f => f.Pattern.Matches(cited).Select(m => (Match: m, Reason: "'" + m.Value + "' cites " + f.What
+            + "; " + f.Instead))).ToList();
+        return refused.Select(r => r.Reason).Concat(refused.Count == 0 ? [] : SectionsBeside(cited, refused.Select(r => r.Match)));
     }
+
+    private static readonly Regex Section = new(@"§\s?\d+(?:\.\d+)*", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The section numbers of a refused block, outside the refused matches. A bare §n passes alone, because v3 cites
+    /// <c>V3_MILESTONES.md §13</c>; beside a v2 citation it numbers the handbook or a v2 document (<c>(§19.2)</c> beside
+    /// <c>handbook 16</c>, <c>§5</c> beside <c>THE_RECORD.md</c>), and a rewrite of the citation alone would leave it in place.
+    /// </summary>
+    private static IEnumerable<string> SectionsBeside(string text, IEnumerable<Match> refused) =>
+        Section.Matches(text).Where(s => !refused.Any(m => s.Index >= m.Index && s.Index < m.Index + m.Length))
+            .Select(s => "'" + s.Value + "' numbers a section of the document the citation beside it names; cite the section by its title");
 
     private static IEnumerable<string> UnknownFindings(string line, IReadOnlySet<int> findings) =>
         FindingCited.Matches(Provenance.Replace(line, ""))
@@ -234,12 +274,41 @@ public sealed class Citations
     public void Every_path_a_document_of_the_repository_cites_exists_or_names_the_milestone_that_creates_it(string document)
     {
         var directory = Path.GetDirectoryName(document)!.Replace('\\', '/');
-        var unresolved = Documents.Blocks(document).SelectMany(b => Unresolved(b.Text, directory, Documents.Complete)
-            .Select(p => document + ":" + b.Line.ToString(CultureInfo.InvariantCulture) + ": " + p
-                + " does not exist; fix the path, or say in its clause the milestone that creates it"));
+        var unresolved = Documents.Blocks(document).SelectMany(b => MissingPaths(b.Text, directory, Documents.Complete)
+            .Select(r => document + ":" + b.Line.ToString(CultureInfo.InvariantCulture) + ": " + r));
 
         Assert.Empty(unresolved);
     }
+
+    /// <summary>Each path a logical line cites that does not resolve, and, when one does not, each section number beside it.</summary>
+    private static IEnumerable<string> MissingPaths(string line, string directory, Func<int, bool> complete)
+    {
+        var missing = Unresolved(line, directory, complete).ToList();
+        return missing.Select(p => p + " does not exist; fix the path, or say in its clause the milestone that creates it")
+            .Concat(missing.Count == 0 ? [] : SectionsBeside(line, []));
+    }
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("Optimistic NOT NULL (§19.2) and its cousins, in handbook **16** (= §19; the gallery)", "§19.2")]
+    [InlineData("**Refactorlog Cleanup** (handbook **16** = §19.5)", "§19.5")]
+    [InlineData("The §17.7 Table-Merge recipe lives under `../op/merge-tables/SKILL.md`.", "§17.7")]
+    [InlineData("Never split it in one release (=§17.6)", "")]
+    [InlineData("WP 7.2's row of `V3_MILESTONES.md` §13", "")]
+    public void A_section_number_beside_a_citation_in_v2_s_form_is_refused_with_it(string line, string sections) =>
+        Assert.Equal(sections, Quoted(InV2Form(line)));
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("The conversation runs in the developer's words (`../../THE_RECORD.md` §3); the record runs in the DBA's (§2).",
+        "§3, §2")]
+    [InlineData("the shipping finding, one of (`VALUES.md` §5)", "")]
+    public void A_section_number_beside_a_missing_path_is_refused_with_it(string line, string sections) =>
+        Assert.Equal(sections, Quoted(MissingPaths(line, "", n => true)));
+
+    /// <summary>The section numbers a list of refusals quotes, in order.</summary>
+    private static string Quoted(IEnumerable<string> refusals) => string.Join(", ", refusals
+        .Where(r => r.StartsWith("'§", StringComparison.Ordinal)).Select(r => r[1..r.IndexOf('\'', 1)]));
 
     [Theory]
     [Trait("Category", "fast")]
