@@ -117,6 +117,10 @@ public sealed class TargetTests
     [InlineData("dbchange_host_01_0a1b2c3d")]
     [InlineData("dbchange_host_2147483648_0a1b2c3d")]
     [InlineData("dbchange_host_1_0A1B2C3D")]
+    [InlineData("dbchange_synthetic_0123456789abcde_existing-data")]
+    [InlineData("dbchange_synthetic_0123456789ABCDEF_existing-data")]
+    [InlineData("dbchange_synthetic_0123456789abcdef_existing")]
+    [InlineData("dbchange_synthetic_0123456789abcdef_existing-data_0123")]
     [InlineData("orders")]
     [InlineData("")]
     public void A_name_dbchange_never_gives_a_copy_is_copy_unregistered_and_is_not_quoted(string text)
@@ -127,6 +131,31 @@ public sealed class TargetTests
         Assert.Contains(".dbchange/copies.json", error.Message, StringComparison.Ordinal);
         Assert.All(new[] { text }.Where(t => t.Length > 0),
             t => Assert.DoesNotContain(t, error.Message + error.Remedy, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The synthetic copy's name (WP 3.5, §4 row 13): the first 16 hexadecimal digits of the base's fingerprint, and of the existing
+    /// data's where one is planted, read back as itself with each part; it names no machine and no process, so no sweep of a machine's
+    /// copies chooses it, and a run's copy on a machine called synthetic is no synthetic copy.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_synthetic_copy_is_named_by_its_fingerprints_and_reads_back_as_itself_naming_no_machine()
+    {
+        var (@base, data) = (Fingerprint.Of("a base"), Fingerprint.Of("an existing data"));
+        var planted = CopyName.Synthetic(@base, data);
+        var presence = CopyName.Synthetic(@base, null);
+
+        Assert.Equal("dbchange_synthetic_" + @base.ToString()[..16] + "_existing-data_" + data.ToString()[..16], planted.ToString());
+        Assert.Equal("dbchange_synthetic_" + @base.ToString()[..16] + "_existing-data", presence.ToString());
+        Assert.All(new[] { planted, presence }, made =>
+        {
+            var read = Expect.Value(CopyName.Of(Subject, made.ToString()));
+            Assert.Equal((made, true, "", 0), (read, read.IsSynthetic, read.Machine, read.Pid));
+        });
+        Assert.Equal((@base.ToString()[..16], data.ToString()[..16], null),
+            (planted.Base, planted.ExistingData, presence.ExistingData));
+        Assert.False(CopyName.Make("synthetic", 1, 2).IsSynthetic);
     }
 
     [Theory]

@@ -178,8 +178,15 @@ public static class Contract
         new("classify", "Which operation a change is, provisionally, from the committed evidence."),
         new("predict", "Whether a change blocks or applies on each environment the caller can read, and why."),
         new("profile", "What an environment's data looks like, as the evidence the synthetic copy is generated from."),
-        new("synthetic-copy",
-            "A copy on the local server, built from the repository at a ref and filled with rows generated from the measured data."),
+        new("synthetic-copy", "A copy on the local server, built from the repository at a ref and planted with rows that answer each"
+            + " precondition as an environment's existing data does; check, status and down arrive later."
+            + " dbchange synthetic-copy up [--at <ref>] [--existing-data <file>] [--profile <path>] [--project <path>]",
+            Cli.Verbs.SyntheticCopy, Cli.Verbs.SyntheticCopyContent,
+            [
+                new("built", [0], "the copy is built: it answers each precondition as the existing data does, and the plan from the"
+                    + " base to it is empty"),
+                new("current", [0], "the registry holds the copy of these inputs, built to its end; nothing was applied"),
+            ]),
         new("prove", "What DacFx and SQL Server do with a change on a fresh copy, with its provenance."),
         new("describe", "The pull request description, rendered from each proof's provenance."),
         new("gate", "The pull request's proof, reproduced from the clone."),
@@ -220,6 +227,10 @@ public static class Contract
             "Run dbchange doctor, or correct the file the finding names.", true),
         new(7, "build-failed", "The build failed; the findings carry the build's errors.",
             "Fix each error at the file and line the finding names, then build again.", false),
+        new(8, "needs-input", "Needs input, the agent's next step, which each finding names: a row only a person can write into the"
+                + " change's declared witnesses, a declared witness to correct, or a copy whose rows answer a precondition otherwise than"
+                + " the environment's existing data does.",
+            "Do what each finding's remedy says, then run the verb again.", true),
         new(9, "refused-by-name", "Refused by name: a named environment, an unregistered copy, a lock, or a change no publish can show"
                 + " to be safe (a rename without its refactorlog entry, a column-list change or a rebuild of a table CDC tracks); the"
                 + " refusal's code is printed.",
@@ -256,6 +267,7 @@ public static class Contract
         ErrorCategory.Refactorlog => 2,
         ErrorCategory.Model => 2,
         ErrorCategory.Registry => 2,
+        ErrorCategory.ExistingData => 2,
         ErrorCategory.Origin => 4,
         ErrorCategory.Server => 4,
         ErrorCategory.LocalServer => 4,
@@ -276,6 +288,7 @@ public static class Contract
         ErrorCategory.Verb => 6,
         ErrorCategory.Internal => 6,
         ErrorCategory.Build => 7,
+        ErrorCategory.Witness => 8,
         ErrorCategory.Lock => 9,
         ErrorCategory.GitBranch => 9,
         ErrorCategory.Copy => 9,

@@ -371,14 +371,40 @@ public sealed partial class TargetTests : IDisposable
         Planted.AbsentFrom(error);
     }
 
-    /// <summary>ref: and dacpac: name no database; the synthetic copy arrives in M3.</summary>
+    /// <summary>ref: and dacpac: name no database.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("ref:main", "target.not-a-database")]
     [InlineData("dacpac:build/x.dacpac", "target.not-a-database")]
-    [InlineData("synthetic-copy", "synthetic-copy.not-built")]
     public void A_target_that_is_no_database_this_build_reads_is_refused_where_a_database_is_asked_for(string text, string code) =>
         Failed(SqlServer.Resolve(Value(SqlServer.Target(text, "--target")), scratch.Path), code);
+
+    /// <summary>
+    /// synthetic-copy names the synthetic copy whose build ended last on the local server (WP 3.5): the registry's last row of a synthetic
+    /// name marked ready on that server. A run's copy, a synthetic copy left half built and one on another server are none of it, and
+    /// with none the target is copy.synthetic-absent, naming the server and quoting nothing of its connection.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Synthetic_copy_names_the_last_synthetic_copy_built_to_its_end_on_the_local_server()
+    {
+        var (first, last) = (CopyName.Synthetic(Fingerprint.Of("a base"), null), CopyName.Synthetic(Fingerprint.Of("a base"),
+            Fingerprint.Of("an existing data")));
+        var clear = new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment>());
+        var root = Synthetic(RepositoryAt(clear), (first, "localhost,11433", true), (last, "localhost,11433", true),
+            (CopyName.Synthetic(Fingerprint.Of("half built"), null), "localhost,11433", false),
+            (CopyName.Make("host", 1, 7), "localhost,11433", true),
+            (CopyName.Synthetic(Fingerprint.Of("elsewhere"), null), "localhost,11434", true));
+        var none = Synthetic(RepositoryAt(clear), (CopyName.Synthetic(Fingerprint.Of("half built"), null), "localhost,11433", false));
+        Result<string> Here() => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted;
+
+        var named = Value(LocalServer.Synthetic(root, Io.EnvironmentsFile.Read(root), Here, Resolver));
+        var absent = Failed(LocalServer.Synthetic(none, Io.EnvironmentsFile.Read(none), Here, Resolver), "copy.synthetic-absent");
+
+        Assert.Equal((last, true), (named.Name, named.Name.IsSynthetic));
+        Assert.Contains("localhost,11433", absent.Message, StringComparison.Ordinal);
+        Planted.AbsentFrom(absent);
+    }
 
     /// <summary>
     /// VALUES.md X2, §18: a named environment's SQL Server error is withheld whatever its number, and a denied login says a lead's
@@ -521,6 +547,21 @@ public sealed partial class TargetTests : IDisposable
         File.WriteAllText(Path.Combine(root, ".dbchange", "copies.json"),
             "{ \"copies\": [ { \"name\": \"" + name + "\", \"server\": \"" + server
                 + "\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
+        return root;
+    }
+
+    /// <summary>The repository root with .dbchange/copies.json holding the rows given, in order: each copy, its server and whether its
+    /// build ended.</summary>
+    private static string Synthetic(string root, params (CopyName Name, string Server, bool Ready)[] rows)
+    {
+        Directory.CreateDirectory(Path.Combine(root, ".dbchange"));
+        var copies = new System.Text.Json.Nodes.JsonArray([.. rows.Select(r => new System.Text.Json.Nodes.JsonObject
+        {
+            ["name"] = r.Name.ToString(), ["server"] = r.Server, ["host"] = "host", ["pid"] = 0, ["created"] = "2026-10-20T00:00:00Z",
+            ["ready"] = r.Ready,
+        })]);
+        File.WriteAllText(Path.Combine(root, ".dbchange", "copies.json"),
+            new System.Text.Json.Nodes.JsonObject { ["copies"] = copies }.ToJsonString());
         return root;
     }
 

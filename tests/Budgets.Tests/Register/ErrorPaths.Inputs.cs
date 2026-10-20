@@ -386,6 +386,9 @@ internal static partial class ErrorPaths
 
     private static string Quoted(string text) => "\"" + text + "\"";
 
+    /// <summary>The literals of a repository whose model defines none, against which a declared witness is read.</summary>
+    private static IReadOnlySet<string> Literals => new HashSet<string>(StringComparer.Ordinal);
+
     /// <summary>
     /// The error a verb's answer carries as its one finding of severity error, where the cli fails inside a verb rather than in a Result.
     /// </summary>

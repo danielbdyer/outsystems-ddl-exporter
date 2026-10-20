@@ -109,6 +109,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | O5 | The sweep chooses only this host's copies on this server registered more than a day ago | `DbChange.Io.Tests.LocalServerTests.The_sweep_chooses_only_this_host_s_copies_on_this_server_registered_more_than_a_day_ago` |
 | O6 | Two concurrent runs share nothing | `DbChange.Io.Tests.CopyLifetimeTests.Two_concurrent_runs_share_nothing` |
 | O6 | Two drops and two sweeps of one copy at once all succeed and leave neither its database nor its row | `DbChange.Io.Tests.CopyLifetimeTests.Two_drops_and_two_sweeps_of_one_copy_at_once_all_succeed_and_leave_neither_its_database_nor_its_row` |
+| O6 | Check drift of the synthetic copy built at the golden base exits 0 and up again answers it current | `DbChange.Io.Tests.SyntheticCopyTests.Check_drift_of_the_synthetic_copy_built_at_the_golden_base_exits_0_and_up_again_answers_it_current` |
 | O7 | A publish whose token is cancelled publishes nothing and throws | `DbChange.Io.Tests.CopyTests.A_publish_whose_token_is_cancelled_publishes_nothing_and_throws` |
 | O7 | A signal or a timeout stops a waiting dbchange with exit 130 and an interrupted answer | `DbChange.Io.Tests.InterruptedProcessTests.A_signal_or_a_timeout_stops_a_waiting_dbchange_with_exit_130_and_an_interrupted_answer` |
 | O7 | A verb waiting on a held lock and given timeout 1 answers interrupted at exit 130 within 3 seconds and changes nothing | `DbChange.Io.Tests.InterruptionTests.A_verb_waiting_on_a_held_lock_and_given_timeout_1_answers_interrupted_at_exit_130_within_3_seconds_and_changes_nothing` |
@@ -116,6 +117,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | O11 | A large change renders short | `DbChange.Io.Tests.AnswerSizeTests.A_large_change_renders_short` |
 | O12 | Each banned symbol planted in the kernel is a build error | `DbChange.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |
 | O12 | LocalServer names a copy for its host and process registers it and Drop removes the database and its row | `DbChange.Io.Tests.CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |
+| P1 | A declared literal enters the copy only when it is synthetic or the repository's own | `DbChange.Io.Tests.SyntheticCopyInputTests.A_declared_literal_enters_the_copy_only_when_it_is_synthetic_or_the_repository_s_own` |
 | P1 | A planted literal comes from no environment | `DbChange.Kernel.Tests.WitnessProperties.A_planted_literal_comes_from_no_environment` |
 | P2 | TableEmpty reads the table's rows and the same rows from sys partitions as a VIEW DEFINITION only login | `DbChange.Io.Tests.AggregateQueriesCountTests.TableEmpty_reads_the_table_s_rows_and_the_same_rows_from_sys_partitions_as_a_VIEW_DEFINITION_only_login` |
 | P2 | A collation that is no SQL Server collation name is written into no query and its preconditions read not predictable read only | `DbChange.Io.Tests.AggregateQueriesTests.A_collation_that_is_no_SQL_Server_collation_name_is_written_into_no_query_and_its_preconditions_read_not_predictable_read_only` |
@@ -137,6 +139,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | R1 | Unpinned admits every DacFx release | `DbChange.Kernel.Tests.ProvenanceTests.Unpinned_admits_every_DacFx_release` |
 | R3 | Each file a run keeps under dot dbchange leaves git listing nothing with no worktree made first | `DbChange.Io.Tests.LocalStateTests.Each_file_a_run_keeps_under_dot_dbchange_leaves_git_listing_nothing_with_no_worktree_made_first` |
 | R3 | Git lists nothing dbchange keeps in a repository whose gitignore does not name dot dbchange | `DbChange.Io.Tests.LocalStateTests.Git_lists_nothing_dbchange_keeps_in_a_repository_whose_gitignore_does_not_name_dot_dbchange` |
+| R3 | Check drift of the synthetic copy built at the golden base exits 0 and up again answers it current | `DbChange.Io.Tests.SyntheticCopyTests.Check_drift_of_the_synthetic_copy_built_at_the_golden_base_exits_0_and_up_again_answers_it_current` |
 | R5 | A SQL Server version outside the window is refused | `DbChange.Io.Tests.CopyTests.A_SQL_Server_version_outside_the_window_is_refused` |
 | R5 | A runtime other than NET 10 is refused with its remedy | `DbChange.Io.Tests.DoctorTests.A_runtime_other_than_NET_10_is_refused_with_its_remedy` |
 | R5 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |
@@ -246,5 +249,6 @@ One row per test that runs an exit of `V3_MILESTONES.md`, from its `[Trait("Exit
 | M1.7 | A named environment's error is withheld and a copy's is kept | `DbChange.Io.Tests.TargetTests.A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept` |
 | M1.7 | A literal connection string as a target is exit 6 and printed nowhere | `DbChange.Io.Tests.VerbExitTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
 | M1.8 | The read only principal sends no DML no DDL and no EXEC through check drift and read | `DbChange.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read` |
+| M3.3 | A copy planted at an environment holding each of R6's sites answers every precondition as the environment does | `DbChange.Io.Tests.SyntheticCopyTests.A_copy_planted_at_an_environment_holding_each_of_R6_s_sites_answers_every_precondition_as_the_environment_does` |
 
-Exits no test declares, which a person or a CI job runs: M0.2, M1.1, M2.1, M2.2, M2.3, M2.4, M2.5, M3.1, M3.2, M3.3, M3.4, M3.5, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, M4.8, M4.9, M5.1, M5.2, M5.3, M5.4, M5.5, M5.6, M6.1, M6.2, M6.3, M6.4, M6.5, M7.1.
+Exits no test declares, which a person or a CI job runs: M0.2, M1.1, M2.1, M2.2, M2.3, M2.4, M2.5, M3.1, M3.2, M3.4, M3.5, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, M4.8, M4.9, M5.1, M5.2, M5.3, M5.4, M5.5, M5.6, M6.1, M6.2, M6.3, M6.4, M6.5, M7.1.

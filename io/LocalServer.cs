@@ -208,32 +208,35 @@ public static partial class LocalServer
 
     /// <summary>
     /// A copy on the server given, its database made empty by CREATE DATABASE (<see cref="Made"/>); <paramref name="now"/> is the clock the
-    /// sweep and the row read, the time now unless a test moves it.
+    /// sweep and the row read, the time now unless a test moves it; <paramref name="named"/> is the synthetic copy's name, where the copy
+    /// is it, and a run's copy takes a name of its own.
     /// </summary>
     internal static Result<SqlServer.Copy> Create(string repositoryRoot, string server, SqlServer.QueryLog log,
-        Func<string, IPAddress[]>? resolve = null, DateTimeOffset? now = null) =>
+        Func<string, IPAddress[]>? resolve = null, DateTimeOffset? now = null, CopyName? named = null) =>
         Made(repositoryRoot, server, log, resolve ?? Resolved, now ?? DateTimeOffset.UtcNow,
-            copy => Run(copy, "CREATE DATABASE", Make, log), leavesDatabase: false);
+            copy => Run(copy, "CREATE DATABASE", Make, log), leavesDatabase: false, named);
 
     /// <summary>
     /// A copy on the server given, refused on a named environment's host (R15 against dbchange/environments.json, read here once); this
     /// host's copies registered on that server more than a day before <paramref name="now"/> swept first; recorded with its server before
     /// <paramref name="make"/> makes its database, so a crash leaves a row to follow. A failed make removes the row; where the failure can
     /// have left a database (<paramref name="leavesDatabase"/>, a RESTORE), the database is dropped first, and a row whose database could
-    /// not be dropped stays for the sweep.
+    /// not be dropped stays for the sweep. The copy takes <paramref name="named"/> where it is given, the synthetic copy's name, and else a
+    /// name of its own; its row names this machine either way.
     /// </summary>
     private static Result<SqlServer.Copy> Made(string repositoryRoot, string server, SqlServer.QueryLog log,
-        Func<string, IPAddress[]> resolve, DateTimeOffset now, Func<SqlServer.Copy, Result<SqlServer.Copy>> make, bool leavesDatabase) =>
+        Func<string, IPAddress[]> resolve, DateTimeOffset now, Func<SqlServer.Copy, Result<SqlServer.Copy>> make, bool leavesDatabase,
+        CopyName? named = null) =>
         ServerName(server).Bind(name => EnvironmentsFile.Read(repositoryRoot)
             .Bind(environments => Unnamed(environments, repositoryRoot, name, resolve)))
             .Bind(name => Swept(repositoryRoot, server, name, now, log).Map(_ => name)).Bind(name =>
         {
-            var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId,
+            var copy = new SqlServer.Copy(named ?? CopyName.Make(Environment.MachineName, Environment.ProcessId,
                 BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, repositoryRoot);
             var row = new JsonObject
             {
-                ["name"] = copy.Name.ToString(), ["server"] = name.ToString(), ["machine"] = copy.Name.Machine,
-                ["pid"] = Environment.ProcessId,
+                ["name"] = copy.Name.ToString(), ["server"] = name.ToString(),
+                ["machine"] = CopyName.Make(Environment.MachineName, 0, 0).Machine, ["pid"] = Environment.ProcessId,
                 ["created"] = now.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
             };
             return Change(repositoryRoot, rows => [.. rows, row]).Bind(_ => make(copy).Match(

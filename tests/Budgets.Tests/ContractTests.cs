@@ -26,8 +26,8 @@ public sealed partial class ContractTests
     public static TheoryData<string> Answers => new(Contract.Verbs.Select(v => v.Name).Concat(["no-such-verb", ""]));
 
     /// <summary>
-    /// The help as the built dbchange prints it validates against its schema and says which verbs this build has: the four of M1 and
-    /// --version.
+    /// The help as the built dbchange prints it validates against its schema and says which verbs this build has: the four of M1,
+    /// synthetic-copy and --version.
     /// </summary>
     [Fact]
     [Trait("Category", "build")]
@@ -39,9 +39,9 @@ public sealed partial class ContractTests
         Assert.DoesNotContain('\r', output);
         var help = JsonNode.Parse(output)!;
         VerbAnswer.Valid("dbchange.help.1.schema.json", help);
-        Assert.Equal(["doctor", "read", "diff", "check", "--version"],
+        Assert.Equal(["doctor", "read", "diff", "synthetic-copy", "check", "--version"],
             help["verbs"]!.AsArray().Where(v => (bool)v!["built"]!).Select(v => (string)v!["name"]!));
-        help["exits"]![0]!["code"] = 8;
+        help["exits"]![0]!["code"] = 10;
         Assert.False(VerbAnswer.Evaluate("dbchange.help.1.schema.json", help).IsValid,
             "the schema admits an exit code the table does not have");
     }
@@ -526,6 +526,7 @@ public sealed partial class ContractTests
     [Trait("Value", "S2")]
     [InlineData("predict")]
     [InlineData("check outsystems")]
+    [InlineData("synthetic-copy status")]
     public void A_verb_this_build_does_not_have_answers_exit_6_with_verb_not_built_naming_the_verb(string verb)
     {
         var (exit, answer) = Answered([.. verb.Split(' '), "--json"],

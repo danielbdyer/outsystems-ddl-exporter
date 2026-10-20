@@ -422,8 +422,37 @@ internal static partial class ErrorPaths
             Failed(SqlServer.Resolve(Target("ref:main"), scratch))),
         new("an environment the environments file does not name", "target.unnamed", false, (scratch, _) =>
             Failed(SqlServer.Resolve(Target("env:qa"), RepositoryAt(scratch, Environments(Dev()))))),
-        new("the synthetic copy before its milestone", "synthetic-copy.not-built", false, (scratch, _) =>
-            Failed(SqlServer.Resolve(Target("synthetic-copy"), scratch))),
+        new("synthetic-copy where the registry holds no synthetic copy built to its end", "copy.synthetic-absent", false, (scratch, _) =>
+        {
+            var root = RepositoryAt(scratch, Environments(""));
+            return Failed(LocalServer.Synthetic(root, Io.EnvironmentsFile.Read(root),
+                () => "Server=tcp:127.0.0.1,11433;Integrated Security=true", _ => []));
+        }),
+        new("the synthetic copy's database another checkout made", "copy.foreign", false, (_, _) =>
+            LocalServer.Foreign(CopyName.Synthetic(Fingerprint.Of("a base"), null), ServerName.Of("localhost,11433", "host"))),
+        new("a constraint read back in another state than the copy restored", "synthetic-copy.trust", false, (_, _) =>
+            SyntheticCopy.Restoring(new TrustState(Made(ElementKey.Of("ForeignKeyConstraint", Made(Name.Of("dbo", "FK_T")))), true, true),
+                null) ?? throw new InvalidOperationException("a constraint read back absent was taken as restored")),
+        new("an existing data file that cannot be read", "existing-data.unreadable", false, (scratch, _) =>
+            Failed(ExistingDataFile.Read(Path.Combine(scratch, "absent.existing-data.json")))),
+        new("an existing data file holding a key its schema does not name", "existing-data.malformed", true, (scratch, planted) =>
+            Failed(ExistingDataFile.Read(Written(scratch, "existing-data.json",
+                "{ \"schema\": \"dbchange.existing-data/1\", \"states\": [], " + Quoted(planted) + ": true }")))),
+        new("a declared witness whose header names no table", "witness.header", false, (_, _) =>
+            Failed(Witnesses.Parse("-- plants: [a].[b].[c]\nINSERT INTO dbo.T (C) VALUES (1);", Literals))),
+        new("a declared witness's statement before any header", "witness.outside-block", false, (_, _) =>
+            Failed(Witnesses.Parse("DELETE FROM dbo.T;\n-- plants: [dbo].[T]\n", Literals))),
+        new("a declared witness that does not parse", "witness.unparsed", false, (_, _) =>
+            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C VALUES (1);", Literals))),
+        new("a declared witness of two batches", "witness.batch", false, (_, _) =>
+            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nDELETE FROM dbo.T;\nGO\nDELETE FROM dbo.T;", Literals))),
+        new("a declared witness that changes the schema", "witness.not-dml", false, (_, _) =>
+            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nDROP TABLE dbo.T;", Literals))),
+        new("a declared witness carrying a literal no repository defines", "witness.not-synthetic", true, (_, planted) =>
+            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) VALUES (N'" + planted + "');", Literals))),
+        new("a declared witness SQL Server refuses", "witness.failed", false, (_, _) =>
+            Witnesses.Failed(Made(Witnesses.Parse("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) VALUES (NULL);", Literals))[0], 1, 515,
+                "Cannot insert the value NULL into column 'C', table 'copy.dbo.T'; column does not allow nulls. INSERT fails.")),
         new("a connection whose variable is unset", "connection.unresolved", false, (scratch, _) =>
             Failed(SqlServer.Resolve(Target("env:dev"),
                 RepositoryAt(scratch,
@@ -601,6 +630,9 @@ internal static partial class ErrorPaths
         new("a required flag absent", "arguments.missing-flag", false, (_, _) => Failed(Contract.Flags([], ["--from"], [], []))),
         new("dbchange check with no check named", "arguments.unknown-check", false, (scratch, _) =>
             Carried(Verbs.Check(new Checkout(scratch, scratch, null, Cli.Contract.Version), SqlServer.QueryLog.Start(scratch), []))),
+        new("dbchange synthetic-copy with nothing named to do", "arguments.unknown-subcommand", false, (scratch, _) =>
+            Carried(Verbs.SyntheticCopy(new Checkout(scratch, scratch, null, Cli.Contract.Version), SqlServer.QueryLog.Start(scratch),
+                []))),
         new("a word that names no verb", "arguments.unknown-verb", false, (scratch, _) =>
             Answered(["frobnicate"], new Checkout(scratch, scratch, null, Cli.Contract.Version))),
         new("a verb this build has no body for", "verb.not-built", false, (scratch, _) =>
