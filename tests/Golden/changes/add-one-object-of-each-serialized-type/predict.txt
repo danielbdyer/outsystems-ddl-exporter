@@ -1,0 +1,4 @@
+precondition Unique on [dbo].[Measured] ([Id])
+empty: applies
+populated: applies
+violating: applies

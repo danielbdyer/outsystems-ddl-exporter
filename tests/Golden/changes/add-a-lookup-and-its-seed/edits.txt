@@ -1,0 +1,9 @@
+=== Modules/OrderStatusText.sql
+--- -- Intentionally no schema object. The column lives in Modules/Order.sql.
++++ CREATE TABLE dbo.Priority (Id INT NOT NULL CONSTRAINT PK_Priority_Id PRIMARY KEY, Code NVARCHAR(20) NOT NULL);
+=== Data/Seed.sql
+--- SET NOCOUNT ON;
++++ SET NOCOUNT ON;
++++ GO
++++ MERGE dbo.Priority AS target USING (VALUES (1, N'Low'), (2, N'High')) AS source (Id, Code) ON target.Id = source.Id
++++ WHEN NOT MATCHED BY TARGET THEN INSERT (Id, Code) VALUES (source.Id, source.Code);

@@ -1,0 +1,9 @@
+precondition ForeignKey on [dbo].[Note] ([CustomerId])
+precondition Unique on [dbo].[Note] ([Code])
+precondition Unique on [dbo].[Note] ([Id])
+precondition Check on [dbo].[Note] ([Pinned])
+precondition Check on [dbo].[Note] ([Score])
+precondition Check on [dbo].[Note] ([Score])
+empty: applies
+populated: applies
+violating: applies

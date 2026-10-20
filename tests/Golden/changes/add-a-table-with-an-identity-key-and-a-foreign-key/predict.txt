@@ -1,0 +1,5 @@
+precondition ForeignKey on [dbo].[Invoice] ([CustomerId])
+precondition Unique on [dbo].[Invoice] ([Id])
+empty: applies
+populated: applies
+violating: applies

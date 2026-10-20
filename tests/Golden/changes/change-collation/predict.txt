@@ -1,0 +1,4 @@
+precondition Fits on [dbo].[Customer] ([Name])
+empty: applies
+populated: applies
+violating: applies

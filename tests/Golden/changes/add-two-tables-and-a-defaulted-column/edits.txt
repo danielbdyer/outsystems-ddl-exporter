@@ -1,0 +1,9 @@
+=== Modules/OrderStatusText.sql
+--- -- Intentionally no schema object. The column lives in Modules/Order.sql.
++++ CREATE TABLE dbo.Channel (Id INT NOT NULL CONSTRAINT PK_Channel_Id PRIMARY KEY, Name NVARCHAR(50) NOT NULL);
++++ GO
++++ CREATE TABLE dbo.Segment (Id INT NOT NULL CONSTRAINT PK_Segment_Id PRIMARY KEY, Name NVARCHAR(50) NOT NULL);
+=== Modules/Customer.sql
+--- AccountId       INT             NULL,
++++ AccountId       INT             NULL,
++++     Tier            INT             NOT NULL CONSTRAINT DF_Customer_Tier DEFAULT (0),

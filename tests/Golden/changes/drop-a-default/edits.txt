@@ -1,0 +1,3 @@
+=== Modules/Category.sql
+--- NOT NULL CONSTRAINT DF_Category_IsActive DEFAULT (1),
++++ NOT NULL,

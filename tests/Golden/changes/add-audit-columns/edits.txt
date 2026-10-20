@@ -1,0 +1,6 @@
+=== Modules/Customer.sql
+--- AccountId       INT             NULL,
++++ AccountId       INT             NULL,
++++     CreatedAt       DATETIME2       NOT NULL CONSTRAINT DF_Customer_CreatedAt DEFAULT (SYSUTCDATETIME()),
++++     CreatedBy       NVARCHAR(128)   NOT NULL CONSTRAINT DF_Customer_CreatedBy DEFAULT (SUSER_SNAME()),
++++     UpdatedAt       DATETIME2       NOT NULL CONSTRAINT DF_Customer_UpdatedAt DEFAULT (SYSUTCDATETIME()),

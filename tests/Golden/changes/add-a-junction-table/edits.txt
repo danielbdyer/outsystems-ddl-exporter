@@ -1,0 +1,5 @@
+=== Modules/OrderStatusText.sql
+--- -- Intentionally no schema object. The column lives in Modules/Order.sql.
++++ CREATE TABLE dbo.CustomerAccount (CustomerId INT NOT NULL CONSTRAINT FK_CustomerAccount_Customer REFERENCES dbo.Customer (Id),
++++     AccountId INT NOT NULL CONSTRAINT FK_CustomerAccount_Account REFERENCES dbo.Account (Id),
++++     CONSTRAINT PK_CustomerAccount PRIMARY KEY (CustomerId, AccountId));

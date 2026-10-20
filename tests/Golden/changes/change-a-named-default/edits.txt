@@ -1,0 +1,3 @@
+=== Modules/Order.sql
+--- CONSTRAINT DF_Order_StatusText DEFAULT (N'Pending'),
++++ CONSTRAINT DF_Order_StatusText DEFAULT (N'New'),

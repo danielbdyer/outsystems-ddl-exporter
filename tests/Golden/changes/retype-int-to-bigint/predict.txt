@@ -1,0 +1,4 @@
+precondition Fits on [dbo].[OrderLine] ([LineNumber])
+empty: applies
+populated: applies
+violating: applies

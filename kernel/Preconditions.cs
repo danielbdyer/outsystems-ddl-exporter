@@ -273,9 +273,11 @@ public static class Preconditions
     /// are the operations DacFx 170.5.96 adds around the change's own, as measured package to package: a Refresh, UnbindSchemabinding or
     /// RebindSchemabinding of a module over a changed object; a Drop and a Create of one object the after model holds that reads a column
     /// the change alters, or a computed column over one, since DacFx drops an index, a statistic, a key, a foreign key, a check or a
-    /// default before an ALTER COLUMN of a column it reads and creates it after; and a Drop or a Create of an object the after model holds
-    /// on a table the change's own TableRebuild creates again, or over a column of one. A Create alone of an object over an altered column
-    /// is drift: the environment lacks that object, and the plan creates it whatever the change does.
+    /// default before an ALTER COLUMN of a column it reads and creates it after; a TableRebuild of a table on which the change creates or
+    /// drops a key, an index or a constraint, as DacFx rebuilds a table whose clustered primary key moves to other columns; and a Drop or a
+    /// Create of an object the after model holds on a table the change's own TableRebuild creates again, or over a column of one. A
+    /// Create alone of an object over an altered column is drift: the environment lacks that object, and the plan creates it whatever the
+    /// change does.
     /// </summary>
     public static SortedArray<PlanOperation> BaselineDrift(DeployReport plan, SortedArray<Element> after, Change change,
         Collation collation)
@@ -307,14 +309,17 @@ public static class Preconditions
 
         HashSet<ElementKey> Named(Func<PlanOperationKind, bool> kind) =>
             plan.Operations.Where(o => kind(o.Kind)).Select(o => o.Key).ToHashSet(comparer);
+        // A table whose key, index or constraint the change creates or drops: DacFx may rebuild it to do so, as for a clustered key.
+        var keyed = new HashSet<ElementKey>(change.Created.Concat(change.Dropped).SelectMany(Hosts).OfType<ElementKey>(), comparer);
         var rebuilt = Named(k => k is PlanOperationKind.TableRebuild);
-        rebuilt.IntersectWith(made);
+        rebuilt.RemoveWhere(t => !made.Contains(t) && !keyed.Contains(t));
         var (dropped, created) = (Named(k => k is PlanOperationKind.Drop), Named(k => k is PlanOperationKind.Create));
         bool Recreated(PlanOperation o) => o.Kind is PlanOperationKind.Drop or PlanOperationKind.Create
             && held.TryGetValue(o.Key, out var e)
             && ((dropped.Contains(o.Key) && created.Contains(o.Key) && ColumnsRead(e).Any(altered.Contains))
                 || ColumnsRead(e).Select(c => c.Parent).Concat(Hosts(e)).Any(t => t is not null && rebuilt.Contains(t)));
-        return SortedArray.Of(plan.Operations.Where(o => !o.Kind.IsConsequence && !made.Contains(o.Key) && !Recreated(o)));
+        return SortedArray.Of(plan.Operations.Where(o => !o.Kind.IsConsequence && !made.Contains(o.Key) && !Recreated(o)
+            && !(o.Kind is PlanOperationKind.TableRebuild && rebuilt.Contains(o.Key))));
     }
 
     /// <summary>The columns an object reads, so that DacFx drops it before an ALTER COLUMN of one and creates it after: an index's or a
