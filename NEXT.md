@@ -1,6 +1,6 @@
 # Next — rewritten by the session that finishes something; never appended
-Updated 2026-10-19 by #705: M2 has started on the operator's go, with WP 2.1's first slice; the local server moves to LocalDB and a
-native SQL Server Express; the operator's rulings of 2026-10-19 are in `DECISIONS.md` and the plan; spike S2 ran on both DacFx releases.
+Updated 2026-10-20 by #705: M2 has started on the operator's go, with WP 2.1's first slice; spikes S2 and S9 to S11 ran on both DacFx
+releases; check drift names a check written with IN and its OR form; the operator's rulings of 2026-10-19 are in `DECISIONS.md`.
 
 ## The operator's actions
 - Run the laptop check against Dev (M1 exit 1, spikes S1 and S3) with the tool folder built at the branch head: in the
@@ -17,13 +17,13 @@ native SQL Server Express; the operator's rulings of 2026-10-19 are in `DECISION
 - Send S5 to S8, and §17 items 21 and 22 of `V3_MILESTONES.md`, to the people below.
 
 ## In flight
-- WP 2.1's first slice (kernel `Preconditions` and `Outcome.Predict`); the local server's move off Docker; the rulings
-  of 2026-10-19 carried into `V3_MILESTONES.md`, `VALUES.md` and `V3_PARITY.md`.
+- WP 2.1's first slice (kernel `Preconditions` and `Outcome.Predict`); the rulings of 2026-10-19 carried into the plan, `VALUES.md` and `V3_PARITY.md`.
 
 ## Next
-- WP 2.2 (its reader replaces `BlockOnPossibleDataLossChecks.In` in `Io.Tests: BlockOnPossibleDataLossCheckTests`, held to
-  `tests/Golden/data-loss-checks/`), WP 2.3, WP 3.8 and spikes S9 to S11 (their verbs added to `tests/DacFx162/`); then WP 3.4's remainder with spike S4,
-  WP 2.5, WP 2.6, WP 3.5 and WP 7.1. WP 2.6 moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6). `ParityResolves` prints where the ledger stands.
+- WP 2.2 (its reader replaces `BlockOnPossibleDataLossChecks.In` in `Io.Tests: BlockOnPossibleDataLossCheckTests`, held to `tests/Golden/data-loss-checks/`)
+  and WP 3.8; then WP 3.4's remainder with spike S4, WP 2.5, WP 2.6, WP 3.5 and WP 7.1. WP 2.6 moves the catalog to `tests/Cases/` (not held yet: WP 2.6), re-reading
+  against `Io.Tests: SpikeReceiptTests` the `verify` cases S9 to S11 bear on: PLT-87, 88 and 90, OP-toggle-trust-03 to 05, INV-H6-01, CLS-14, REC-19, QST-55,
+  QST-59, OP-add-default-04, OP-temporal-convert-04. WP 3.5's step 4 reads trust from the catalog (`V3_MILESTONES.md` §6); its step 8 calls `CheckWrittenWithIn.Of`.
 - `kernel/Environments.cs` LocalServerKind parses the unread key `localServer` as `docker` or `localdb`, and
   `tests/Golden/dbchange/environments.json` writes `docker`; WP 3.4 drops the key from both and from EnvironmentsTests and PublishProfilesTests.
 - Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the vendoring verb's two

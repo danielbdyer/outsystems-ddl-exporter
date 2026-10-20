@@ -1,0 +1,3 @@
+create-entity Table [dbo].[Note]
+unclassified change: prove it, created Procedure [dbo].[NoteCount]
+warning classify.check-in-list CheckConstraint [dbo].[Note].[Pinned].[ExpressionDependencies]
