@@ -1,0 +1,8 @@
+=== Modules/Order.sql
+--- CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id)
++++ CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id),
++++     CONSTRAINT FK_Order_Customer_CustomerId FOREIGN KEY (CustomerId) REFERENCES dbo.Customer (Id)
+=== Data/Seed.sql
+--- (5, N'Stark Industries', CAST(NULL AS NVARCHAR(256)), N'+1-206-555-0105', N'South',  CAST(NULL AS INT)) -- Email NULL -> flips make-mandatory
++++ (5, N'Stark Industries', CAST(NULL AS NVARCHAR(256)), N'+1-206-555-0105', N'South',  CAST(NULL AS INT)), -- Email NULL -> flips make-mandatory
++++     (999, N'Wayne Enterprises', N'ap@wayne.example', N'+1-206-555-0199', N'East', CAST(NULL AS INT))

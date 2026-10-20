@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
-using System.Text.RegularExpressions;
 
 namespace DbChange.Kernel;
 
@@ -122,11 +121,6 @@ public static class Classify
     /// <summary>The relationships through which an element names the object it stands on: a key's or a default's table, an index's, a
     /// statistic's, a trigger's, a default's column.</summary>
     private static readonly string[] On = ["Host", "DefiningTable", "IndexedObject", "OnObject", "Parent", "TargetColumn"];
-
-    /// <summary>IN followed by its list, outside a string literal.</summary>
-    private static readonly Regex InList = new(@"\bIN\s*\(", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-
-    private static readonly Regex Literal = new("'(?:[^']|'')*'", RegexOptions.CultureInvariant);
 
     /// <summary>
     /// What Classify reads beside the change: the tables dbchange/ledgers/cdc-tracked.md names for the environments classified; the
@@ -294,7 +288,7 @@ public static class Classify
     private static IEnumerable<Finding> InChecks(Change change, Dictionary<ElementKey, Element> now) => change.Created.Select(e => e.Key)
         .Concat(change.Altered.Select(a => a.Key)).Where(k => k.Type == "CheckConstraint")
         .Where(k => now.GetValueOrDefault(k)?["Expression"] is Value.Script { Content: var text }
-            && InList.IsMatch(Literal.Replace(text, "''")))
+            && CheckWrittenWithIn.Lists(text))
         .Select(k => Finding.Warning("classify.check-in-list", k.ToString(),
             k + " is written with IN, which SQL Server stores as a chain of ORs, so every plan drops and re-creates the check.",
             "Write the check in the OR form SQL Server stores, each value compared with = and joined by OR."));

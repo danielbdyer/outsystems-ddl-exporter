@@ -79,6 +79,10 @@ public static class SqlServerFixture
     public static async Task<int> ScalarAsync(string connectionString, string sql, string? name = null) =>
         Convert.ToInt32(await RunAsync(connectionString, sql, name, [], c => c.ExecuteScalarAsync()), CultureInfo.InvariantCulture);
 
+    /// <summary>The statement's first value as text, run with @name; null for no row or a NULL.</summary>
+    public static async Task<string?> TextAsync(string connectionString, string sql, string? name = null) =>
+        await RunAsync(connectionString, sql, name, [], c => c.ExecuteScalarAsync()) is string text ? text : null;
+
     internal static async Task DropAsync(string master, string name)
     {
         await ExecuteAsync(master, Drop, name);

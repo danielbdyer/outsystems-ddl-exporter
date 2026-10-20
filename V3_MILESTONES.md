@@ -427,9 +427,11 @@ first; and a published tool folder that already builds a classic project.
 | S6 | Do the laptops and the hosted agents have the .NET 10 SDK and a local server? Answered in part (the operator, 2026-10-19): the laptops run LocalDB 16.x and have no Docker, which v3 no longer uses. Open: the .NET 10 SDK on laptops (`dotnet --list-sdks`) and hosted agents, and sudo for `ci/sql.sh up` on hosted Ubuntu agents | the backport agent's `STATE.md` | §17 item 7 | building on the SSDT repository |
 | S7 | Which publish profile and which DacFx version does the Octopus step apply? | the Octopus project's settings, read by whoever owns the deployment step | `dbchange/profiles/pipeline.publish.xml` (options only); the toolchain row | M4 exit 4's meaning; §17 items 1 and 15 |
 | S8 | Which SQL Server version and compatibility level do Dev, QA and UAT run? | each environment, read-only (`SELECT @@VERSION`; `sys.databases.compatibility_level`) | the SQL Server version the local server must meet, in the toolchain row | R5's window; §17 item 19 |
-| S9 | Does a schema read (`LoadFromDatabase`, and Extract) keep a disabled foreign key and an untrusted (`WITH NOCHECK`) constraint as they are? (The Facsimile's §11 question 1; if not, trust state needs witnesses of its own) | this repository's CI, both DacFx releases | the case's receipt in the catalog | WP 3.5's trust step |
-| S10 | Does constraint validation run after the post-deploy script on DacFx 162.x, as on 170.5.96? (question 9; it decides whether a lookup seeded post-deploy satisfies a new foreign key) | this repository's CI, both releases | the case's receipt | WP 4.1's record by phase |
-| S11 | Do system-named constraints (`DF__…`) keep their names through a publish to a copy, so the head plan against the copy equals the plan against the environment? (question 10; the Facsimile's F5) | this repository's CI | the case's receipt | WP 3.5's identity step |
+| S9 | Does a schema read (`LoadFromDatabase`, and Extract) keep a disabled foreign key and an untrusted (`WITH NOCHECK`) constraint as they are? (The Facsimile's §11 question 1; if not, trust state needs witnesses of its own) | this repository's CI, both DacFx releases | `Io.Tests: SpikeReceiptTests`, the case's receipt until WP 2.6 moves the catalog to `tests/Cases/` | WP 3.5's trust step |
+| S10 | Does constraint validation run after the post-deploy script on DacFx 162.x, as on 170.5.96? (question 9; it decides whether a lookup seeded post-deploy satisfies a new foreign key) | this repository's CI, both releases | `Io.Tests: SpikeReceiptTests`, as S9's | WP 4.1's record by phase |
+| S11 | Do system-named constraints (`DF__…`) keep their names through a publish to a copy, so the head plan against the copy equals the plan against the environment? (question 10; the Facsimile's F5) | this repository's CI, both releases | `Io.Tests: SpikeReceiptTests`, as S9's | WP 3.5's identity step |
+
+**S9 to S11, answered on DacFx 162.5.57 and 170.5.96 alike (2026-10-20).** S9: `LoadFromDatabase` and Extract keep a disabled check or foreign key as the public property `Disabled`, and keep an untrusted one only as the internal model annotation `IsNotTrustedPropertyAnnotation`, which no public property and no element `Ssdt.ReadModel` reads exposes; a publish of the extracted package reproduces both states, but a project cannot declare a key untrusted (build warning SQL70588), no plan of the repository touches an untrusted key and no publish trusts it again, and the base is built from the repository, so WP 3.5's step 4 reads `is_disabled` and `is_not_trusted` of the constraints the change touches from the environment's catalog through `SqlServer.Measure` and restores them as DacFx's publish of an extracted package does (`NOCHECK CONSTRAINT` for a disabled one, `WITH NOCHECK CHECK CONSTRAINT` for an untrusted one), before the head is planned, since a disabled constraint changes the plan. S10: validation (`WITH CHECK CHECK CONSTRAINT`) runs after the commit and after the whole post-deploy script, so a parent the seed adds satisfies a new key, and a Msg 547 there leaves the main script and the seed applied and the key untrusted. S11: SQL Server names an unnamed constraint after its object id, so the names differ between a copy and an environment with history, an extract keeps a name only as the annotation `SqlInlineConstraintAnnotation` of an unnamed element, and the head plans against the two agree once each name is replaced by its role; a `DF__`-shaped name given explicitly (`is_system_named` 0) is dropped by every plan, and a check written with `IN` is dropped and re-created by every plan (§7). On SQL Server Express and LocalDB a database starts with `AUTO_CLOSE` ON, and the publish that sets it OFF restarts the database, after which object ids are allocated as if no dropped object had existed. The answers are `Io.Tests: SpikeReceiptTests` until WP 2.6 moves the Facsimile's catalog to `tests/Cases/` and turns the `verify` cases they settle into receipts.
 
 **Exit.** M0 closes with M1 once the operator installs WP 0.5's settings and hooks (`DECISIONS.md`,
 2026-09-24). What shows each exit: 1, the `fast` jobs of `.github/workflows/dbchange.yml` on both
@@ -609,8 +611,7 @@ database (it stays as a fixture).
 **Watch for.** Whether the planter's ordinal literals satisfy the SSDT repository's real check
 constraints. Where they cannot, the agent writes one valid row by hand (`planter-needs-row`), and if
 that turns out frequent, §17 item 20's trigger fires. S4 decides whether a fresh copy for a proof is
-a restore (assumed under twenty seconds) or a publish from scratch; S9 decides whether trust state
-needs witnesses of its own.
+a restore (assumed under twenty seconds) or a publish from scratch; trust is read from the catalog (S9, §6).
 
 ---
 
@@ -914,12 +915,11 @@ stays in service until parity and one release cycle side by side (M4 exit 8).
   commit (verified 2026-10-15, `archive/v2/TWIN_SUCCESSION.md` §2). So a wrong *clean* on a copy
   becomes a half-applied schema upstream. Law F, the record by phase (WP 4.1) and the captured
   profile (S7) bound it.
-- **Constraint validation runs after the post-deploy script** on DacFx 170.5.96. S10 checks 162.x;
-  if it differs there, a lookup the post-deploy script seeds may not satisfy a new foreign key.
+- **Constraint validation runs after the post-deploy script** on both DacFx releases (S10, §6).
 - **A copy that lies about the environment.** Re-publishing the base after planting erases the
   witnesses, and a copy whose constraints were forced trusted turns a block into a wrong *clean*,
   as the Twin's post-mint trust gate did. WP 3.5 never re-publishes the base and reproduces the
-  environment's trust state; S9 says whether a schema read keeps it to reproduce.
+  environment's trust state, read from the environment's catalog (S9).
 - **A pipeline that proves into an empty database passes every populated tightening.** v2's
   `pipelines/ssdt-agent-pr-validation.yml` does exactly that, and WP 5.3 never instantiates it.
 - **The planter's literals against the SSDT repository's real check constraints.** Frequent

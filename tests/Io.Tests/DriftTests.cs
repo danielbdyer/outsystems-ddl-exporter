@@ -353,6 +353,43 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         Assert.Empty(calls);
     }
 
+    /// <summary>
+    /// The operator's ruling of 2026-10-19: the sample change add-a-check-written-with-in, CK_Order_StatusText written as StatusText IN
+    /// (N'Pending', N'Shipped', N'Cancelled'), committed and published to a fresh copy, where SQL Server stores the check as a chain of ORs.
+    /// check drift at that commit stays strict, exit 5 with the check dropped and created again, and one warning names the cause and the
+    /// remedy: the check is written with IN, and the form to write instead is CHECK followed by sys.check_constraints.definition, quoted
+    /// from the copy. The check written in that form and committed, check drift against the same copy is exit 0.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_check_written_with_IN_differs_from_the_copy_it_was_published_to_and_check_drift_names_the_OR_form_SQL_Server_stores()
+    {
+        var commit = repository.Committed(GoldenProject.Change("add-a-check-written-with-in"));
+        var (copy, _, _) = await Published(null, commit);
+        using var disposable = DisposableCopy.Of(copy);
+        var stored = await SqlServerFixture.TextAsync(copy.Connection,
+            "SELECT definition FROM sys.check_constraints WHERE name = @name;", "CK_Order_StatusText");
+
+        var (exit, answer) = repository.Answer(
+            ["check", "drift", "--target", "copy:" + copy.Name, "--at", commit, "--profile", ScratchRepository.Profile]);
+
+        Assert.True(exit == 5, answer.ToJsonString());
+        Assert.DoesNotContain(" IN ", stored, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal([("create", "CheckConstraint [dbo].[CK_Order_StatusText]"), ("drop", "CheckConstraint [dbo].[CK_Order_StatusText]")],
+            answer["check"]!["operations"]!.AsArray().Select(o => ((string)o!["operation"]!, (string)o["key"]!)).Order());
+        var cause = Assert.Single(answer["findings"]!.AsArray(), f => (string)f!["code"]! == "drift.check-written-with-in")!;
+        Assert.Equal(("warning", "CheckConstraint [dbo].[CK_Order_StatusText]"), ((string)cause["severity"]!, (string)cause["subject"]!));
+        Assert.Contains("StatusText IN (N'Pending', N'Shipped', N'Cancelled')", (string)cause["message"]!, StringComparison.Ordinal);
+        Assert.EndsWith(": CHECK " + stored + ".", (string)cause["remedy"]!, StringComparison.Ordinal);
+
+        var remedied = repository.Committed(new SampleChange("CK_Order_StatusText written as SQL Server stores it",
+            [new GoldenEdit("Modules/Order.sql", "CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id)",
+                "CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id),\n    CONSTRAINT CK_Order_StatusText CHECK " + stored)], []));
+        (exit, answer) = repository.Answer(
+            ["check", "drift", "--target", "copy:" + copy.Name, "--at", remedied, "--profile", ScratchRepository.Profile]);
+        Assert.True(exit == 0, answer.ToJsonString());
+    }
+
     /// <summary>The plan of the package at <paramref name="dacpac"/> against the copy, extracted, package to package, as check drift
     /// plans.</summary>
     private static Plan Planned(string dacpac, SqlServer.Copy copy, PublishProfile.Strict profile)
@@ -368,18 +405,18 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
 
     /// <summary>
     /// A fresh copy, its collation set as given while it is still empty (the server's default when null), with the golden project built
-    /// under that collation (its DefaultCollation, the model's; the project as committed when null) published to it under the pipeline's
-    /// profile; the package and the profile too, for a plan against it. DacFx refuses a case-insensitive model deployed to a
-    /// case-sensitive database (SQL72030), so the package's collation follows the copy's.
+    /// under that collation (its DefaultCollation, the model's; the project at <paramref name="at"/>, the base when null, when the collation
+    /// is null) published to it under the pipeline's profile; the package and the profile too, for a plan against it. DacFx refuses a
+    /// case-insensitive model deployed to a case-sensitive database (SQL72030), so the package's collation follows the copy's.
     /// </summary>
-    private async Task<(SqlServer.Copy Copy, string Dacpac, PublishProfile.Strict Profile)> Published(string? collation)
+    private async Task<(SqlServer.Copy Copy, string Dacpac, PublishProfile.Strict Profile)> Published(string? collation, string? at = null)
     {
         var server = await SqlServerFixture.ServerAsync();
         var copy = GitTests.Ok(LocalServer.Create(repository.Root, server, SqlServer.QueryLog.Start(repository.Root)));
         string dacpac;
         if (collation is null)
         {
-            dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(repository.Root, repository.Base)), "project/SampleCatalog.sqlproj",
+            dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(repository.Root, at ?? repository.Base)), "project/SampleCatalog.sqlproj",
                 repository.Tool.Folder, Path.Combine(repository.Root, ".dbchange", "build"))).Path;
         }
         else
