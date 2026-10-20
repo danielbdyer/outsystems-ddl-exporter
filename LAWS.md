@@ -6,6 +6,9 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 
 | Law | The test, in English | The test |
 |---|---|---|
+| 11′ a planted set repeats itself, replants only the touched tables and holds no orphan its existing data lacks | A planted row links each reference it meets to a parent or holds an orphan its existing data holds | `DbChange.Kernel.Tests.WitnessProperties.A_planted_row_links_each_reference_it_meets_to_a_parent_or_holds_an_orphan_its_existing_data_holds` |
+| 11′ a planted set repeats itself, replants only the touched tables and holds no orphan its existing data lacks | A schema edit changes only the rows of the tables it touches | `DbChange.Kernel.Tests.WitnessProperties.A_schema_edit_changes_only_the_rows_of_the_tables_it_touches` |
+| 11′ a planted set repeats itself, replants only the touched tables and holds no orphan its existing data lacks | Two plans from the same inputs are identical | `DbChange.Kernel.Tests.WitnessProperties.Two_plans_from_the_same_inputs_are_identical` |
 | 2′ a published copy is in sync with its package | A published copy is in sync with its package and one column altered on it is exit 5 naming it | `DbChange.Io.Tests.DriftTests.A_published_copy_is_in_sync_with_its_package_and_one_column_altered_on_it_is_exit_5_naming_it` |
 | 3′ the model is complete | One database read twice by one identity fingerprints equally | `DbChange.Io.Tests.AggregateQueryTests.One_database_read_twice_by_one_identity_fingerprints_equally` |
 | 3′ the model is complete | A copy published from a package models to the package's keys and two copies of it to one fingerprint | `DbChange.Io.Tests.CopyTests.A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint` |
@@ -63,6 +66,8 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | D3 | An appended entry is on disk when Append returns and a reader sees every earlier entry | `DbChange.Io.Tests.WriteTests.An_appended_entry_is_on_disk_when_Append_returns_and_a_reader_sees_every_earlier_entry` |
 | D3 | Writes utf8 without a bom in the line ending on disk | `DbChange.Io.Tests.WriteTests.Writes_utf8_without_a_bom_in_the_line_ending_on_disk` |
 | D3 | Text is fingerprinted in its canonical form | `DbChange.Kernel.Tests.FingerprintTests.Text_is_fingerprinted_in_its_canonical_form` |
+| D6 | A schema edit changes only the rows of the tables it touches | `DbChange.Kernel.Tests.WitnessProperties.A_schema_edit_changes_only_the_rows_of_the_tables_it_touches` |
+| D6 | Two plans from the same inputs are identical | `DbChange.Kernel.Tests.WitnessProperties.Two_plans_from_the_same_inputs_are_identical` |
 | G6 | No verb writes to a named environment | `DbChange.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
 | L1 | An error carries a remedy that is one move in the register | `DbChange.Budgets.Tests.Register.Errors.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
 | L1 | Every text a finding writes is in the register | `DbChange.Budgets.Tests.Register.Findings.Every_text_a_finding_writes_is_in_the_register` |
@@ -105,6 +110,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | O11 | A large change renders short | `DbChange.Io.Tests.AnswerSizeTests.A_large_change_renders_short` |
 | O12 | Each banned symbol planted in the kernel is a build error | `DbChange.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |
 | O12 | LocalServer names a copy for its host and process registers it and Drop removes the database and its row | `DbChange.Io.Tests.CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |
+| P1 | A planted literal comes from no environment | `DbChange.Kernel.Tests.WitnessProperties.A_planted_literal_comes_from_no_environment` |
 | P2 | TableEmpty reads the table's rows and the same rows from sys partitions as a VIEW DEFINITION only login | `DbChange.Io.Tests.AggregateQueriesCountTests.TableEmpty_reads_the_table_s_rows_and_the_same_rows_from_sys_partitions_as_a_VIEW_DEFINITION_only_login` |
 | P2 | A collation that is no SQL Server collation name is written into no query and its preconditions read not predictable read only | `DbChange.Io.Tests.AggregateQueriesTests.A_collation_that_is_no_SQL_Server_collation_name_is_written_into_no_query_and_its_preconditions_read_not_predictable_read_only` |
 | P2 | Every query the builders make passes the allowlist and converts only through a TRY form | `DbChange.Io.Tests.AggregateQueriesTests.Every_query_the_builders_make_passes_the_allowlist_and_converts_only_through_a_TRY_form` |
@@ -114,6 +120,8 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | P2 | Generated variants are admitted exactly when no forbidden form is planted | `DbChange.Io.Tests.AllowlistTests.Generated_variants_are_admitted_exactly_when_no_forbidden_form_is_planted` |
 | P2 | The allowlist admits each allowed form of its corpus and refuses each forbidden one | `DbChange.Io.Tests.AllowlistTests.The_allowlist_admits_each_allowed_form_of_its_corpus_and_refuses_each_forbidden_one` |
 | P2 | The corpus plants every form the work package names | `DbChange.Io.Tests.AllowlistTests.The_corpus_plants_every_form_the_work_package_names` |
+| P2 | Counts that give the same states plant the same rows | `DbChange.Kernel.Tests.WitnessProperties.Counts_that_give_the_same_states_plant_the_same_rows` |
+| P3 | A planted literal comes from no environment | `DbChange.Kernel.Tests.WitnessProperties.A_planted_literal_comes_from_no_environment` |
 | R1 | The committed DacFx is the release Directory Packages props pins | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_is_the_release_Directory_Packages_props_pins` |
 | R1 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |
 | R1 | A drift's provenance fingerprints the target's schema and the deploy report | `DbChange.Io.Tests.DriftTests.A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report` |
@@ -182,7 +190,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X5 | Git runs with LC ALL C and without the caller's LANGUAGE and LC MESSAGES | `DbChange.Io.Tests.GitTests.Git_runs_with_LC_ALL_C_and_without_the_caller_s_LANGUAGE_and_LC_MESSAGES` |
 | X5 | Loading io opts out of telemetry before DacFx loads | `DbChange.Io.Tests.TelemetryTests.Loading_io_opts_out_of_telemetry_before_DacFx_loads` |
 
-Rows of `VALUES.md` no test declares: A1, A3, A5, A6, A7, A9, D1, D4, D5, D6, D7, E1, E2, E3, E4, E5, E6, E7, E8, E9, G1, G2, G3, G4, G5, G7, G8, G9, L5, L10, L11, L12, O1, O3, O6, O8, O9, O10, P1, P3, R2, R4, S3, S4, S5, S6, S8, X4, X6.
+Rows of `VALUES.md` no test declares: A1, A3, A5, A6, A7, A9, D1, D4, D5, D7, E1, E2, E3, E4, E5, E6, E7, E8, E9, G1, G2, G3, G4, G5, G7, G8, G9, L5, L10, L11, L12, O1, O3, O6, O8, O9, O10, R2, R4, S3, S4, S5, S6, S8, X4, X6.
 
 ## Milestone exits
 

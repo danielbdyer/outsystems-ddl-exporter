@@ -1113,7 +1113,7 @@ var untrusted = new DacDeployOptions { BlockOnPossibleDataLoss = true, ScriptNew
 
 Code only; tests are budgeted separately below. `ci/budgets.json` carries these ceilings from M0. Since 2026-10-19 a package's ceiling is its lines measured that day plus twice the lines this appendix still plans for M2 to M7, rounded up to the next hundred, and the budget held hardest is each file's: 500 lines and 140 characters a line for a file of `kernel/`, `io/` or `cli/`, 800 lines and no width for a test file (the operator's rulings of 2026-10-19, `DECISIONS.md`).
 
-**`kernel/` (ceiling 9,700; planned 4,440)**
+**`kernel/` (ceiling 9,700; planned 5,292)**
 
 | File | Lines | M |
 |---|---:|---|
@@ -1127,7 +1127,7 @@ Code only; tests are budgeted separately below. `ci/budgets.json` carries these 
 | `Classify.cs` (renames of three kinds, shapes from `recognize:`) | 450 | M2 |
 | `Schema.cs` | 520 | M3 |
 | `Order.cs` | 180 | M3 |
-| `Witness.cs` (the existing-data tier's plan) | 500 | M3 |
+| `Witness.cs` (the existing-data tier's plan) and its partial files `Witness.Demands.cs`, `Witness.Rows.cs` and `Witness.Literals.cs`, at the 1,352 lines measured on 2026-10-20, where this row planned 500 until then | 1,352 | M3 |
 | `PullRequestDescription.cs`, `Locks.cs` | 570 | M5 |
 | `Platform.cs`, `Page.cs` (table classes, *in sync*) | 350 | M6 |
 
@@ -1151,8 +1151,8 @@ Code only; tests are budgeted separately below. `ci/budgets.json` carries these 
 M0), then one file per verb at about a hundred lines (M1 320 · M2 220 · M3 120 · M4 120 · M5 200 ·
 M6 160 · M7 60).
 
-**Per milestone (code):** M0 1,120 · M1 2,560 · M2 3,826 · M3 2,270 · M4 790 · M5 1,440 · M6 880 ·
-M7 460; about 13,300 in all, against a ceiling of 26,600. Before the re-cut of M3 (§17 item 20), M3
+**Per milestone (code):** M0 1,120 · M1 2,560 · M2 3,826 · M3 3,122 · M4 790 · M5 1,440 · M6 880 ·
+M7 460; about 14,200 in all, against a ceiling of 26,600. Before the re-cut of M3 (§17 item 20), M3
 planned 4,840: `Evidence.cs` 720 and `SyntheticData.cs` 1,800 in the kernel, 1,450 in io and 170 in
 cli, and they return with the trigger. `ci/budgets.json`'s planned figures moved to the re-cut when the
 operator confirmed it on 2026-10-19.

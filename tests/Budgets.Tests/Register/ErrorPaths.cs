@@ -119,6 +119,12 @@ internal static partial class ErrorPaths
             Failed(DbChange.Kernel.Outcome.Predict(new ExistingData([]),
                 [new BlockOnPossibleDataLossSite(Table.Name, "ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;")],
                 [], []))),
+        new("a planted precondition on a table the copy lacks and the change does not create", "plan.missing-object", false, (_, _) =>
+            Failed(Witness.Plan(new Schema([]), [new Precondition(Table.Name, [], new PreconditionKind.TableEmpty())],
+                new ExistingData([])))),
+        new("a planted precondition the existing data holds no state for", "plan.uncounted", false, (_, _) =>
+            Failed(Witness.Plan(new Schema([new Kernel.Table(Table.Name, [], null, [], [], [], [], null)]),
+                [new Precondition(Table.Name, [], new PreconditionKind.TableEmpty())], new ExistingData([])))),
         new("a column renamed by typing, with no refactorlog entry", "rename.column-without-entry", false, (_, _) =>
             Refusal(["CREATE TABLE dbo.Customer (Id INT NOT NULL, Phone NVARCHAR(40) NULL);"],
                 ["CREATE TABLE dbo.Customer (Id INT NOT NULL, Mobile NVARCHAR(40) NULL);"])),
