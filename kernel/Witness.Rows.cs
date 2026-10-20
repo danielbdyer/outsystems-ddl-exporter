@@ -132,8 +132,9 @@ public sealed partial record Witness
         /// <summary>
         /// A table's rows: row r takes, in each column, the value of the demand that covers the row and sets the column, else the column's
         /// clean value at r; it serves presence where the table's rows do, and every demand that covers it. A value no literal can write is
-        /// a need, and so is a one-column key whose planted values repeat where no demand asks it to (PLT-42, PLT-114); either leaves the
-        /// table's rows to the declared witnesses, and null is returned.
+        /// a need, and so are a demand's literal in a column of a foreign key the row meets (<see cref="Unmet"/>) and a one-column key
+        /// whose planted values repeat where no demand asks it to (PLT-42, PLT-114); each leaves the table's rows to the declared
+        /// witnesses, and null is returned.
         /// </summary>
         private SortedArray<Row>? Build(Table table)
         {
@@ -149,9 +150,11 @@ public sealed partial record Witness
                 {
                     var by = covering.FirstOrDefault(d => d.Demand.Columns.Contains(column.Name));
                     var value = by.Demand is { } demand ? demand.Value(CleanAt, r, r - by.Start, column.Name) : CleanAt(column.Name, r);
-                    if (value is null && by.Demand is { } unwritten)
+                    var parent = by.Demand is { Purpose.Precondition.Kind: not PreconditionKind.ForeignKey }
+                        && value is not (null or Planted.Null or Planted.Linked) ? Unmet(table, column.Name, suspends) : null;
+                    if ((value is null || parent is not null) && by.Demand is { } unwritten)
                     {
-                        reasons.Add(new NeedsRow.Reason.NoClassValue(column.Name, unwritten.Purpose.Class));
+                        reasons.Add(new NeedsRow.Reason.NoClassValue(column.Name, unwritten.Purpose.Class, parent));
                     }
 
                     cells.Add(new Cell(column.Ordinal, column.Name, value ?? new Planted.Null()));
@@ -248,6 +251,28 @@ public sealed partial record Witness
             var deferred = order.Deferred.Contains(new Order.Deferral(table.Name, link.Key));
             return new Planted.Linked(link.Parent, parentColumn, r,
                 deferred ? leg.Nullable ? new Planted.Null() : Plain(leg, r, reasons) : null);
+        }
+
+        /// <summary>
+        /// The parent of a reference the row meets that a demand's literal in one of its columns leaves: no value of a class is a key of
+        /// the parent, so the copy would hold an orphan its existing data lacks. A reference the row meets is an enabled reference of the
+        /// copy, or one the change validates; null where the column is a leg of none. Where the environment answered the parent empty,
+        /// the environment's rows hold orphans there too, so the literal stands and the copy's reference is suspended (PLT-59).
+        /// </summary>
+        private Name? Unmet(Table table, Name column, List<ElementKey> suspends)
+        {
+            foreach (var link in links[table.Name].Where(l => l.Met && links.ContainsKey(l.Parent) && l.Legs.Any(g => g.Column == column)
+                && (l.Validated || l.Copy is { Disabled: false })))
+            {
+                if (!empty.Contains(link.Parent))
+                {
+                    return link.Parent;
+                }
+
+                suspends.AddRange(link.Copy is { Disabled: false } copy ? [copy.Key] : []);
+            }
+
+            return null;
         }
 
         /// <summary>The ordinal literal, NULL in a nullable column of a type the planter writes none for, and a need in a NOT NULL

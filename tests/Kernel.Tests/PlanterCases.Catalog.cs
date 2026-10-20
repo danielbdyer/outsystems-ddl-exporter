@@ -148,7 +148,8 @@ public sealed partial class PlanterCases
             [dbo].[T] at 0
               row 1 (presence): [Id] the largest [Id] of [dbo].[T] plus 1, [c] N'w1', [ValidFrom] omitted, [ValidTo] omitted
             """),
-        ["PLT-35"] = new(Copy(Temporal), [Rows(TableEmpty("T")), Rows(TableEmpty("T_History"))], """
+        ["PLT-35"] = new(Copy(Temporal), [Rows(TableEmpty("T")), Rows(TableEmpty("T_History")),
+                Violating(Fits("T_History.c", "nvarchar(20)", "nvarchar(5)"), RowClasses.OverLength)], """
             [dbo].[T] at 0
               row 1 (presence): [Id] the largest [Id] of [dbo].[T] plus 1, [c] N'w1', [ValidFrom] omitted, [ValidTo] omitted
             needs a declared row of [dbo].[T_History]: [dbo].[T_History] is the history table of [dbo].[T], whose rows SQL Server writes only from updates of [dbo].[T].
@@ -341,6 +342,13 @@ public sealed partial class PlanterCases
               row 1 (presence; NotNull on [dbo].[Product] ([Name]); Fits on [dbo].[Product] ([Code]) OverLength): [Id] omitted, [Code] N'w1wwwwwwwww', [Name] NULL, [LegacyCode] N'w1', [CategoryId] 1
               row 2 (presence; Fits on [dbo].[Product] ([Code]) OverBytes): [Id] omitted, [Code] N'w2         ', [Name] N'w2', [LegacyCode] N'w2', [CategoryId] 2
             """),
+
+        // Trust: the orphan an environment holds under a foreign key enabled and untrusted is planted with the copy's foreign key suspended.
+        ["PLT-89"] = new(PgCopy.With(Ordering.Checked("CK_Order_Total", "([Total]>=(0))")),
+            [Rows(HasOrders), Violating(ForeignKey("Order", "Customer", ("CustomerId", "Id"))), Violating(TotalNonNegative)], """
+            [dbo].[Order] at 4
+              row 1 (presence; ForeignKey on [dbo].[Order] ([CustomerId])): [Id] omitted, [CustomerId] the largest [Id] of [dbo].[Customer] plus 1000, [StatusId] 1, [Total] 1.00, [StatusText] N'w1'; suspends ForeignKeyConstraint [dbo].[FK_Order_Customer]
+            """, Declared: new([], [TotalNonNegative])),
 
         // Acceptance: a value of no class, so that a populated but clean table stays clean.
         ["PLT-94"] = new(Copy(T("T", "Id int IDENTITY", "Qty nvarchar(10)").Key("Id").Defaulted("Qty", "(N'')")),

@@ -40,7 +40,7 @@ A wiki is a git repository. So v3 has one adapter per source, which reads the so
 its own self-description, without knowing which verb asked. A verb binds that reading to one
 question, and its parameters are data wherever they can be. Adapters grow with sources, verbs grow
 with questions, and nothing grows with their product. The lifecycle tool is budgeted at **≤ 26,600
-lines of C#** (kernel ≤ 9,700, io ≤ 13,500, cli ≤ 3,400, raised on 2026-10-19 by Appendix F's rule; about 11,400 planned since M3's re-cut, §17 item 20), against
+lines of C#** (kernel ≤ 9,700, io ≤ 13,500, cli ≤ 3,400, raised on 2026-10-19 by Appendix F's rule; about 14,200 planned since M3's re-cut, §17 item 20, and WP 2.3's and WP 3.8's measured sizes), against
 `V3_ARCHITECTURE.md` §6.6's ≤ 31,000 without the OSSYS reader (≈ 34,000 with it); the cutover
 tools, if ported, add §6.6's own figures.
 
@@ -352,8 +352,8 @@ assumed a feed, a store or the cutover tools:
 |---|---|---|---|---|---|---:|---|---|
 | M0 | Foundation | build and test an empty tool under its laws and budgets; read `AGENTS.md` | R24 (this repository's side) | the two dependency laws | four hooks (814 lines); root agent files | ~1,120 | day 1 | — |
 | M1 | Read | ask, read-only, whether Dev matches the repository at a tag; see what a branch changes, property by property | R12 (Dev half), R13 (stamp and window), R14 (principal, extended events), R15 (types), R16 | 2′, 3′, and "a named environment cannot be written" | the read side as a read path | ~2,560 | days 2–3 | M0 |
-| M2 | Predict | see, read-only, whether a change blocks or applies on each environment they can read, and why; a lead pastes QA and UAT | R7 (scan, first half), R11, R12 (drift line), R14 (allowlist), R16 | 9 (as a property) | the aggregate SQL in the skills | ~1,880 | days 4–5 | M1 |
-| M3 | Synthetic copy | build a current synthetic copy from the clone in one command, at the existing-data tier: the repository's schema at a ref, its seeds, presence rows, and the witness rows of an `ExistingData` when one is given. The shape and scale tiers, and refreshing evidence, return on §17 item 20's trigger | R3, R4, R5 and R6 (at the existing-data tier), R7 (the scan), R8 (as the planter's determinism), R12 (the synthetic copy's half) | 11′, 12′ (their planted forms) | `bake.mjs`, the Twin CLI, `twin.json`, scenarios | ~2,300 | days 2–6, lane T | M0 (the planter's plan); M1 (`synthetic-copy up`) |
+| M2 | Predict | see, read-only, whether a change blocks or applies on each environment they can read, and why; a lead pastes QA and UAT | R7 (scan, first half), R11, R12 (drift line), R14 (allowlist), R16 | 9 (as a property) | the aggregate SQL in the skills | ~3,830 | days 4–5 | M1 |
+| M3 | Synthetic copy | build a current synthetic copy from the clone in one command, at the existing-data tier: the repository's schema at a ref, its seeds, presence rows, and the witness rows of an `ExistingData` when one is given. The shape and scale tiers, and refreshing evidence, return on §17 item 20's trigger | R3, R4, R5 and R6 (at the existing-data tier), R7 (the scan), R8 (as the planter's determinism), R12 (the synthetic copy's half) | 11′, 12′ (their planted forms) | `bake.mjs`, the Twin CLI, `twin.json`, scenarios | ~3,150 | days 2–6, lane T | M0 (the planter's plan); M1 (`synthetic-copy up`) |
 | M4 | Prove | prove a change on a fresh copy at each environment's existing data, with its provenance, and see whether it applies to that environment | R6 (blocks at every tier), R9, R10, R13 (trust), R15, R25, R27 (tool side) | 6, 7, 8, 9, 10, P, T | `prove.mjs`; the `sqlpackage` install step | ~790 | days 7–9 | M2; WPs 3.1–3.5 |
 | M5 | Describe and gate | open a pull request whose description is generated and whose gate reproduces it from the clone in under ten minutes | R1, R2, R16 (whole chain), R17, R18, R19, R23 (the gate's cells), R24 (the SSDT repository's side), R26 (in part) | 1′ (description), 5′ | `inflight-check.mjs`; the placeholder pipeline; the ledger overwrite | ~1,440 | days 10–11; the description from day 6 | M4; WP 7.2's `description.md` |
 | M6 | After deploy | see per environment whether it is deployed, matching its tag, refreshed, republished and in sync, on one generated page | R7 (scan, whole chain), R20, R21, R22, R23 | 1′ (page) | — | ~880 | days 12–13 | M5 |
@@ -361,7 +361,7 @@ assumed a feed, a store or the cutover tools:
 | M8 | One tool | use one tool and one set of documents; the archive leaves `main` | — | all of them, generated into `LAWS.md` | the archive's CI | ~0 | Prod's cutover + 30 days | M7 |
 | W | The cutover tools | only if a consumer exists: re-emit from OSSYS; decide; move data | — | 1–5 in their emit forms; oracles 1 and 4 | v2 | §6.6 | on a decision | §17, item 9 |
 
-The C# column sums to about 11,400 against the 26,600 ceiling (13,970 before the re-cut of M3, §17 item 20); tests are budgeted at ≤ 43,100 (raised from 10,500 when M1 closed and from 20,000 on 2026-10-19)
+The C# column sums to about 14,200 against the 26,600 ceiling (13,970 before the re-cut of M3, §17 item 20, and before WP 2.3 and WP 3.8 measured M2 at 3,826 and M3 at 3,151); tests are budgeted at ≤ 43,100 (raised from 10,500 when M1 closed and from 20,000 on 2026-10-19)
 (Appendix F). The days assume agents writing against executable exit checks, one independent
 review per pull request, the operator reviewing the kernel and contract pull requests, and four
 lanes running at once. A workflow on a 4-CPU container runs two agents at a time, which stretches
@@ -1113,7 +1113,7 @@ var untrusted = new DacDeployOptions { BlockOnPossibleDataLoss = true, ScriptNew
 
 Code only; tests are budgeted separately below. `ci/budgets.json` carries these ceilings from M0. Since 2026-10-19 a package's ceiling is its lines measured that day plus twice the lines this appendix still plans for M2 to M7, rounded up to the next hundred, and the budget held hardest is each file's: 500 lines and 140 characters a line for a file of `kernel/`, `io/` or `cli/`, 800 lines and no width for a test file (the operator's rulings of 2026-10-19, `DECISIONS.md`).
 
-**`kernel/` (ceiling 9,700; planned 5,292)**
+**`kernel/` (ceiling 9,700; planned 5,321)**
 
 | File | Lines | M |
 |---|---:|---|
@@ -1127,7 +1127,7 @@ Code only; tests are budgeted separately below. `ci/budgets.json` carries these 
 | `Classify.cs` (renames of three kinds, shapes from `recognize:`) | 450 | M2 |
 | `Schema.cs` | 520 | M3 |
 | `Order.cs` | 180 | M3 |
-| `Witness.cs` (the existing-data tier's plan) and its partial files `Witness.Demands.cs`, `Witness.Rows.cs` and `Witness.Literals.cs`, at the 1,352 lines measured on 2026-10-20, where this row planned 500 until then | 1,352 | M3 |
+| `Witness.cs` (the existing-data tier's plan) and its partial files `Witness.Demands.cs`, `Witness.Rows.cs` and `Witness.Literals.cs`, at the 1,381 lines measured on 2026-10-20, where this row planned 500 until then | 1,381 | M3 |
 | `PullRequestDescription.cs`, `Locks.cs` | 570 | M5 |
 | `Platform.cs`, `Page.cs` (table classes, *in sync*) | 350 | M6 |
 
@@ -1151,7 +1151,7 @@ Code only; tests are budgeted separately below. `ci/budgets.json` carries these 
 M0), then one file per verb at about a hundred lines (M1 320 · M2 220 · M3 120 · M4 120 · M5 200 ·
 M6 160 · M7 60).
 
-**Per milestone (code):** M0 1,120 · M1 2,560 · M2 3,826 · M3 3,122 · M4 790 · M5 1,440 · M6 880 ·
+**Per milestone (code):** M0 1,120 · M1 2,560 · M2 3,826 · M3 3,151 · M4 790 · M5 1,440 · M6 880 ·
 M7 460; about 14,200 in all, against a ceiling of 26,600. Before the re-cut of M3 (§17 item 20), M3
 planned 4,840: `Evidence.cs` 720 and `SyntheticData.cs` 1,800 in the kernel, 1,450 in io and 170 in
 cli, and they return with the trigger. `ci/budgets.json`'s planned figures moved to the re-cut when the

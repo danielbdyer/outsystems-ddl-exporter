@@ -11,9 +11,10 @@ namespace DbChange.Kernel.Tests;
 /// <summary>
 /// Witness.Plan's laws as properties (V3_MILESTONES.md WP 3.8; VALUES.md D6, P1, P2 and P3; law 11′ in its plan's half): over the generated
 /// schemas of Schema.Of's properties (SchemaProperties), each with preconditions drawn over its tables and columns (TableEmpty, NotNull on
-/// a nullable column, Fits into a type of eleven, Unique on a column, a check, a foreign key to any table's Id) and a state drawn for each:
-/// populated or answered empty, violating or clean, and the classes of a Fits or a Unique. The Facsimile's laws D1 (deterministic) and D3
-/// (S-stable planting) are archive/v2/ssdt-agent/facsimile/INVARIANTS.md's.
+/// a nullable column, Fits into a type of eleven, Unique on a column, a check, a foreign key to any table's Id, or, on a column of one of
+/// the table's foreign keys, which always takes a precondition, that foreign key's leg) and a state drawn for each: populated or answered
+/// empty, violating or clean, and the classes of a Fits or a Unique. The Facsimile's laws D1 (deterministic) and D3 (S-stable planting)
+/// are archive/v2/ssdt-agent/facsimile/INVARIANTS.md's.
 /// </summary>
 public sealed class WitnessProperties
 {
@@ -112,8 +113,8 @@ public sealed class WitnessProperties
     /// <summary>
     /// The copy holds no orphan its existing data lacks: each leg of a NOT NULL reference of the copy, and of a foreign key the change
     /// validates, takes its parent's key in every planted row, but a row that is the orphan an environment's violating ForeignKey holds,
-    /// a row whose parent the environment answered empty, which suspends the reference, a NULL in a nullable leg, and a leg another of
-    /// the row's purposes sets.
+    /// a row whose parent the environment answered empty, which suspends the reference, and a NULL in a nullable leg. A leg another
+    /// precondition sets to a value of its class is no exception: no such value is a parent's key, so the plan names a need.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -127,8 +128,10 @@ public sealed class WitnessProperties
 
     /// <summary>
     /// A populated but clean table stays clean, and a violating one breaks its rule: a row answers each class an environment holds, or the
-    /// plan names a need for its table; a NotNull answered clean finds no NULL in a row no other purpose of which sets the column; and a
-    /// Unique answered clean finds no two rows of equal literals over its key.
+    /// plan names a need that leaves the table's rows to the declared witnesses, which a check answered violating does not, since the
+    /// plan keeps the table's other rows beside it; a NotNull answered clean finds no NULL in a row no other purpose of which sets the
+    /// column; a Unique answered clean finds no two rows of equal literals over its key; and a table the environment answered empty in
+    /// every state holds no planted row, not even as the ancestor of another table's row (PLT-59).
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -141,9 +144,10 @@ public sealed class WitnessProperties
             {
                 var table = s.Precondition.Table;
                 var held = rows.TryGetValue(table, out var planted) ? planted : [];
-                var needed = plan.Needs.Any(n => n.Table == table);
+                var needed = plan.Needs.Any(n => n.Table == table && n.Whole);
                 return s.Precondition.Kind switch
                 {
+                    _ when Empty(i, table) => held.Count == 0,
                     PreconditionKind.Check => !s.Violating || plan.Needs.Any(n => n.Why is Witness.NeedsRow.Reason.FalseCheck f
                         && f.Check == s.Precondition),
                     PreconditionKind.TableEmpty => !s.Populated || held.Count > 0 || needed,
@@ -222,23 +226,26 @@ public sealed class WitnessProperties
     }
 
     /// <summary>Whether each leg of a reference the row meets takes the key of a parent the leg references, or the row is one of the
-    /// exceptions the property names: a NULL in a nullable leg, a leg another purpose of the row sets, or a leg one of whose parents the
-    /// environment answered empty. A column in two foreign keys to two parents takes one parent's key.</summary>
+    /// exceptions the property names: a NULL in a nullable leg, the orphan of a ForeignKey the row serves on that leg, or a leg one of
+    /// whose parents the environment answered empty. A column in two foreign keys to two parents takes one parent's key.</summary>
     private static bool Meets(Inputs i, Table table, Witness.Row row)
     {
-        bool Empty(Name parent) => i.States.Where(s => s.Precondition.Table == parent).ToArray() is { Length: > 0 } states
-            && states.All(s => !s.Populated);
         var validated = i.States.Where(s => s.Precondition.Table == table.Name).Select(s => s.Precondition.Kind)
             .OfType<PreconditionKind.ForeignKey>().SelectMany(f => f.Pairs.Select(p => (f.Parent, p.Column, Referenced: p.Referenced)));
         var mandatory = table.References.Where(r => !r.Optional).SelectMany(r => r.Legs.Select(l => (r.Parent, l.Column,
             Referenced: l.ParentColumn)));
         var legs = mandatory.Concat(validated).ToLookup(l => l.Column);
-        return legs.All(leg => leg.Any(l => Empty(l.Parent))
+        return legs.All(leg => leg.Any(l => Empty(i, l.Parent))
             || leg.Any(l => Value(row, leg.Key) is Witness.Planted.Linked linked && linked.Parent == l.Parent
                 && linked.Column == l.Referenced)
             || Value(row, leg.Key) is Witness.Planted.Null
-            || row.Serves.Any(p => p.Precondition is { } other && other.Columns.Contains(leg.Key)));
+            || row.Serves.Any(p => p.Precondition is { Kind: PreconditionKind.ForeignKey } other && other.Columns.Contains(leg.Key)));
     }
+
+    /// <summary>Whether the environment answered a table empty: it holds a state for the table, and every one says it holds no
+    /// row.</summary>
+    private static bool Empty(Inputs i, Name table) =>
+        i.States.Where(s => s.Precondition.Table == table).ToArray() is { Length: > 0 } states && states.All(s => !s.Populated);
 
     /// <summary>The classes a violating or class-holding state asks a row of, in the order of the flags; none for a clean NotNull,
     /// ForeignKey or Unique.</summary>
@@ -297,12 +304,19 @@ public sealed class WitnessProperties
 
             foreach (var c in table.Columns.OfType<Column.Stored>().Where(c => c.Identity is null && c.Default?.Sequence is null))
             {
-                PreconditionKind? kind = d.Of(10) switch
+                // A column of one of the table's foreign keys always takes a precondition, and a ForeignKey on it is that foreign key's
+                // leg, where the parent holds the column the leg references.
+                var leg = table.References.SelectMany(r => r.Legs.Where(l => l.Column == c.Name
+                        && schema.Find(r.Parent)?.Find(l.ParentColumn) is not null)
+                    .Select(l => new PreconditionKind.ForeignKey(r.Parent, [new PreconditionKind.ForeignKey.Pair(c.Name, l.ParentColumn)])))
+                    .FirstOrDefault();
+                PreconditionKind? kind = d.Of(leg is null ? 10 : 5) switch
                 {
                     0 when c.Nullable => new PreconditionKind.NotNull(),
                     1 => new PreconditionKind.Fits(c.Type, d.Pick(Targets)),
                     2 => new PreconditionKind.Unique(null, []),
                     3 => new PreconditionKind.Check("([" + c.Name.Base + "]>(0))"),
+                    4 when leg is not null => leg,
                     4 when d.Pick(schema.Tables) is var parent => new PreconditionKind.ForeignKey(parent.Name,
                         [new PreconditionKind.ForeignKey.Pair(c.Name, parent.Columns[0].Name)]),
                     _ => null,

@@ -20,7 +20,9 @@ namespace DbChange.Kernel;
 /// clock and no seed, so two plans from the same inputs are equal and a schema edit changes only the touched tables' rows (VALUES.md
 /// D6); none comes from an environment, whose existing data holds booleans. Without existing data each table takes
 /// <see cref="PresenceRows"/> rows, for a developer's daily copy. What only a person can write is a <see cref="NeedsRow"/>, the
-/// Facsimile's planter-needs-row, every one named in one pass.
+/// Facsimile's planter-needs-row, every one the plan can know of named in one pass. A check a planted literal makes false is not one:
+/// the planter parses no predicate (PLT-44), so WP 3.5 names it, by SQL Server's Msg 547 at the INSERT for a check of the copy, and at
+/// acceptance for a check the change adds (PLT-96).
 /// </summary>
 public sealed partial record Witness(SortedArray<Witness.Planting> Tables, SortedArray<Witness.NeedsRow> Needs)
 {
@@ -220,7 +222,8 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
             l => Table + "." + l.Column + " is NOT NULL and of the type " + Literals.Written(l.Type) + ", which the planter writes no"
                 + " literal for",
             v => "The planter writes no value " + (v.Class == RowClasses.None ? "that breaks the precondition" : "of the class " + v.Class)
-                + " into " + Table + "." + v.Column,
+                + " into " + Table + "." + v.Column
+                + (v.Parent is { } parent ? " that is also a key of " + parent + ", the table the column references" : ""),
             c => "No ordinal value of " + Table + "." + c.Column + " (" + Literals.Written(c.Before) + ") converts to "
                 + Literals.Written(c.After) + " and fits both",
             h => Table + " is the history table of " + h.Current + ", whose rows SQL Server writes only from updates of "
@@ -272,9 +275,10 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
             /// <summary>A NOT NULL column of a type the planter writes no literal for (PLT-21, PLT-28).</summary>
             public sealed record NoLiteral(Name Column, ColumnType Type) : Reason;
 
-            /// <summary>A class the environment holds whose witness value the column's type cannot hold, such as an accent on a code
-            /// page's string (PLT-71).</summary>
-            public sealed record NoClassValue(Name Column, RowClasses Class) : Reason;
+            /// <summary>A class the environment holds whose witness value the column cannot hold: one its type cannot hold, such as an
+            /// accent on a code page's string (PLT-71), or any value of a class in a column of a foreign key the row meets, which must
+            /// hold a key of <see cref="Parent"/>, a value WP 3.5 reads from the copy as it plants the row.</summary>
+            public sealed record NoClassValue(Name Column, RowClasses Class, Name? Parent = null) : Reason;
 
             /// <summary>A column the change retypes where no ordinal value converts cleanly and fits both types (PLT-95).</summary>
             public sealed record NoCleanValue(Name Column, ColumnType Before, ColumnType After) : Reason;

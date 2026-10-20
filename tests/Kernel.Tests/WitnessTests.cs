@@ -181,6 +181,33 @@ public sealed class WitnessTests
     }
 
     /// <summary>
+    /// PLT-68 and PLT-72 in a column of a foreign key the row meets (PLT-49): no value of a class is a key of the parent, so the row would
+    /// be an orphan its existing data lacks, which SQL Server refuses under the copy's enabled foreign key (Msg 547), and the plan names a
+    /// need for the table, for a misfit and for a duplicate alike. Where the environment answered the parent empty, the environment's own
+    /// rows hold orphans in that column, so the value stands and the foreign key is suspended to plant it (PLT-59).
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_value_of_a_class_in_a_column_of_a_foreign_key_the_row_meets_is_a_need_unless_the_parent_was_answered_empty()
+    {
+        var overflow = Violating(Fits("Order.CustomerId", "int", "smallint"), RowClasses.Overflow);
+        var coded = Copy(T("P", "Id int IDENTITY", "Code nvarchar(20)").Key("Id").Unique("UX_P_Code", "Code"),
+            T("C", "Id int IDENTITY", "PCode nvarchar(20)").Key("Id").References("FK_C_P", "P", ("PCode", "Code")));
+
+        var misfit = Plan(PgCopy.With(Ordering), [Rows(HasOrders), overflow]);
+        var duplicate = Plan(coded, [Rows(TableEmpty("C")), Violating(Unique("C", "PCode"), RowClasses.TrailingSpace)]);
+        var orphan = Plan(PgCopy.With(Ordering), [Rows(HasOrders), overflow, Empty(HasCustomers)]);
+
+        Assert.DoesNotContain(misfit.Tables, t => t.Table == TableName("Order"));
+        Assert.Equal("The planter writes no value of the class Overflow into [dbo].[Order].[CustomerId] that is also a key of"
+            + " [dbo].[Customer], the table the column references.", Assert.Single(misfit.Needs).Message);
+        Assert.Equal(new Witness.NeedsRow.Reason.NoClassValue(Part("PCode"), RowClasses.TrailingSpace, TableName("P")),
+            Assert.Single(duplicate.Needs).Why);
+        Assert.Equal("[dbo].[Order] at 4\n  row 1 (presence; Fits on [dbo].[Order] ([CustomerId]) Overflow): [Id] omitted, [CustomerId] 32768,"
+            + " [StatusId] 1, [Total] 1.00, [StatusText] N'w1'; suspends ForeignKeyConstraint [dbo].[FK_Order_Customer]", orphan.ToString());
+    }
+
+    /// <summary>
     /// The change places each precondition where the copy holds it (the coordinate rules of WP 2.1): a column it renames under the name
     /// it had (the Facsimile's S3), so the NULL a NotNull answered violating asks lands in ContactPhone; a column it creates nowhere, so
     /// a duplicate over one is two rows equal on nothing the copy holds; and a table it creates holds no row.
@@ -222,6 +249,28 @@ public sealed class WitnessTests
     }
 
     /// <summary>
+    /// PLT-78 beside PLT-61: a check the environment answered violating is a need for one declared row, and the plan keeps the table's
+    /// other rows, so the NULL a NotNull answered violating asks is planted beside the need; without it the copy would read the NotNull
+    /// clean where the environment's publish blocks.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_check_answered_violating_is_a_need_beside_the_NULL_row_a_NotNull_answered_violating_asks()
+    {
+        PreconditionState[] states = [Rows(HasCustomers), Violating(Check("Customer", "len([Name])>(0)", "Name")),
+            Violating(NotNull("Customer.Email"))];
+
+        var plan = Plan(PgCopy, states);
+
+        Assert.Equal("""
+            [dbo].[Customer] at 2
+              row 1 (presence; NotNull on [dbo].[Customer] ([Email])): [Id] omitted, [Name] N'w1', [Email] NULL, [ContactPhone] N'w1', [Region] N'w1', [AccountId] 1
+            needs a declared row of [dbo].[Customer]: [dbo].[Customer] holds rows in the environment that make the check len([Name])>(0) false, and the planter writes no literal to make a check false, since a check's expression is free-form.
+            """, plan.ToString());
+        Assert.Equal(plan, Plan(PgCopy, [.. states.Reverse()]));
+    }
+
+    /// <summary>
     /// PLT-44 and PLT-116: a need names its table and why, and says what to declare; a check that refuses a planted row, which WP 3.5
     /// meets at the INSERT, names the check; a check the environment answered violating is answered by one declared row, and every
     /// other reason by the table's rows declared whole.
@@ -249,7 +298,12 @@ public sealed class WitnessTests
 
     private static readonly Precondition HasCustomers = TableEmpty("Customer");
 
+    private static readonly Precondition HasOrders = TableEmpty("Order");
+
     private static readonly Precondition TotalPositive = Check("Order", "[Total]>(0)", "Total");
+
+    private static readonly Table Ordering =
+        PgCopy.Find(TableName("Order"))!.References("FK_Order_Customer", "Customer", ("CustomerId", "Id"));
 
     private static Witness Plan(Schema schema, PreconditionState[] states, bool presence = false, Change? change = null) =>
         PlanterCopies.Plan(schema, states, presence, null, change);
