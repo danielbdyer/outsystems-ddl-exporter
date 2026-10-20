@@ -167,8 +167,11 @@ is held, retired, or waits only on the cutover tools:
   - `spec` for every one.
   - `safety` in addition for 1.4, 1.5, 2.2, 2.3, 2.5, 3.4, 3.7, 4.1, 5.2, 5.4 and 6.1.
   - `budgets` in addition for any work package that adds more than 300 lines.
-- **Resume.** If a workflow is interrupted, relaunch it with its `scriptPath` and `resumeFromRunId`.
-  If the session ends, the next one resumes from `NEXT.md` and the branch.
+- **Resume.** Before a wave launches, write its `args` to `waves/<wave>-args.json` in the scratchpad, then its run ID:
+  a resume replays only agents whose arguments are the same values. Relaunch an interrupted wave with its `scriptPath`,
+  `resumeFromRunId` and those `args`. Without them, match each result in the run's `journal.jsonl` to its `started` label
+  by `agentId`, and continue each finished package by `startBranch`, with `verified` once its review passed and `roundBase`
+  for fix rounds spent. If the session ends, the next one resumes from `NEXT.md` and the branch.
 
 ---
 
@@ -355,7 +358,7 @@ const verify = (wp, branch, lens) => agent(
 
 const fix = (wp, branch, round, findings) => agent(
   [
-    `Create local branch wp/${wp.id}-r${round} from ${branch}, fix these findings for work package ${wp.id}, re-run the tests, and commit. Never push.`,
+    `Create local branch wp/${wp.id}-r${round + (wp.roundBase || 0)} from ${branch}, fix these findings for work package ${wp.id}, re-run the tests, and commit. Never push.`,
     JSON.stringify(findings),
   ].join('\n'),
   { label: `fix ${wp.id} (round ${round})`, phase: 'Verify', schema: WP_RESULT, isolation: 'worktree', ...effortOf(wp) })
@@ -363,9 +366,9 @@ const fix = (wp, branch, round, findings) => agent(
 phase('Implement')
 const outcomes = await pipeline(
   args.wps,
-  wp => implement(wp),
+  wp => (wp.startBranch ? Promise.resolve({ id: wp.id, status: 'done', branch: wp.startBranch, notes: 'continued' }) : implement(wp)),
   async (first, wp) => {
-    if (!first || first.status !== 'done') return { wp, result: first }
+    if (!first || first.status !== 'done' || wp.verified) return { wp, result: first }
     let result = first
     for (let round = 1; round <= 3; round++) {
       const lenses = lensesOf(wp)
