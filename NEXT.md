@@ -1,6 +1,6 @@
 # Next — rewritten by the session that finishes something; never appended
-Updated 2026-10-19 by #705: M2 has started on the operator's go, with WP 2.1's first slice; the local server moves to LocalDB and a
-native SQL Server Express; the operator's rulings of 2026-10-19 are in `DECISIONS.md` and the plan; spike S2 ran on both DacFx releases.
+Updated 2026-10-20 by #705: M2 has started on the operator's go, with WP 2.1's first slice; the local server moves to LocalDB and a
+native SQL Server Express; the operator's rulings of 2026-10-19 are in `DECISIONS.md` and the plan; WP 2.2's reader is built.
 
 ## The operator's actions
 - Run the laptop check against Dev (M1 exit 1, spikes S1 and S3) with the tool folder built at the branch head: in the
@@ -21,9 +21,8 @@ native SQL Server Express; the operator's rulings of 2026-10-19 are in `DECISION
   of 2026-10-19 carried into `V3_MILESTONES.md`, `VALUES.md` and `V3_PARITY.md`.
 
 ## Next
-- WP 2.2 (its reader replaces `BlockOnPossibleDataLossChecks.In` in `Io.Tests: BlockOnPossibleDataLossCheckTests`, held to
-  `tests/Golden/data-loss-checks/`), WP 2.3, WP 3.8 and spikes S9 to S11 (their verbs added to `tests/DacFx162/`); then WP 3.4's remainder with spike S4,
-  WP 2.5, WP 2.6, WP 3.5 and WP 7.1. WP 2.6 moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6). `ParityResolves` prints where the ledger stands.
+- WP 2.3, WP 3.8 and spikes S9 to S11 (their verbs added to `tests/DacFx162/`); then WP 3.4's remainder with spike S4,
+  WP 2.5 (it reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`), WP 2.6, WP 3.5 and WP 7.1. WP 2.6 moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6). `ParityResolves` prints where the ledger stands.
 - `kernel/Environments.cs` LocalServerKind parses the unread key `localServer` as `docker` or `localdb`, and
   `tests/Golden/dbchange/environments.json` writes `docker`; WP 3.4 drops the key from both and from EnvironmentsTests and PublishProfilesTests.
 - Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the vendoring verb's two

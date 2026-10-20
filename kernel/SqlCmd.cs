@@ -47,14 +47,58 @@ public abstract record SqlCmdVariable : IComparable<SqlCmdVariable>
     /// never read for variables of its own. The text exists only in the string returned: the script keeps its variables, and the kernel
     /// writes no file. A variable with no value is the error sqlcmd.undefined, which names the variable and quotes no value.
     /// </summary>
-    public static Result<string> Substitute(string script, IReadOnlyDictionary<string, string> values)
+    public static Result<string> Substitute(string script, IReadOnlyDictionary<string, string> values) =>
+        Substituted(script, values).Map(s => s.Text);
+
+    /// <summary>
+    /// <see cref="Substitute"/>'s text, and where in it each value was put, in order, by the variable's name as the script writes it: what
+    /// a caller reads to keep a value marked sensitive out of what it prints, without reading the value back.
+    /// </summary>
+    public static Result<SqlCmdSubstitution> Substituted(string script, IReadOnlyDictionary<string, string> values)
     {
         var byName = values.OrderBy(v => v.Key, StringComparer.Ordinal).DistinctBy(v => v.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(StringComparer.OrdinalIgnoreCase);
-        return Used.Matches(script).Select(m => m.Groups["name"].Value).FirstOrDefault(name => !byName.ContainsKey(name)) is { } missing
-            ? new Error("sqlcmd.undefined", "The script uses " + Placeholder(missing) + ", and no SQLCMD value is given for it.",
-                "Give " + missing + " a value in the environment's sqlcmd in dbchange/environments.json, or in the pipeline's profile.")
-            : Used.Replace(script, m => byName[m.Groups["name"].Value]);
+        var used = Used.Matches(script);
+        if (used.Select(m => m.Groups["name"].Value).FirstOrDefault(name => !byName.ContainsKey(name)) is { } missing)
+        {
+            return new Error("sqlcmd.undefined", "The script uses " + Placeholder(missing) + ", and no SQLCMD value is given for it.",
+                "Give " + missing + " a value in the environment's sqlcmd in dbchange/environments.json, or in the pipeline's profile.");
+        }
+
+        var (text, placed, from) = (new System.Text.StringBuilder(), new List<SqlCmdPlacement>(), 0);
+        foreach (Match m in used)
+        {
+            var (name, value) = (m.Groups["name"].Value, byName[m.Groups["name"].Value]);
+            text.Append(script, from, m.Index - from);
+            placed.Add(new SqlCmdPlacement(SqlCmdName.Read(name), text.Length, value.Length));
+            text.Append(value);
+            from = m.Index + m.Length;
+        }
+
+        return new SqlCmdSubstitution(text.Append(script, from, script.Length - from).ToString(), placed);
+    }
+
+    /// <summary>
+    /// The values a script's own :setvar lines give, as sqlcmd reads them in order: a value in double quotes, a doubled quote in it read
+    /// as one, or a bare word; a later line for a name, in any case, replacing an earlier one; and a :setvar with no value removing it.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> SetIn(string script)
+    {
+        var set = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in Lines(script))
+        {
+            if (SetVar.Match(line) is { Success: true } setVar)
+            {
+                var (name, rest) = (setVar.Groups["name"].Value, line[setVar.Length..].Trim());
+                set.Remove(name);
+                if (rest.Length > 0)
+                {
+                    set[name] = rest is ['"', .., '"'] ? rest[1..^1].Replace("\"\"", "\"", StringComparison.Ordinal) : rest;
+                }
+            }
+        }
+
+        return set;
     }
 
     /// <summary>
@@ -71,10 +115,12 @@ public abstract record SqlCmdVariable : IComparable<SqlCmdVariable>
 
     /// <summary>
     /// A script without sqlcmd's own lines, those whose first character other than a space or a tab is ':' (:setvar, :r, :on error,
-    /// :connect), so what is left is T-SQL a parser reads; every other line stays as it was, GO included.
+    /// :connect), so what is left is T-SQL a parser reads; every other line stays as it was, GO included. With
+    /// <paramref name="keepLines"/>, each such line is left empty, its line end kept, so a line of what is left is the script's line.
     /// </summary>
-    public static string WithoutDirectives(string script) =>
-        string.Concat(Lines(script).Where(line => !line.TrimStart(' ', '\t').StartsWith(':')));
+    public static string WithoutDirectives(string script, bool keepLines = false) =>
+        string.Concat(Lines(script).Select(line => !line.TrimStart(' ', '\t').StartsWith(':') ? line
+            : keepLines ? line[line.TrimEnd('\r', '\n').Length..] : ""));
 
     /// <summary>The literal's text, or the reference to where the value lives.</summary>
     public T Match<T>(Func<string, T> literal, Func<SecretReference, T> reference) =>
@@ -126,6 +172,9 @@ public readonly struct SqlCmdName : IEquatable<SqlCmdName>, IComparable<SqlCmdNa
         : new Error("sqlcmd.name", subject + " names a SQLCMD variable in other than letters, digits, '_' and '-' from a letter or '_'.",
             "Rename the variable as the project's SqlCmdVariable names it.");
 
+    /// <summary>A name the placeholder grammar has already matched in a script.</summary>
+    internal static SqlCmdName Read(string matched) => new(matched);
+
     public bool Equals(SqlCmdName other) => string.Equals(_text, other._text, StringComparison.OrdinalIgnoreCase);
 
     public override bool Equals(object? obj) => obj is SqlCmdName other && Equals(other);
@@ -137,4 +186,14 @@ public readonly struct SqlCmdName : IEquatable<SqlCmdName>, IComparable<SqlCmdNa
 
     public override string ToString() =>
         _text ?? throw new InvalidOperationException("default(SqlCmdName) is not a name; make one with SqlCmdName.Of.");
+}
+
+/// <summary>A script with its variables substituted, and where each value was put in it, in order.</summary>
+public sealed record SqlCmdSubstitution(string Text, IReadOnlyList<SqlCmdPlacement> Placed);
+
+/// <summary>Where a substitution put a variable's value: the variable, the value's first character in the text and its length.</summary>
+public sealed record SqlCmdPlacement(SqlCmdName Name, int Start, int Length)
+{
+    /// <summary>Whether the value overlaps the span of <paramref name="length"/> characters from <paramref name="start"/>.</summary>
+    public bool Overlaps(int start, int length) => Start < start + length && start < Start + Length;
 }
