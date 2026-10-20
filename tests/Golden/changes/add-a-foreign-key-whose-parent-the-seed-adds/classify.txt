@@ -1,0 +1,2 @@
+create-fk-clean ForeignKeyConstraint [dbo].[FK_Order_Customer_CustomerId]
+edit-seed PostDeploymentScript [PostDeploy]

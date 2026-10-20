@@ -188,7 +188,8 @@ public static class Contract
             + "[--profile <path>] [--project <path>]", Cli.Verbs.Check, Cli.Verbs.CheckContent,
             [
                 new("in-sync", [0], "the deploy plan against the target is empty"),
-                new("differs", [5], "the deploy plan holds operations; a finding names each object"),
+                new("differs", [5], "the deploy plan holds operations; a finding names each object, and a check the plan drops and "
+                    + "creates because the repository writes it with IN is named with the OR form SQL Server stores"),
             ]),
         new("knowledge", "The knowledge tree, packaged for each agent and vendored to the SSDT repository."),
         new("--version", "The tool's version.",
