@@ -19,6 +19,10 @@ public sealed partial class VocabularyCases
     /// <summary>The case of the KeyLength row the catalog holds none for: a unique constraint whose key passes 1,700 bytes.</summary>
     internal const string UniqueOverTheLimit = "a unique constraint over the key limit";
 
+    /// <summary>The case of a key whose max column sorts before its int column: a max value has no bound, so the key passes the limit
+    /// in either order of its columns.</summary>
+    internal const string MaxBesideFixed = "an index over a max column beside an int column";
+
     private const string Guard = "RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.', 16, 127)"
         + " WITH NOWAIT";
 
@@ -442,6 +446,12 @@ public sealed partial class VocabularyCases
                 ADD CONSTRAINT [UQ_Doc_Path] UNIQUE NONCLUSTERED ([Path] ASC);
             GO
             """, [Unique("Doc", "Path"), KeyLength("Doc", "UQ_Doc_Path", false, "Path")]),
+        [MaxBesideFixed] = new(Pg.With("N.Big nvarchar(max) NULL", "N.Id int NOT NULL"),
+            Pg.With("N.Big nvarchar(max) NULL", "N.Id int NOT NULL").Index("IX_N_Big_Id", "N", ["Big", "Id"]), """
+            CREATE NONCLUSTERED INDEX [IX_N_Big_Id]
+                ON [dbo].[N]([Big] ASC, [Id] ASC);
+            GO
+            """, [KeyLength("N", "IX_N_Big_Id", false, "Big", "Id")]),
 
         // ForeignKey and Check stand where a statement validates them; Authored where a post-deploy seed filled the parent first.
         ["QST-50"] = new(Pg, Pg.ForeignKey("FK_Order_Customer", "Order", ["CustomerId"], "Customer", ["Id"]), """

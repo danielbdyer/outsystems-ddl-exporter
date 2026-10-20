@@ -12,9 +12,10 @@ namespace DbChange.Kernel.Tests;
 /// The planter catalog's cases for the kinds only a plan's statements show (WP 2.1's second slice): KeyLength's key just past its limit,
 /// nonclustered and clustered (PLT-80, PLT-81); a rebuild's gapped identity, two rows past the copy's largest id by 2 and by 5 (PLT-82);
 /// and a computed column, a need for the declared row whose expression fails until one is declared (PLT-127, and PLT-120's computed
-/// half). Beside them, v3's own cases for the kinds the catalog plants nothing for: a Temporal period that ends before it starts, an
-/// Authored statement and a SeedDrift, each a need for a declared row, and a Scan, which presence answers. The catalog writes HasRows
-/// beside each of PLT-80 to PLT-82, which v3 reads from the kind's own state, populated, so the one state stands for both.
+/// half). Beside them, v3's own cases for the kinds the catalog plants nothing for: a KeyLength whose max column gives the key no size,
+/// a Temporal period that ends before it starts, an Authored statement and a SeedDrift, each a need for a declared row, and a Scan, which
+/// presence answers. The catalog writes HasRows beside each of PLT-80 to PLT-82, which v3 reads from the kind's own state, populated, so
+/// the one state stands for both.
 /// </summary>
 public sealed partial class PlanterCases
 {
@@ -22,6 +23,7 @@ public sealed partial class PlanterCases
     [Trait("Category", "fast")]
     [InlineData("PLT-80")]
     [InlineData("PLT-81")]
+    [InlineData("KeyLength: a key of an int column beside a max column")]
     [InlineData("PLT-82")]
     [InlineData("PLT-127")]
     [InlineData("PLT-127 (declared)")]
@@ -57,6 +59,11 @@ public sealed partial class PlanterCases
             new PreconditionKind.KeyLength(Part("CX_T_Code"), true)))], $"""
             [dbo].[T] at 0
               row 1 (presence; KeyLength on [dbo].[T] ([Code]) of [CX_T_Code] at most 900 bytes): [Id] 1, [Code] 'w1{new string('w', 899)}'
+            """),
+        ["KeyLength: a key of an int column beside a max column"] = new(Copy(T("T", "Id int", "Notes nvarchar(max) NULL")),
+            [Violating(new Precondition(TableName("T"), Names(["Id", "Notes"]), new PreconditionKind.KeyLength(Part("IX_T_Notes"), false)))],
+            """
+            needs a declared row of [dbo].[T]: The planter writes no value that breaks the precondition into [dbo].[T].[Id].
             """),
         ["PLT-82"] = new(PgCopy, [Holding(new Precondition(TableName("Customer"), Names(["Id"]), new PreconditionKind.Rebuild()),
             RowClasses.Gapped)], """

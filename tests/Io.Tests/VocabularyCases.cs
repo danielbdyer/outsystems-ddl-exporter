@@ -53,6 +53,7 @@ public sealed partial class VocabularyCases
     [InlineData("QST-48")]
     [InlineData("QST-49")]
     [InlineData(UniqueOverTheLimit)]
+    [InlineData(MaxBesideFixed)]
     [InlineData("QST-50")]
     [InlineData("QST-55")]
     [InlineData("QST-56")]

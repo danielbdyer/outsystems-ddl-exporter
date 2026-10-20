@@ -64,8 +64,9 @@ public static partial class Vocabulary
             return named.Length == 0 || held.Any(h => h.Length == 0) ? null : [.. held.SelectMany(h => h)];
         }
 
-        /// <summary>The most bytes the columns' values of a row hold together, by the model the change brings: an unbounded number where
-        /// one is of a max type, null where the model gives a column no type it knows the size of.</summary>
+        /// <summary>The most bytes the columns' values of a row hold together, by the model the change brings: long.MaxValue, which stands
+        /// for no bound, where one is of a max type, in whatever place it sorts; null where the model gives a column no type it knows the
+        /// size of.</summary>
         public long? KeyBytes(Name table, SortedArray<Name> columns)
         {
             long total = 0;
@@ -78,7 +79,7 @@ public static partial class Vocabulary
                     return null;
                 }
 
-                total = bytes == long.MaxValue ? long.MaxValue : total + bytes;
+                total = bytes == long.MaxValue || total == long.MaxValue ? long.MaxValue : total + bytes;
             }
 
             return total;

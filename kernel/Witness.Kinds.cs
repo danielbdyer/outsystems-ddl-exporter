@@ -15,7 +15,7 @@ public sealed partial record Witness
         /// A key just past its limit (PLT-80, PLT-81): its strings and binaries of a varying width, in order, take as many of the bytes the
         /// limit asks beyond the other columns' fixed sizes as each holds, w and the row's ordinal padded with w, or 0x77 bytes, so the
         /// first wide enough carries the excess and the others keep their clean values; a key whose columns cannot pass the limit together,
-        /// or that holds a column of another type no size is known for, is a need for a declared row.
+        /// or that holds a max column or a column of another type no size is known for, is a need for a declared row.
         /// </summary>
         private static Demand LongKey(Located l, PreconditionKind.KeyLength key)
         {
@@ -23,7 +23,7 @@ public sealed partial record Witness
             var varying = columns.Where(c => Literals.FamilyOf(c.Type) is Literals.Family.Character or Literals.Family.Binary
                 && !Literals.Fixed(c.Type) && Literals.Width(c.Type) is not null).ToArray();
             var fixedSizes = columns.Except(varying).Select(c => c.Type.KeyBytes).ToArray();
-            var remaining = key.Limit + 1 - fixedSizes.Sum(b => b ?? 0);
+            var remaining = key.Limit + 1 - fixedSizes.Sum(b => b is null or long.MaxValue ? 0 : b.Value);
             var lengths = new Dictionary<Name, long>();
             foreach (var column in varying.TakeWhile(_ => remaining > 0))
             {
