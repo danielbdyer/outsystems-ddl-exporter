@@ -21,9 +21,16 @@ public sealed class WitnessProperties
     /// <summary>A plan's inputs: the copy's schema, the change's preconditions over it, and the environment's state of each.</summary>
     internal sealed record Inputs(Schema Schema, SortedArray<Precondition> Preconditions, SortedArray<PreconditionState> States)
     {
-        public Witness Plan(bool presence = false) => Ok(Witness.Plan(Schema, Preconditions, presence ? null : new ExistingData(States)));
+        /// <summary>The plan, or null where the plan refuses states that no rows hold (plan.contradictory-answers), which states drawn
+        /// one by one give now and then; any other error fails the sample.</summary>
+        public Witness? Plan(bool presence = false) => Refused(Planned(presence ? null : new ExistingData(States)));
 
-        public Witness Plan(ExistingData existing) => Ok(Witness.Plan(Schema, Preconditions, existing));
+        public Witness? Plan(ExistingData existing) => Refused(Planned(existing));
+
+        public Result<Witness> Planned(ExistingData? existing) => Witness.Plan(Schema, Preconditions, existing);
+
+        private static Witness? Refused(Result<Witness> plan) => plan.Match<Witness?>(p => p, error => error.Code == Contradictory ? null
+            : throw new InvalidOperationException(error.Code + ": " + error.Message));
 
         /// <summary>The inputs and their plan as text, which CsCheck prints for a failing sample.</summary>
         public override string ToString() => string.Join("\n", Schema.Tables.Select(t => t.Name + ": "
@@ -40,8 +47,10 @@ public sealed class WitnessProperties
                 + (t.Versioning is { } v ? "; " + v : ""))
             .Concat(States.Select(s => s.Precondition + (s.Populated ? " populated" : " empty") + (s.Violating ? " violating" : "")
                 + (s.Classes == RowClasses.None ? "" : " " + s.Classes)))
-            .Append("plan:").Append(Plan().ToString()).Append("presence plan:").Append(Plan(presence: true).ToString()));
+            .Append("plan:").Append(Plan()?.ToString() ?? Contradictory).Append("presence plan:").Append(Plan(presence: true)?.ToString()));
     }
+
+    private const string Contradictory = "plan.contradictory-answers";
 
     private static readonly ColumnType[] Targets = [.. new[]
     {
@@ -65,7 +74,7 @@ public sealed class WitnessProperties
                 Columns = SortedArray.Of(t.Columns.Reverse()), Uniques = SortedArray.Of(t.Uniques.Reverse()),
                 References = SortedArray.Of(t.References.Reverse()), Checks = SortedArray.Of(t.Checks.Reverse()),
             }))), SortedArray.Of(i.Preconditions.Reverse()), SortedArray.Of(i.States.Reverse()));
-            var (plan, other) = (i.Plan(), again.Plan());
+            var (plan, other) = (i.Planned(new ExistingData(i.States)), again.Planned(new ExistingData(again.States)));
             return plan == other && plan.ToString() == other.ToString() && i.Plan(presence: true) == again.Plan(presence: true);
         });
 
@@ -114,31 +123,64 @@ public sealed class WitnessProperties
     /// The copy holds no orphan its existing data lacks: each leg of a NOT NULL reference of the copy, and of a foreign key the change
     /// validates, takes its parent's key in every planted row, but a row that is the orphan an environment's violating ForeignKey holds,
     /// a row whose parent the environment answered empty, which suspends the reference, and a NULL in a nullable leg. A leg another
-    /// precondition sets to a value of its class is no exception: no such value is a parent's key, so the plan names a need.
+    /// precondition sets to a value of its class is no exception: no such value is a parent's key, so the plan names a need. Nor is a
+    /// leg of a ForeignKey the environment answered clean over a parent it answered empty, which holds no orphan: such a leg is NULL, or
+    /// the plan is refused.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "11′ a planted set repeats itself, replants only the touched tables and holds no orphan its existing data lacks")]
     public void A_planted_row_links_each_reference_it_meets_to_a_parent_or_holds_an_orphan_its_existing_data_holds() =>
+        Plans.Sample(i => i.Plan() is not { } plan || plan.Tables.All(p => p.Rows.All(row => Meets(i, i.Schema.Find(p.Table)!, row))));
+
+    /// <summary>
+    /// The plan refuses the states no rows hold, and no others. A ForeignKey answered clean over a parent answered empty says each row
+    /// holds NULL in a column of its key, the one way MATCH SIMPLE passes a row without a parent row, so the plan is refused where its
+    /// table is populated and no column of the key admits NULL, each NOT NULL in the copy or read by a NotNull answered clean (PLT-60);
+    /// and a refusal names such a ForeignKey, each column of whose key admits no NULL or is one another state asks a value in: a Fits or
+    /// a Unique the environment holds rows of a class of, or a ForeignKey it answered violating.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_plan_is_refused_where_no_rows_hold_its_states_and_only_there() =>
         Plans.Sample(i =>
         {
-            var plan = i.Plan();
-            return plan.Tables.All(p => p.Rows.All(row => Meets(i, i.Schema.Find(p.Table)!, row)));
+            var refused = i.Planned(new ExistingData(i.States)).Match<Error?>(_ => null, error => error);
+            var cleared = i.States.Where(s => !s.Violating && s.Precondition.Kind is PreconditionKind.ForeignKey f && Empty(i, f.Parent))
+                .ToArray();
+            IEnumerable<Name> Key(PreconditionState s) => ((PreconditionKind.ForeignKey)s.Precondition.Kind).Pairs.Select(p => p.Column);
+            bool Valued(PreconditionState foreign, Name column) => i.States.Any(s => s != foreign && s.Precondition.Table
+                == foreign.Precondition.Table && s.Precondition.Columns.Contains(column) && s.Precondition.Kind switch
+                {
+                    PreconditionKind.Fits or PreconditionKind.Unique => s.Violating || s.Classes != RowClasses.None,
+                    PreconditionKind.ForeignKey => s.Violating,
+                    _ => false,
+                });
+            var unheld = cleared.Any(s => s.Populated && Key(s).All(c => !Admits(i, s.Precondition.Table, c)));
+            return (refused is null || (refused.Code == Contradictory && cleared.Any(s => Key(s).All(c => !Admits(i, s.Precondition.Table, c)
+                    || Valued(s, c)) && refused.Message.Contains(s.Precondition + " clean", StringComparison.Ordinal))))
+                && (!unheld || refused is not null);
         });
 
     /// <summary>
     /// A populated but clean table stays clean, and a violating one breaks its rule: a row answers each class an environment holds, or the
     /// plan names a need that leaves the table's rows to the declared witnesses, which a check answered violating does not, since the
-    /// plan keeps the table's other rows beside it; a NotNull answered clean finds no NULL in a row no other purpose of which sets the
-    /// column; a Unique answered clean finds no two rows of equal literals over its key; and a table the environment answered empty in
-    /// every state holds no planted row, not even as the ancestor of another table's row (PLT-59).
+    /// plan keeps the table's other rows beside it; a violating Fits or Unique that names no class, as every state ExistingData.Of gives
+    /// from counts, has a row that serves it, of the class that fails between its two types or an exact duplicate, or such a need; a
+    /// NotNull answered clean finds no NULL in a row no other purpose of which sets the column; a Unique answered clean finds no two rows
+    /// of equal literals over its key; and a table the environment answered empty in every state holds no planted row, not even as the
+    /// ancestor of another table's row (PLT-59).
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_state_answered_violating_plants_a_row_of_each_class_and_one_answered_clean_plants_none() =>
         Plans.Sample(i =>
         {
-            var plan = i.Plan();
+            if (i.Plan() is not { } plan)
+            {
+                return true;
+            }
+
             var rows = plan.Tables.ToDictionary(t => t.Table, t => t.Rows);
             return i.States.All(s =>
             {
@@ -153,6 +195,8 @@ public sealed class WitnessProperties
                     PreconditionKind.TableEmpty => !s.Populated || held.Count > 0 || needed,
                     _ when Asked(s).Any() => needed || Asked(s).All(c => held.Any(r => r.Serves.Contains(new Witness.Purpose(s.Precondition,
                         c)))),
+                    PreconditionKind.Fits or PreconditionKind.Unique when s.Violating => needed
+                        || held.Any(r => r.Serves.Any(p => p.Precondition == s.Precondition)),
                     PreconditionKind.NotNull => held.Where(r => !Others(r, s)).All(r => Value(r, s.Precondition.Columns[0]) is not
                         Witness.Planted.Null),
                     PreconditionKind.Unique => s.Violating || Distinct(held.Where(r => !Others(r, s)), s.Precondition.Columns),
@@ -188,15 +232,16 @@ public sealed class WitnessProperties
         {
             var other = i with { States = States(new Draw(numbers), i.Preconditions) };
             var (plan, theirs) = (i.Plan(), other.Plan());
-            var rows = theirs.Tables.SelectMany(t => t.Rows.Select(r => (t.Table, Row: r))).ToLookup(x => (x.Table, x.Row.Ordinal));
+            var rows = (theirs?.Tables ?? []).SelectMany(t => t.Rows.Select(r => (t.Table, Row: r))).ToLookup(x => (x.Table, x.Row.Ordinal));
             const long counted = 739_517_284_613;
-            var counts = i.Plan(ExistingData.Of(i.States.Select(s =>
+            var counts = i.Planned(ExistingData.Of(i.States.Select(s =>
                 new PreconditionCount(s.Precondition, s.Populated ? counted : 0, s.Violating ? counted : 0))));
-            return plan.Tables.SelectMany(t => t.Rows.Select(r => (t.Table, Row: r))).All(mine => rows[(mine.Table, mine.Row.Ordinal)]
+            return (plan?.Tables ?? []).SelectMany(t => t.Rows.Select(r => (t.Table, Row: r))).All(mine => rows[(mine.Table, mine.Row.Ordinal)]
                     .Where(their => their.Row.Serves == mine.Row.Serves && their.Row.Suspends == mine.Row.Suspends)
                     .All(their => mine.Row.Cells.Zip(their.Row.Cells).All(c => !Literal(c.First.Value) || !Literal(c.Second.Value)
                         || c.First == c.Second)))
-                && !counts.ToString().Contains(counted.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+                && !counts.Match(p => p.ToString(), error => error.Message).Contains(counted.ToString(CultureInfo.InvariantCulture),
+                    StringComparison.Ordinal);
         });
 
     /// <summary>Without existing data every table but a history table takes three presence rows, or names why only a person can write
@@ -206,18 +251,23 @@ public sealed class WitnessProperties
     public void Without_existing_data_each_table_takes_three_rows_or_names_a_need() =>
         Plans.Sample(i =>
         {
-            var plan = i.Plan(presence: true);
+            var plan = i.Plan(presence: true)!;
             return i.Schema.Tables.Where(t => t.Versioning is not Versioning.History).All(t =>
                 plan.Tables.Any(p => p.Table == t.Name && p.Rows.Select(r => r.Ordinal).SequenceEqual([1, 2, 3]))
                 || plan.Needs.Any(n => n.Table == t.Name));
         });
 
-    /// <summary>Whether two plans agree but on one column of one table: the same needs, the same tables and rows, and in the touched table
-    /// the same rows with the same values in every other column.</summary>
-    private static bool Stable(Witness before, Witness after, Name table, Name column)
+    /// <summary>Whether two plans agree but on one column of one table: both refused, or the same needs, the same tables and rows, and in
+    /// the touched table the same rows with the same values in every other column.</summary>
+    private static bool Stable(Witness? before, Witness? after, Name table, Name column)
     {
         static IEnumerable<(Name, Witness.Planted)> Kept(Witness.Row r, Name column) =>
             r.Cells.Where(c => c.Column != column).Select(c => (c.Column, c.Value)).OrderBy(c => c.Column);
+        if (before is null || after is null)
+        {
+            return before is null && after is null;
+        }
+
         var kept = after.Tables.ToDictionary(t => t.Table);
         return before.Needs == after.Needs && before.Tables.Count == after.Tables.Count && before.Tables.All(t =>
             kept.TryGetValue(t.Table, out var k) && (t.Table != table ? t.Rows == k.Rows
@@ -227,7 +277,8 @@ public sealed class WitnessProperties
 
     /// <summary>Whether each leg of a reference the row meets takes the key of a parent the leg references, or the row is one of the
     /// exceptions the property names: a NULL in a nullable leg, the orphan of a ForeignKey the row serves on that leg, or a leg one of
-    /// whose parents the environment answered empty. A column in two foreign keys to two parents takes one parent's key.</summary>
+    /// whose parents the environment answered empty, unless it answered clean a ForeignKey to that parent on the leg. A column in two
+    /// foreign keys to two parents takes one parent's key.</summary>
     private static bool Meets(Inputs i, Table table, Witness.Row row)
     {
         var validated = i.States.Where(s => s.Precondition.Table == table.Name).Select(s => s.Precondition.Kind)
@@ -235,7 +286,9 @@ public sealed class WitnessProperties
         var mandatory = table.References.Where(r => !r.Optional).SelectMany(r => r.Legs.Select(l => (r.Parent, l.Column,
             Referenced: l.ParentColumn)));
         var legs = mandatory.Concat(validated).ToLookup(l => l.Column);
-        return legs.All(leg => leg.Any(l => Empty(i, l.Parent))
+        bool Cleared(Name column, Name parent) => i.States.Any(s => !s.Violating && s.Precondition.Table == table.Name
+            && s.Precondition.Kind is PreconditionKind.ForeignKey f && f.Parent == parent && f.Pairs.Any(p => p.Column == column));
+        return legs.All(leg => leg.Any(l => Empty(i, l.Parent) && !Cleared(leg.Key, l.Parent))
             || leg.Any(l => Value(row, leg.Key) is Witness.Planted.Linked linked && linked.Parent == l.Parent
                 && linked.Column == l.Referenced)
             || Value(row, leg.Key) is Witness.Planted.Null
@@ -246,6 +299,12 @@ public sealed class WitnessProperties
     /// row.</summary>
     private static bool Empty(Inputs i, Name table) =>
         i.States.Where(s => s.Precondition.Table == table).ToArray() is { Length: > 0 } states && states.All(s => !s.Populated);
+
+    /// <summary>Whether a planted row may hold NULL in a column: it is nullable in the copy, and the environment answered clean no NotNull
+    /// on it.</summary>
+    private static bool Admits(Inputs i, Name table, Name column) => i.Schema.Find(table)?.Find(column) is Column.Stored { Nullable: true }
+        && !i.States.Any(s => !s.Violating && s.Precondition.Table == table && s.Precondition.Kind is PreconditionKind.NotNull
+            && s.Precondition.Columns.Contains(column));
 
     /// <summary>The classes a violating or class-holding state asks a row of, in the order of the flags; none for a clean NotNull,
     /// ForeignKey or Unique.</summary>

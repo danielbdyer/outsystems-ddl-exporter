@@ -31,9 +31,10 @@ public sealed partial record Witness
         /// <summary>
         /// The demands of one precondition's state, by its kind: the one place a kind of precondition is read, so a new kind is one case
         /// here. TableEmpty asks presence alone; NotNull, a row whose column is NULL (PLT-61); Fits, a row of each class the environment
-        /// holds, or of the class that fails for the two types where it names none (PLT-62 to PLT-68); ForeignKey, a row whose every leg
-        /// is absent from the parent, which MATCH SIMPLE checks (PLT-75 to PLT-77); Unique, two rows equal on the key, or alike in one way
-        /// for its class (PLT-69 to PLT-73); Check, a row a person declares (PLT-78). A precondition a declared row witnesses asks none.
+        /// holds, or where it names none, of the first class ALTER COLUMN refuses between the two types that the planter writes a value
+        /// of, and else a need that names no class (PLT-62 to PLT-68); ForeignKey, a row whose every leg is absent from the parent, which
+        /// MATCH SIMPLE checks (PLT-75 to PLT-77); Unique, two rows equal on the key, or alike in one way for its class (PLT-69 to
+        /// PLT-73); Check, a row a person declares (PLT-78). A precondition a declared row witnesses asks none.
         /// </summary>
         private IEnumerable<Demand> Demands(Located l) =>
             l.State is not { } state || declared.Witnesses.Contains(l.Precondition) ? []
@@ -60,10 +61,17 @@ public sealed partial record Witness
             var classes = state.Classes & FitsClasses;
             if (state.Violating && classes == RowClasses.None)
             {
-                var (from, to) = (Literals.FamilyOf(column.Type), Literals.FamilyOf(fits.After));
-                classes = to is Literals.Family.Character or Literals.Family.Binary ? RowClasses.OverLength
-                    : Literals.Numeric(from) && Literals.Numeric(to) ? RowClasses.Overflow
-                    : RowClasses.NotConvertible;
+                // The classes whose rows ALTER COLUMN refuses (io/AggregateQueries.Fits.cs): over length into a string or binary type, and
+                // else not convertible and overflow, in the order of the flags; the first the planter writes a value of.
+                RowClasses[] refused = Literals.FamilyOf(fits.After) is Literals.Family.Character or Literals.Family.Binary
+                    ? [RowClasses.OverLength] : [RowClasses.NotConvertible, RowClasses.Overflow];
+                classes = refused.FirstOrDefault(c => Literals.Class(column.Type, fits.After, c, 1) is not null);
+                if (classes == RowClasses.None)
+                {
+                    yield return new Demand(new Purpose(l.Precondition, RowClasses.None), [], 0, (_, _, _, _) => null,
+                        new NeedsRow.Reason.NoClassValue(column.Name, RowClasses.None));
+                    yield break;
+                }
             }
 
             foreach (var @class in Flags(classes))
@@ -73,12 +81,15 @@ public sealed partial record Witness
             }
         }
 
+        /// <summary>The orphan of a ForeignKey: past every parent row in each leg, or, where the change creates the parent, which the copy
+        /// lacks and which holds no row, the ordinal literal.</summary>
         private static Demand Orphans(Located l, PreconditionKind.ForeignKey foreign)
         {
             var copy = l.Table.References.FirstOrDefault(r => !r.Disabled && Same(r, foreign));
             return new Demand(new Purpose(l.Precondition, RowClasses.None), [.. foreign.Pairs.Select(p => p.Column)], 1,
-                (_, row, _, column) => l.Table.Find(column) is Column.Stored leg
-                    ? Orphan(leg, foreign.Parent, foreign.Pairs.First(p => p.Column == column).Referenced, row) : null,
+                (_, row, _, column) => l.Table.Find(column) is not Column.Stored leg ? null
+                    : l.Parent is null ? Literals.Of(leg.Type, row)
+                    : Orphan(leg, foreign.Parent, foreign.Pairs.First(p => p.Column == column).Referenced, row),
                 Suspends: copy?.Key);
         }
 

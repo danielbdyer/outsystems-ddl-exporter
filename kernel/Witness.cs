@@ -36,7 +36,10 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
     /// rules of WP 2.1 (<see cref="Coordinates"/>): an object it renames or moves under the key it had, and one it creates nowhere, since
     /// a table the change creates holds no row and a column it creates holds its default. <paramref name="declared"/> is what the
     /// change's declared witnesses plant. A precondition on an object the copy does not hold and the change does not create is the error
-    /// plan.missing-object, and one the existing data holds no state for, plan.uncounted, since neither is ever read as empty.
+    /// plan.missing-object, and one the existing data holds no state for, plan.uncounted, since neither is ever read as empty. Existing
+    /// data that no rows hold is plan.contradictory-answers, the Facsimile's answers-invalid (PLT-60): a ForeignKey answered clean over a
+    /// parent that holds no row, answered empty or created by the change, on a populated table where no column of the key admits NULL, or
+    /// where the row of a class holds a value in every column of the key.
     /// </summary>
     public static Result<Witness> Plan(Schema schema, SortedArray<Precondition> preconditions, ExistingData? existing,
         Change? change = null, Declared? declared = null)

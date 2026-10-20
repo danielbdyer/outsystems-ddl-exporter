@@ -198,7 +198,8 @@ public sealed partial record Witness
             };
         }
 
-        /// <summary>The smallest value past the new type's range, in the old type's form (PLT-68).</summary>
+        /// <summary>The smallest value past the new type's range, in the old type's form (PLT-68): of a date and time bound for datetime,
+        /// 1700-01-01, before its 1753-01-01, and for smalldatetime, 2079-06-07, after its 2079-06-06, which datetime holds too.</summary>
         private static Planted? Overflow(ColumnType before, ColumnType after, Family from, Family to)
         {
             Exact? past = to switch
@@ -225,6 +226,8 @@ public sealed partial record Witness
             {
                 Family.Character => Fitted(Width(before), National(before), day + "T00:00:00"),
                 Family.Date => new Planted.Text(day, false),
+                Family.DateTime when (Base(before), Base(after)) is ("datetime", "smalldatetime") =>
+                    new Planted.Text(day + "T00:00:00", false),
                 Family.DateTime2 => new Planted.Text(day + "T00:00:00", false),
                 Family.DateTimeOffset => new Planted.Text(day + "T00:00:00+00:00", false),
                 _ => null,

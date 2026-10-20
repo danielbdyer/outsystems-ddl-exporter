@@ -208,6 +208,166 @@ public sealed class WitnessTests
     }
 
     /// <summary>
+    /// PLT-125 and PLT-52 where the environment answered the parent empty: a ForeignKey it answered clean finds no orphan among rows
+    /// whose parent table holds none, so each row holds NULL in a column of the key, which MATCH SIMPLE passes without a parent row. The
+    /// nullable AccountId is NULL and no foreign key is suspended, whether the change adds FK_Customer_Account or the copy holds it: an
+    /// orphan there reads violating in the copy, and where the change adds the key, its WITH CHECK fails on the copy (Msg 547) where it
+    /// applies in the environment. Of a composite key, the column that admits NULL is NULL and the NOT NULL one takes its literal.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Law", "11′ a planted set repeats itself, replants only the touched tables and holds no orphan its existing data lacks")]
+    public void A_ForeignKey_answered_clean_over_a_parent_answered_empty_leaves_its_nullable_columns_NULL_and_suspends_nothing()
+    {
+        PreconditionState[] states = [Rows(HasCustomers), Rows(AccountOfCustomer), Empty(HasAccounts)];
+        var held = PgCopy.With(PgCopy.Find(TableName("Customer"))!.References("FK_Customer_Account", "Account", ("AccountId", "Id")));
+        var note = T("ShipmentNote", "Id int IDENTITY", "OrderId int", "LineNumber int NULL").Key("Id");
+        var shipment = T("Shipment", "OrderId int", "LineNumber int").Key("OrderId", "LineNumber");
+
+        var added = Plan(PgCopy, states);
+        var kept = Plan(held, states);
+        var composite = Plan(Copy(shipment, note), [Rows(TableEmpty("ShipmentNote")), Empty(TableEmpty("Shipment")),
+            Rows(ForeignKey("ShipmentNote", "Shipment", ("OrderId", "OrderId"), ("LineNumber", "LineNumber")))]);
+
+        Assert.Equal("""
+            [dbo].[Customer] at 2
+              row 1 (presence): [Id] omitted, [Name] N'w1', [Email] N'w1', [ContactPhone] N'w1', [Region] N'w1', [AccountId] NULL
+            """, added.ToString());
+        Assert.Equal(added.ToString(), kept.ToString());
+        Assert.All(added.Tables.Concat(kept.Tables).SelectMany(t => t.Rows), r => Assert.Empty(r.Suspends));
+        Assert.Equal("""
+            [dbo].[ShipmentNote] at 1
+              row 1 (presence): [Id] omitted, [OrderId] 1, [LineNumber] NULL
+            """, composite.ToString());
+    }
+
+    /// <summary>
+    /// PLT-60 where the existing data counts the foreign key: a ForeignKey answered populated and clean over a parent answered empty says
+    /// that each row holds NULL in a column of the key, which no row can where every column is NOT NULL, or is one a NotNull answered
+    /// clean reads, or holds the value of a class another precondition answered. No rows hold those answers, so a count is wrong, as a
+    /// row count read from sys.partitions can be, and the plan is the error plan.contradictory-answers, never a copy that reads
+    /// otherwise; so too where the declared witnesses plant the table, since no rows they declare hold the answers either.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("a NOT NULL column")]
+    [InlineData("a NOT NULL column of a table the declared witnesses plant")]
+    [InlineData("a column a NotNull answered clean reads")]
+    [InlineData("a column holding the value of a class")]
+    public void Answers_no_rows_hold_are_the_error_plan_contradictory_answers(string column)
+    {
+        var orderOfCustomer = ForeignKey("Order", "Customer", ("CustomerId", "Id"));
+        PreconditionState[] orders = [Rows(HasOrders), Rows(orderOfCustomer), Empty(HasCustomers)];
+        (Schema Schema, PreconditionState[] States, Precondition Foreign, string Parent) c = column switch
+        {
+            "a NOT NULL column" or "a NOT NULL column of a table the declared witnesses plant" => (PgCopy.With(Ordering), orders,
+                orderOfCustomer, "[dbo].[Customer]"),
+            "a column a NotNull answered clean reads" => (PgCopy,
+                [Rows(HasCustomers), Rows(AccountOfCustomer), Rows(NotNull("Customer.AccountId")), Empty(HasAccounts)], AccountOfCustomer,
+                "[dbo].[Account]"),
+            _ => (PgCopy, [Rows(HasCustomers), Rows(AccountOfCustomer), Empty(HasAccounts),
+                Violating(Fits("Customer.AccountId", "int", "smallint"), RowClasses.Overflow)], AccountOfCustomer, "[dbo].[Account]"),
+        };
+        var declared = column.EndsWith("plant", StringComparison.Ordinal) ? new Witness.Declared([TableName("Order")], []) : null;
+
+        var error = Expect.Failed(Witness.Plan(c.Schema, SortedArray.Of(c.States.Select(s => s.Precondition)),
+            new ExistingData(SortedArray.Of(c.States)), declared: declared), "plan.contradictory-answers");
+
+        Assert.Contains(c.Foreign + " clean and " + c.Parent + " empty", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A ForeignKey whose parent the change creates, which the copy lacks: the count reads each row with no NULL in the key as an orphan,
+    /// since the parent holds no row (io/AggregateQueries.Keys.cs). Where the environment answered it clean, the nullable AccountId is
+    /// NULL; where it answered it violating, the orphan takes the ordinal literal, there being no parent's key to read past; and where
+    /// the column is NOT NULL, as Order.CustomerId, the clean answer is one no rows hold.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_ForeignKey_to_a_parent_the_change_creates_leaves_its_nullable_columns_NULL_and_its_orphan_takes_the_ordinal_literal()
+    {
+        var change = new Change([New(Model.TableKey("Ledger"), [])], [], [], []);
+        var ledgerOfCustomer = ForeignKey("Customer", "Ledger", ("AccountId", "Id"));
+        var ledgerOfOrder = ForeignKey("Order", "Ledger", ("CustomerId", "Id"));
+
+        var clean = Plan(PgCopy, [Rows(HasCustomers), Rows(ledgerOfCustomer)], change: change);
+        var orphan = Plan(PgCopy, [Rows(HasCustomers), Violating(ledgerOfCustomer)], change: change);
+        var unheld = Expect.Failed(Witness.Plan(PgCopy, [HasOrders, ledgerOfOrder],
+            new ExistingData([Rows(HasOrders), Rows(ledgerOfOrder)]), change), "plan.contradictory-answers");
+
+        Assert.Equal("NULL", Cell(clean, "Customer", 1, "AccountId"));
+        Assert.Equal("1", Cell(orphan, "Customer", 1, "AccountId"));
+        Assert.Contains(ledgerOfOrder + " clean, and [dbo].[Ledger], which the change creates, holds no row", unheld.Message,
+            StringComparison.Ordinal);
+        Assert.All(clean.Tables.Concat(orphan.Tables).SelectMany(t => t.Rows), r => Assert.Empty(r.Suspends));
+    }
+
+    /// <summary>
+    /// The states ExistingData.Of gives from counts name no class, so a violating Fits or Unique plants the class that fails between its
+    /// two types, or an exact duplicate: a code one character past nvarchar(10), the pair of rows equal on it, and a StatusId one past
+    /// smallint's range. Without those rows the copy reads clean where the environment's publish blocks.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_violating_Fits_or_Unique_counted_with_no_class_plants_the_class_that_fails_or_an_exact_duplicate()
+    {
+        var status = Fits("Order.StatusId", "int", "smallint");
+        var code = Fits("Product.Code", "nvarchar(50)", "nvarchar(10)");
+        PreconditionCount[] counts = [new(HasProducts, 5, 5), new(code, 5, 2), new(Unique("Product", "Code"), 5, 2), new(HasOrders, 4, 4),
+            new(status, 4, 1)];
+
+        var plan = Ok(Witness.Plan(PgCopy, SortedArray.Of(counts.Select(c => c.Precondition)), ExistingData.Of(counts)));
+
+        Assert.Equal("""
+            [dbo].[Order] at 4
+              row 1 (presence; Fits on [dbo].[Order] ([StatusId]) Overflow): [Id] omitted, [CustomerId] 1, [StatusId] 32768, [Total] 1.00, [StatusText] N'w1'
+            [dbo].[Product] at 6
+              row 1 (presence; Fits on [dbo].[Product] ([Code]) OverLength): [Id] omitted, [Code] N'w1wwwwwwwww', [Name] N'w1', [LegacyCode] N'w1', [CategoryId] 1
+              row 2 (presence; Unique on [dbo].[Product] ([Code]) Exact): [Id] omitted, [Code] N'w2', [Name] N'w2', [LegacyCode] N'w2', [CategoryId] 2
+              row 3 (presence; Unique on [dbo].[Product] ([Code]) Exact): [Id] omitted, [Code] N'w2', [Name] N'w3', [LegacyCode] N'w3', [CategoryId] 3
+            """, plan.ToString());
+    }
+
+    /// <summary>
+    /// A violating Fits that names no class plants the first class ALTER COLUMN refuses between its two types (io/AggregateQueries.Fits.cs)
+    /// that the planter writes a value of: over length into a string or binary type, else not convertible, then overflow, which a date
+    /// and time type takes into datetime or smalldatetime, as TRY_CONVERT gives NULL for a value before 1753 or after 2079-06-06. Where the
+    /// planter writes none, as for int into varchar, which ALTER COLUMN writes as '*', or datetime2 into date, which never fails, the
+    /// need names no class, since the environment reported none.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("nvarchar(50)", "nvarchar(10)", RowClasses.OverLength, "N'w1wwwwwwwww'")]
+    [InlineData("nvarchar(20)", "int", RowClasses.NotConvertible, "N'w1'")]
+    [InlineData("int", "smallint", RowClasses.Overflow, "32768")]
+    [InlineData("datetime2", "datetime", RowClasses.Overflow, "'1700-01-01T00:00:00'")]
+    [InlineData("date", "smalldatetime", RowClasses.Overflow, "'2079-06-07'")]
+    [InlineData("datetimeoffset", "datetime", RowClasses.Overflow, "'1700-01-01T00:00:00+00:00'")]
+    [InlineData("datetime", "smalldatetime", RowClasses.Overflow, "'2079-06-07T00:00:00'")]
+    [InlineData("int", "varchar(5)", RowClasses.None, null)]
+    [InlineData("datetime2", "date", RowClasses.None, null)]
+    public void A_violating_Fits_that_names_no_class_plants_the_first_class_ALTER_COLUMN_refuses_that_the_planter_writes(string before,
+        string after, RowClasses @class, string? value)
+    {
+        var fits = Fits("T.c", before, after);
+
+        var plan = Plan(Copy(T("T", "Id int IDENTITY", "c " + before).Key("Id")), [Rows(TableEmpty("T")), Violating(fits)]);
+
+        if (value is null)
+        {
+            Assert.Empty(plan.Tables);
+            Assert.Equal("The planter writes no value that breaks the precondition into [dbo].[T].[c].", Assert.Single(plan.Needs).Message);
+        }
+        else
+        {
+            var row = Assert.Single(Assert.Single(plan.Tables).Rows);
+            Assert.Equal(value, Cell(row, "c"));
+            Assert.Contains(new Witness.Purpose(fits, @class), row.Serves);
+            Assert.Empty(plan.Needs);
+        }
+    }
+
+    /// <summary>
     /// The change places each precondition where the copy holds it (the coordinate rules of WP 2.1): a column it renames under the name
     /// it had (the Facsimile's S3), so the NULL a NotNull answered violating asks lands in ContactPhone; a column it creates nowhere, so
     /// a duplicate over one is two rows equal on nothing the copy holds; and a table it creates holds no row.
@@ -299,6 +459,12 @@ public sealed class WitnessTests
     private static readonly Precondition HasCustomers = TableEmpty("Customer");
 
     private static readonly Precondition HasOrders = TableEmpty("Order");
+
+    private static readonly Precondition HasProducts = TableEmpty("Product");
+
+    private static readonly Precondition HasAccounts = TableEmpty("Account");
+
+    private static readonly Precondition AccountOfCustomer = ForeignKey("Customer", "Account", ("AccountId", "Id"));
 
     private static readonly Precondition TotalPositive = Check("Order", "[Total]>(0)", "Total");
 

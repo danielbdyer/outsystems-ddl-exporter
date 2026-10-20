@@ -15,7 +15,8 @@ public sealed partial record Witness
     private sealed record Link(ElementKey Key, Name Parent, (Name Column, Name ParentColumn)[] Legs, bool Met, Reference? Copy,
         bool Validated);
 
-    /// <summary>One plan's working state: the rows each table takes, the tables whose rows serve presence, and the needs found.</summary>
+    /// <summary>One plan's working state: the rows each table takes, the tables whose rows serve presence, the needs found, and the
+    /// contradiction in the existing data that refuses the plan, once one is found.</summary>
     private sealed partial class Planner(Schema schema, IReadOnlyList<Located> located, bool presenceMode, Declared declared)
     {
         private readonly Dictionary<Name, int> rows = [];
@@ -28,8 +29,9 @@ public sealed partial record Witness
         private readonly Dictionary<Name, List<(Demand Demand, int Start)>> placed = [];
         private Dictionary<Name, Link[]> links = [];
         private Order order = new([], [], []);
+        private Error? refusal;
 
-        public Witness Plan()
+        public Result<Witness> Plan()
         {
             links = schema.Tables.ToDictionary(t => t.Name, Links);
             order = Order.Of(new Schema(SortedArray.Of(schema.Tables.Select(t => t with
@@ -61,6 +63,14 @@ public sealed partial record Witness
                 rows[table.Name] = Math.Max(rows.GetValueOrDefault(table.Name), height);
             }
 
+            // PLT-60: a populated table whose ForeignKey the environment answered clean over a parent that holds no row holds NULL in a
+            // column of the key in every row, which no row can where none admits NULL; whether or not the plan plants the table.
+            if (located.FirstOrDefault(l => l.State is { Populated: true } && Clears(l) && !Legs(l).Any(c => Admits(l.Table, c)))
+                is { } unheld)
+            {
+                return Contradicts(unheld, "every column of the key is NOT NULL, or read by a NotNull answered clean");
+            }
+
             Ancestors();
             foreach (var member in order.Cycles.SelectMany(c => c.Members.Select(m => (Cycle: c, Member: m))))
             {
@@ -81,9 +91,15 @@ public sealed partial record Witness
             var plantings = new List<Planting>();
             foreach (var step in order.Tables.Where(s => rows.GetValueOrDefault(s.Table) > 0 && !taken.Contains(s.Table)))
             {
-                if (Build(schema.Find(step.Table)!) is { } built)
+                var built = Build(schema.Find(step.Table)!);
+                if (refusal is not null)
                 {
-                    plantings.Add(new Planting(step.Position, step.Table, built));
+                    return refusal;
+                }
+
+                if (built is { } planted)
+                {
+                    plantings.Add(new Planting(step.Position, step.Table, planted));
                 }
             }
 
@@ -134,7 +150,8 @@ public sealed partial record Witness
         /// clean value at r; it serves presence where the table's rows do, and every demand that covers it. A value no literal can write is
         /// a need, and so are a demand's literal in a column of a foreign key the row meets (<see cref="Unmet"/>) and a one-column key
         /// whose planted values repeat where no demand asks it to (PLT-42, PLT-114); each leaves the table's rows to the declared
-        /// witnesses, and null is returned.
+        /// witnesses, and null is returned. A row that holds a value in every column of a ForeignKey the environment answered clean over a
+        /// parent that holds no row, as a value of a class does in the one column that admits NULL, refuses the plan.
         /// </summary>
         private SortedArray<Row>? Build(Table table)
         {
@@ -161,9 +178,18 @@ public sealed partial record Witness
                 }
 
                 suspends.AddRange(covering.Select(d => d.Demand.Suspends).OfType<ElementKey>());
-                var serves = covering.Select(d => d.Demand.Purpose)
-                    .Concat(presence.Contains(table.Name) ? [new Purpose(null, RowClasses.None)] : []);
-                built.Add(new Row(r, SortedArray.Of(serves.Distinct()), SortedArray.Of(cells), SortedArray.Of(suspends.Distinct())));
+                var serves = SortedArray.Of(covering.Select(d => d.Demand.Purpose)
+                    .Concat(presence.Contains(table.Name) ? [new Purpose(null, RowClasses.None)] : []).Distinct());
+                built.Add(new Row(r, serves, SortedArray.Of(cells), SortedArray.Of(suspends.Distinct())));
+
+                // A row that holds a value in every column of a key whose parent holds no row is an orphan the environment lacks.
+                if (Cleared(table).FirstOrDefault(l => Legs(l).All(c => cells.Single(x => x.Column == c).Value is not Planted.Null))
+                    is { } orphaned)
+                {
+                    refusal = Contradicts(orphaned, "row " + Number(r) + " of the plan, which serves " + string.Join(" and ", serves)
+                        + ", holds a value in every column of the key");
+                    return null;
+                }
             }
 
             reasons.AddRange(Repeats(table, built, demands[table.Name]));
@@ -181,14 +207,22 @@ public sealed partial record Witness
         }
 
         /// <summary>
-        /// The value of a column at row r that breaks nothing (PLT-01 to PLT-52, PLT-94, PLT-95): none for a column SQL Server fills; a
-        /// leg's parent key, or NULL where a nullable leg's reference is left; a nullable xml column no precondition reads, left to its
-        /// default, since a column set and a typed xml column both read as one (PLT-36, PLT-22); for an integer key of the copy without
-        /// identity, a key past the seeded rows (PLT-41); for a column the change retypes, a value of no class; else the ordinal literal,
-        /// or NULL in a nullable column of a type the planter writes none for, and a need in a NOT NULL one.
+        /// The value of a column at row r that breaks nothing (PLT-01 to PLT-52, PLT-94, PLT-95): NULL in a column of a ForeignKey the
+        /// environment answered clean over a parent that holds no row, where the column admits NULL, since every row the ForeignKey counted
+        /// holds NULL in a column of its key; none for a column SQL Server fills; a leg's parent key, or NULL where a nullable leg's
+        /// reference is left; a nullable xml column no precondition reads, left to its default, since a column set and a typed xml column
+        /// both read as one (PLT-36, PLT-22); for an integer key of the copy without identity, a key past the seeded rows (PLT-41); for a
+        /// column the change retypes, a value of no class; else the ordinal literal, or NULL in a nullable column of a type the planter
+        /// writes none for, and a need in a NOT NULL one.
         /// </summary>
         private Planted? Clean(Table table, Column column, int r, List<ElementKey> suspends, List<NeedsRow.Reason> reasons)
         {
+            var cleared = Cleared(table).Any(l => Legs(l).Contains(column.Name));
+            if (cleared && Admits(table, column.Name))
+            {
+                return new Planted.Null();
+            }
+
             if (column is not Column.Stored stored || stored.Identity is not null || stored.Default?.Sequence is not null
                 || Literals.FamilyOf(stored.Type) == Literals.Family.Version)
             {
@@ -197,7 +231,7 @@ public sealed partial record Witness
 
             if (Leg(table, stored.Name) is { } leg)
             {
-                return Linked(table, stored, leg.Link, leg.ParentColumn, r, suspends, reasons);
+                return Linked(table, stored, leg.Link, leg.ParentColumn, r, cleared, suspends, reasons);
             }
 
             if (Literals.FamilyOf(stored.Type) == Literals.Family.Xml && stored.Nullable && !Read(table, stored.Name))
@@ -225,12 +259,16 @@ public sealed partial record Witness
             return Plain(stored, r, reasons);
         }
 
-        /// <summary>A leg's value: the parent's key at row r, written in a second pass where Order defers the reference; in a leg of a
-        /// reference no row meets, or of a parent the schema lacks, NULL where it admits one and else the ordinal literal; and where the
-        /// environment answered the parent empty, NULL in a nullable leg no precondition reads, and else an orphan, its reference suspended
-        /// (PLT-59), since a NULL there would read violating.</summary>
-        private Planted? Linked(Table table, Column.Stored leg, Link link, Name parentColumn, int r, List<ElementKey> suspends,
-            List<NeedsRow.Reason> reasons)
+        /// <summary>
+        /// A leg's value: the parent's key at row r, written in a second pass where Order defers the reference; in a leg of a reference no
+        /// row meets, or of a parent the schema lacks, NULL where it admits one and else the ordinal literal; and where the environment
+        /// answered the parent empty, NULL in a nullable leg no precondition reads, and else an orphan, its reference suspended (PLT-59),
+        /// since a NULL there would read violating. A <paramref name="cleared"/> leg, a column that admits no NULL of a ForeignKey the
+        /// environment answered clean over that empty parent, takes the ordinal literal beside the column of the key that is NULL; Build
+        /// refuses a row that holds a value in each.
+        /// </summary>
+        private Planted? Linked(Table table, Column.Stored leg, Link link, Name parentColumn, int r, bool cleared,
+            List<ElementKey> suspends, List<NeedsRow.Reason> reasons)
         {
             if (!link.Met || !links.ContainsKey(link.Parent))
             {
@@ -239,6 +277,11 @@ public sealed partial record Witness
 
             if (empty.Contains(link.Parent))
             {
+                if (cleared)
+                {
+                    return Plain(leg, r, reasons);
+                }
+
                 if (leg.Nullable && !Read(table, leg.Name))
                 {
                     return new Planted.Null();
@@ -257,7 +300,9 @@ public sealed partial record Witness
         /// The parent of a reference the row meets that a demand's literal in one of its columns leaves: no value of a class is a key of
         /// the parent, so the copy would hold an orphan its existing data lacks. A reference the row meets is an enabled reference of the
         /// copy, or one the change validates; null where the column is a leg of none. Where the environment answered the parent empty,
-        /// the environment's rows hold orphans there too, so the literal stands and the copy's reference is suspended (PLT-59).
+        /// the environment's rows hold orphans there too, so the literal stands and the copy's reference is suspended (PLT-59); but not
+        /// where a ForeignKey it answered clean over that parent reads the column, which holds no orphan, so the row stands only beside a
+        /// NULL in another column of the key, as Build checks.
         /// </summary>
         private Name? Unmet(Table table, Name column, List<ElementKey> suspends)
         {
@@ -269,10 +314,42 @@ public sealed partial record Witness
                     return link.Parent;
                 }
 
-                suspends.AddRange(link.Copy is { Disabled: false } copy ? [copy.Key] : []);
+                if (!Cleared(table).Any(l => l.Parent?.Name == link.Parent && Legs(l).Contains(column)))
+                {
+                    suspends.AddRange(link.Copy is { Disabled: false } copy ? [copy.Key] : []);
+                }
             }
 
             return null;
+        }
+
+        /// <summary>The ForeignKeys of a table the environment answered clean over a parent that holds no row, one it answered empty or
+        /// one the change creates: each row they counted holds NULL in a column of the key, the one way MATCH SIMPLE passes a row without
+        /// a parent row.</summary>
+        private IEnumerable<Located> Cleared(Table table) => located.Where(l => l.Table.Name == table.Name && Clears(l));
+
+        private bool Clears(Located l) => l.State is { Violating: false } && (l.Parent is not { } parent || empty.Contains(parent.Name))
+            && l.Here.Kind is PreconditionKind.ForeignKey { Pairs.Count: > 0 };
+
+        /// <summary>A ForeignKey's columns as the copy holds them.</summary>
+        private static IEnumerable<Name> Legs(Located l) => ((PreconditionKind.ForeignKey)l.Here.Kind).Pairs.Select(p => p.Column);
+
+        /// <summary>Whether a planted row may hold NULL in a column: it is nullable in the copy, and no NotNull the environment answered
+        /// clean reads it.</summary>
+        private bool Admits(Table table, Name column) => table.Find(column) is Column.Stored { Nullable: true }
+            && !located.Any(l => l.Table.Name == table.Name && l.Here.Kind is PreconditionKind.NotNull
+                && l.Here.Columns.Contains(column) && l.State is { Violating: false });
+
+        /// <summary>plan.contradictory-answers, the Facsimile's answers-invalid (PLT-60): a ForeignKey the environment answered clean
+        /// over a parent that holds no row, which no rows of the table hold beside what <paramref name="but"/> says.</summary>
+        private static Error Contradicts(Located foreign, string but)
+        {
+            var parent = ((PreconditionKind.ForeignKey)foreign.Precondition.Kind).Parent;
+            return new("plan.contradictory-answers", "The existing data answers " + foreign.Precondition + " clean"
+                + (foreign.Parent is null ? ", and " + parent + ", which the change creates, holds no row" : " and " + parent + " empty")
+                + ", so each row of " + foreign.Precondition.Table + " holds NULL in a column of the key, the one way MATCH SIMPLE passes"
+                + " a row without a parent row; but " + but + ", so one count is wrong, as a row count read from sys.partitions can be.",
+                "Predict again, so that every precondition of the change is counted again in the environment.");
         }
 
         /// <summary>The ordinal literal, NULL in a nullable column of a type the planter writes none for, and a need in a NOT NULL
