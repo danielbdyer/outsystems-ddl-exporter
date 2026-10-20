@@ -250,7 +250,7 @@ public sealed class WitnessProperties
     /// keys; a one-column key whose column's planted values have room for fewer than the three rows, or that is a key without a filter
     /// over a nullable column the plan plants NULL in more than once, as a deferred reference's first pass does; a column of a type the
     /// planter writes no literal for that is NOT NULL or that a precondition reads; or a column a Fits retypes that no ordinal value
-    /// converts cleanly.
+    /// converts cleanly, or that is an integer key of the copy, whose planted value lies past the largest the copy holds.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -317,7 +317,10 @@ public sealed class WitnessProperties
             narrow => narrow.Room < Witness.PresenceRows && Single(narrow.Column, unfiltered: false),
             literal => Witness.Literal(literal.Type, 1) is null,
             _ => false,
-            clean => i.Preconditions.Any(p => p.Table == table.Name && p.Kind is PreconditionKind.Fits && p.Columns.Contains(clean.Column)),
+            clean => i.Preconditions.Any(p => p.Table == table.Name && p.Kind is PreconditionKind.Fits && p.Columns.Contains(clean.Column))
+                && (!clean.Key || (clean.Before.Type.Base is "tinyint" or "smallint" or "int" or "bigint"
+                    && (table.Key?.Columns.Any(k => k.Column == clean.Column) == true
+                        || table.Uniques.Any(u => !u.Disabled && u.Columns.Any(k => k.Column == clean.Column))))),
             _ => false,
             repeated => repeated.Rows > 1 && repeated.Value is Witness.Planted.Null && table.Find(repeated.Column)?.Nullable == true
                 && Single(repeated.Column, unfiltered: true));

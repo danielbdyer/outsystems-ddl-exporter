@@ -116,7 +116,9 @@ public sealed partial record Witness
         /// The tables whose rows serve as ancestors: every parent a planted row links to, transitively, takes the rows the link asks,
         /// one, or three without existing data, or one for each child row where the leg is in a key of the child; unless the declared
         /// witnesses plant it, it is a history table, or the environment answered it empty, since the answers win over the ancestor rule
-        /// (PLT-59). WP 3.5 skips an ancestor row where the parent already holds one, a seeded lookup's (PLT-50, PLT-53).
+        /// (PLT-59). WP 3.5 skips ancestor row r only where the copy already holds at least r rows of the parent, as a lookup seeded with
+        /// three rows holds rows 1 to 3 (PLT-50, PLT-53), so a leg in a key takes a distinct parent row for each child row, seeded or
+        /// planted (Row).
         /// </summary>
         private void Ancestors()
         {
@@ -221,9 +223,10 @@ public sealed partial record Witness
         /// environment answered clean over a parent that holds no row, where the column admits NULL, since every row the ForeignKey counted
         /// holds NULL in a column of its key; none for a column SQL Server fills; a leg's parent key, or NULL where a nullable leg's
         /// reference is left; a nullable xml column no precondition reads, left to its default, since a column set and a typed xml column
-        /// both read as one (PLT-36, PLT-22); for an integer key of the copy without identity, a key past the seeded rows (PLT-41); for a
-        /// column the change retypes, a value of no class; else the ordinal literal, or, for a type the planter writes none for, NULL in
-        /// a nullable column no precondition reads and a need in any other (<see cref="Plain"/>).
+        /// both read as one (PLT-36, PLT-22); for an integer key of the copy without identity, a key past the seeded rows (PLT-41), or a
+        /// need where the change retypes it to a type that does not hold every value of the old one; for a column the change retypes, a
+        /// value of no class; else the ordinal literal, or, for a type the planter writes none for, NULL in a nullable column no
+        /// precondition reads and a need in any other (<see cref="Plain"/>).
         /// </summary>
         private Planted? Clean(Table table, Column column, int r, List<ElementKey> suspends, List<NeedsRow.Reason> reasons)
         {
@@ -249,17 +252,26 @@ public sealed partial record Witness
                 return new Planted.Omitted();
             }
 
+            var retyped = Retyped(table, stored.Name);
             if (Literals.FamilyOf(stored.Type) == Literals.Family.Integer && Keys(table).Any(k => k.Contains(stored.Name)))
             {
-                return new Planted.AfterMax(table.Name, stored.Name, r);
+                // A value past the copy's largest, which the plan does not read, converts to the type the change gives the column without
+                // an error or a loss only where that type holds every value of the old one.
+                if (retyped is null || Literals.Widens(stored.Type, retyped.After))
+                {
+                    return new Planted.AfterMax(table.Name, stored.Name, r);
+                }
+
+                reasons.Add(new NeedsRow.Reason.NoCleanValue(stored.Name, stored.Type, retyped.After, Key: true));
+                return null;
             }
 
-            if (Retyped(table, stored.Name) is { } fits)
+            if (retyped is not null)
             {
-                var clean = Literals.Clean(stored.Type, fits.After, r);
+                var clean = Literals.Clean(stored.Type, retyped.After, r);
                 if (clean is null)
                 {
-                    reasons.Add(new NeedsRow.Reason.NoCleanValue(stored.Name, stored.Type, fits.After));
+                    reasons.Add(new NeedsRow.Reason.NoCleanValue(stored.Name, stored.Type, retyped.After));
                 }
 
                 return clean;
@@ -380,10 +392,11 @@ public sealed partial record Witness
             return new Planted.Null();
         }
 
-        /// <summary>A value of the leg no parent row holds (PLT-75, PLT-76): past the parent's largest key for a number, the reserved
-        /// FFFFFFFF-FFFF-4FFF-BFFF- pattern for a uniqueidentifier, else the literal at ordinal 0, which no planted row holds.</summary>
+        /// <summary>A value of the leg no parent row holds (PLT-75, PLT-76): for a number, past the parent's largest key by 999 and the
+        /// row's ordinal, PLT-75's 1000 at row 1, so the orphans of two rows differ in a key; the reserved FFFFFFFF-FFFF-4FFF-BFFF- pattern
+        /// and the ordinal for a uniqueidentifier; else the literal at ordinal 0, which no planted row holds and every row takes.</summary>
         private static Planted? Orphan(Column.Stored leg, Name parent, Name parentColumn, int r) =>
-            Literals.Numeric(Literals.FamilyOf(leg.Type)) ? new Planted.AfterMax(parent, parentColumn, 1000)
+            Literals.Numeric(Literals.FamilyOf(leg.Type)) ? new Planted.AfterMax(parent, parentColumn, 999 + r)
             : Literals.FamilyOf(leg.Type) == Literals.Family.Guid
                 ? new Planted.Text("FFFFFFFF-FFFF-4FFF-BFFF-" + r.ToString("X12", System.Globalization.CultureInfo.InvariantCulture), false)
             : Literals.Of(leg.Type, 0) is { } zero && zero != Literals.Of(leg.Type, 1) ? zero

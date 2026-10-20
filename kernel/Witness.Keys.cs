@@ -26,24 +26,25 @@ public sealed partial record Witness
 
         /// <summary>
         /// The values a one-column key holds in more than one planted row where no demand asks for it, a key of the copy or one the change
-        /// adds that the environment answered clean: each as the INSERT writes it, a deferred reference's first pass included, and none of
-        /// a column no value is written in, which is a need already. Two NULLs are equal in a key without a filter, which holds one NULL
-        /// at most (Msg 2627, 2601). No NULL is counted in a filtered unique index, which WHERE [c] IS NOT NULL leaves NULLs out of: the
-        /// planter reads no filter, so a filter over other columns alone, which leaves those NULLs in, is not checked. A literal that
-        /// repeats because the column's literals have room for fewer values than the rows is a narrow key (PLT-42, PLT-114); NULL, or any
-        /// other value, is named with the rows that hold it.
+        /// adds that the environment answered clean: each as the INSERT writes it, a deferred reference's first pass and a value past a
+        /// column's largest included, and none of a column no value is written in, which is a need already. Two NULLs are equal in a key
+        /// without a filter, which holds one NULL at most (Msg 2627, 2601). No NULL is counted in a filtered unique index, which WHERE [c]
+        /// IS NOT NULL leaves NULLs out of: the planter reads no filter, so a filter over other columns alone, which leaves those NULLs in,
+        /// is not checked. A literal that repeats because the column's literals have room for fewer values than the rows is a narrow key
+        /// (PLT-42, PLT-114); NULL, or any other value, is named with the rows that hold it.
         /// </summary>
         private IEnumerable<NeedsRow.Reason> Repeats(Table table, List<Row> built, Demand[] demands, HashSet<Name> unwritten)
         {
+            static bool Literal(Planted value) => value is Planted.Number or Planted.Text or Planted.Bytes;
             var asked = demands.Where(d => d.Size == 2).SelectMany(d => d.Columns).ToHashSet();
             foreach (var (column, filtered) in Singles(table).Where(k => !unwritten.Contains(k.Column) && !asked.Contains(k.Column)))
             {
                 var values = built.Select(r => r.Cells.First(c => c.Column == column).Value)
                     .Select(v => v is Planted.Linked { FirstPass: { } first } ? first : v)
-                    .Where(v => v is Planted.Number or Planted.Text or Planted.Bytes || (v is Planted.Null && !filtered));
+                    .Where(v => Literal(v) || v is Planted.AfterMax || (v is Planted.Null && !filtered));
                 foreach (var repeat in values.GroupBy(v => v).Where(g => g.Count() > 1))
                 {
-                    var room = repeat.Key is Planted.Null ? built.Count : Room(table, column, built.Count);
+                    var room = Literal(repeat.Key) ? Room(table, column, built.Count) : built.Count;
                     yield return room < built.Count ? new NeedsRow.Reason.NarrowKey(column, room)
                         : new NeedsRow.Reason.Repeated(column, repeat.Key, repeat.Count());
                 }

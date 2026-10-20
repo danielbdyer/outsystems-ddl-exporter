@@ -97,9 +97,10 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
     /// A row to plant: its ordinal in its table from 1, which its literals are a function of; what it witnesses; a value for each
     /// column, in column order; and the foreign keys of the copy it breaks, which WP 3.5 suspends to plant it and restores to the
     /// environment's trust state (PLT-59). The plan lists every ancestor and presence row, since it reads no row of the copy; WP 3.5
-    /// counts the copy before each row and skips one whose every purpose the copy already answers, as a seeded row answers a lookup's
-    /// presence (PLT-97), so an ancestor reuses a seeded row before one is planted and a <see cref="Planted.Linked"/> key resolves to
-    /// the lowest seeded row (PLT-50, PLT-53).
+    /// counts the copy before each row and skips one whose every purpose the copy already answers (PLT-97), the presence of row r where
+    /// the copy holds at least r rows of the table, so ancestor row r reuses the parent's r-th seeded row before one is planted. A
+    /// <see cref="Planted.Linked"/> key of row r resolves to the parent's r-th row, its seeded rows first: row 1 to the lowest seeded
+    /// row (PLT-50, PLT-53), and each row of a leg in a key to a parent row of its own.
     /// </summary>
     public sealed record Row(int Ordinal, SortedArray<Purpose> Serves, SortedArray<Cell> Cells, SortedArray<ElementKey> Suspends)
         : IComparable<Row>
@@ -181,10 +182,11 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
         public sealed record Bytes(string Hex) : Planted;
 
         /// <summary>
-        /// A parent's key: <see cref="Column"/> of the parent's row at <see cref="Row"/>, from 1 and cycling, in the order of the columns
-        /// the reference names, among the rows the parent holds when the child is planted, seeded or planted; every leg of one reference
-        /// names one parent row. <see cref="FirstPass"/> is what a first pass writes where the reference is deferred inside a cycle
-        /// (Order.Deferred), the key being set by a second; null where the first pass writes the key.
+        /// A parent's key: <see cref="Column"/> of the parent's row at <see cref="Row"/>, from 1 and cycling, among the rows the parent
+        /// holds when the child is planted, its seeded rows first, in the order of the columns the reference names, then the rows planted
+        /// into it, by ordinal; every leg of one reference names one parent row. <see cref="FirstPass"/> is what a first pass writes where
+        /// the reference is deferred inside a cycle (Order.Deferred), the key being set by a second; null where the first pass writes the
+        /// key.
         /// </summary>
         public sealed record Linked(Name Parent, Name Column, int Row, Planted? FirstPass) : Planted;
 
@@ -229,8 +231,11 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
             v => "The planter writes no value " + (v.Class == RowClasses.None ? "that breaks the precondition" : "of the class " + v.Class)
                 + " into " + Table + "." + v.Column
                 + (v.Parent is { } parent ? " that is also a key of " + parent + ", the table the column references" : ""),
-            c => "No ordinal value of " + Table + "." + c.Column + " (" + Literals.Written(c.Before) + ") converts to "
-                + Literals.Written(c.After) + " and fits both",
+            c => c.Key ? Table + "." + c.Column + " is a key of the copy, whose planted value lies past the largest the copy holds, a value"
+                    + " the plan does not read, and " + Literals.Written(c.After) + ", the type the change gives it, does not hold every"
+                    + " value of " + Literals.Written(c.Before)
+                : "No ordinal value of " + Table + "." + c.Column + " (" + Literals.Written(c.Before) + ") converts to "
+                    + Literals.Written(c.After) + " and fits both",
             h => Table + " is the history table of " + h.Current + ", whose rows SQL Server writes only from updates of "
                 + h.Current,
             r => Table + "." + r.Column + " is a key" + (r.Value is Planted.Null ? " without a filter, which holds one NULL at most," : ",")
@@ -290,15 +295,18 @@ public sealed partial record Witness(SortedArray<Witness.Planting> Tables, Sorte
             /// hold a key of <see cref="Parent"/>, a value WP 3.5 reads from the copy as it plants the row.</summary>
             public sealed record NoClassValue(Name Column, RowClasses Class, Name? Parent = null) : Reason;
 
-            /// <summary>A column the change retypes where no ordinal value converts cleanly and fits both types (PLT-95).</summary>
-            public sealed record NoCleanValue(Name Column, ColumnType Before, ColumnType After) : Reason;
+            /// <summary>A column the change retypes where no ordinal value converts cleanly and fits both types (PLT-95); or, where
+            /// <see cref="Key"/> is true, an integer key of the copy, whose planted value lies past the largest the copy holds (PLT-41),
+            /// retyped to a type that does not hold every value of the old one, as bit or smallint an int.</summary>
+            public sealed record NoCleanValue(Name Column, ColumnType Before, ColumnType After, bool Key = false) : Reason;
 
             /// <summary>A history table the environment answered populated (PLT-35): SQL Server refuses an INSERT into one.</summary>
             public sealed record History(Name Current) : Reason;
 
             /// <summary>A one-column key in which the plan plants one value in <see cref="Rows"/> rows that no type's room explains: NULL,
             /// which a key without a filter holds once at most, SQL Server refusing a second as a duplicate key (Msg 2627 for a constraint,
-            /// 2601 for an index), or the one orphan literal each child row of a parent the environment answered empty takes.</summary>
+            /// 2601 for an index), or the orphan of a leg whose parent the environment answered empty, the literal at ordinal 0 in every
+            /// row for a type other than a number or a uniqueidentifier, whose orphans differ by row.</summary>
             public sealed record Repeated(Name Column, Planted Value, int Rows) : Reason;
         }
     }

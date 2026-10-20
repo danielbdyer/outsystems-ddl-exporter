@@ -154,6 +154,30 @@ public sealed partial record Witness
                 && from is not (Family.Xml or Family.Hierarchy or Family.Spatial or Family.Version or Family.Other) ? Of(before, n) : null;
         }
 
+        /// <summary>
+        /// Whether <paramref name="after"/> holds every value of the integer type <paramref name="before"/>, so that each converts without
+        /// an error or a loss: an integer, decimal or money type whose range holds the old one's; float for an integer of 32 bits at most
+        /// and real for one of 16, whose 53-bit and 24-bit mantissas hold each exactly, as io/AggregateQueries.Fits.cs reads them; a
+        /// string as long as the old type's longest number and a binary type of as many bytes, or either of max; and sql_variant. False
+        /// for every other type: bit, a date and time type, uniqueidentifier, and text, ntext and image, which take no integer.
+        /// </summary>
+        public static bool Widens(ColumnType before, ColumnType after)
+        {
+            var (low, high, bytes) = Range(before);
+            var magnitude = BigInteger.Max(-low, high);
+            var digits = Math.Max(Plain(new Exact(low, 0)).Length, Plain(new Exact(high, 0)).Length);
+            return FamilyOf(after) switch
+            {
+                Family.Integer => Range(after).Min <= low && Range(after).Max >= high,
+                Family.Decimal or Family.Money => Holds(after, new Exact(magnitude, 0)),
+                Family.Approximate => magnitude <= BigInteger.Pow(2, Base(after) == "real" || after.Precision is > 0 and <= 24 ? 24 : 53),
+                Family.Character => after.IsMax || Width(after) >= digits,
+                Family.Binary => after.IsMax || Width(after) >= bytes,
+                Family.Variant => true,
+                _ => false,
+            };
+        }
+
         /// <summary>The length of the string SQL Server converts the literal at ordinal n to, where it differs from the literal's own
         /// length: a date and time type's default form, a uniqueidentifier's 36 characters, and a number's digits, money's with two
         /// after the point; null for the other types.</summary>

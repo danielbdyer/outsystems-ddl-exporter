@@ -181,6 +181,48 @@ public sealed class WitnessTests
     }
 
     /// <summary>
+    /// PLT-41 beside PLT-94: an integer key of the copy without identity takes a value past the largest the copy holds, a value the plan
+    /// does not read, which converts to the type the change gives the column without an error or a loss only where that type holds
+    /// every value of the old one, as bigint, decimal(10,0), float, nvarchar(11) and varbinary(4) hold every int. bit holds 0 and 1,
+    /// smallint stops at 32767, decimal(9,0) at 999999999, real holds an integer exactly only up to 16777216, nvarchar(10) holds no
+    /// -2147483648 and datetime no day past 9999-12-31, so the plan names a need for those where the copy could read violating a Fits the
+    /// environment answered clean.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("bit", false)]
+    [InlineData("smallint", false)]
+    [InlineData("decimal(9,0)", false)]
+    [InlineData("real", false)]
+    [InlineData("nvarchar(10)", false)]
+    [InlineData("datetime", false)]
+    [InlineData("bigint", true)]
+    [InlineData("decimal(10,0)", true)]
+    [InlineData("float", true)]
+    [InlineData("nvarchar(11)", true)]
+    [InlineData("varbinary(4)", true)]
+    public void An_integer_key_the_change_retypes_takes_a_value_past_the_copy_s_largest_only_where_the_new_type_holds_every_old_value(
+        string after, bool widens)
+    {
+        var plan = Plan(Copy(T("T", "Id int IDENTITY", "c int").Key("Id").Unique("UX_T_c", "c")),
+            [Rows(TableEmpty("T")), Rows(Fits("T.c", "int", after))]);
+
+        if (widens)
+        {
+            Assert.Equal("the largest [c] of [dbo].[T] plus 1", Cell(plan, "T", 1, "c"));
+            Assert.Empty(plan.Needs);
+        }
+        else
+        {
+            Assert.Empty(plan.Tables);
+            var need = Assert.Single(plan.Needs);
+            Assert.Equal(new Witness.NeedsRow.Reason.NoCleanValue(Part("c"), Model.Type("int"), Model.Type(after), Key: true), need.Why);
+            Assert.Equal("[dbo].[T].[c] is a key of the copy, whose planted value lies past the largest the copy holds, a value the plan does"
+                + " not read, and " + after + ", the type the change gives it, does not hold every value of int.", need.Message);
+        }
+    }
+
+    /// <summary>
     /// PLT-68 and PLT-72 in a column of a foreign key the row meets (PLT-49): no value of a class is a key of the parent, so the row would
     /// be an orphan its existing data lacks, which SQL Server refuses under the copy's enabled foreign key (Msg 547), and the plan names a
     /// need for the table, for a misfit and for a duplicate alike. Where the environment answered the parent empty, the environment's own
@@ -288,6 +330,49 @@ public sealed class WitnessTests
             + " 2 rows.", Assert.Single(unfiltered.Needs).Message);
         Assert.Equal(["NULL", "NULL"], Assert.Single(filtered.Tables).Rows.Select(r => Cell(r, "AccountId")));
         Assert.Empty(filtered.Needs);
+    }
+
+    /// <summary>
+    /// A deferred reference in a key without a filter: A.BId, nullable, references B and is the one column of UX_A_BId, and B.AId, a NOT
+    /// NULL column, references A, so Order defers A's reference to B, and the first pass writes NULL into BId in each of A's three
+    /// presence rows before the second sets B's keys. A key without a filter holds one NULL at most, and SQL Server refuses the second row
+    /// (Msg 2601), so the plan names the NULLs of the first pass as a need of A.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void NULLs_a_deferred_reference_s_first_pass_writes_into_a_key_without_a_filter_are_a_need_that_names_them()
+    {
+        var copy = Copy(T("A", "Id int IDENTITY", "BId int NULL").Key("Id").References("FK_A_B", "B", ("BId", "Id")).Unique("UX_A_BId", "BId"),
+            T("B", "Id int IDENTITY", "AId int").Key("Id").References("FK_B_A", "A", ("AId", "Id")));
+
+        var plan = Plan(copy, [], presence: true);
+
+        Assert.DoesNotContain(plan.Tables, t => t.Table == TableName("A"));
+        Assert.Equal("[dbo].[A].[BId] is a key without a filter, which holds one NULL at most, and the plan plants NULL in it in 3 rows.",
+            Assert.Single(plan.Needs).Message);
+    }
+
+    /// <summary>
+    /// PLT-75 in a key: where the environment answered Account empty, the NOT NULL AccountId of each Customer row holds an orphan past
+    /// Account's largest key, row 1's by PLT-75's 1000 and each later row's by one more, since UX_Customer_AccountId holds each value once
+    /// and SQL Server refuses the INSERT of a value it holds (Msg 2601); so too where AccountId is nullable and a NotNull answered clean
+    /// reads it, where a NULL would read violating.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Each_row_s_orphan_of_an_integer_leg_lies_past_the_parent_s_largest_key_by_a_step_of_its_own(bool nullable)
+    {
+        var customer = T("Customer", "Id int IDENTITY", "Email nvarchar(256) NULL", "AccountId int" + (nullable ? " NULL" : "")).Key("Id")
+            .References("FK_Customer_Account", "Account", ("AccountId", "Id")).Unique("UX_Customer_AccountId", "AccountId");
+        PreconditionState[] states = [Rows(HasCustomers), Violating(Unique("Customer", "Email"), RowClasses.Exact), Empty(HasAccounts)];
+
+        var plan = Plan(PgCopy.With(customer), nullable ? [.. states, Rows(NotNull("Customer.AccountId"))] : states);
+
+        Assert.Empty(plan.Needs);
+        Assert.Equal(["the largest [Id] of [dbo].[Account] plus 1000", "the largest [Id] of [dbo].[Account] plus 1001"],
+            Assert.Single(plan.Tables).Rows.Select(r => Cell(r, "AccountId")));
     }
 
     /// <summary>
