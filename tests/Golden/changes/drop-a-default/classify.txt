@@ -1,0 +1,1 @@
+unclassified change: prove it, dropped DefaultConstraint [dbo].[DF_Category_IsActive]

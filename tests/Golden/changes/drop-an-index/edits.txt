@@ -1,0 +1,4 @@
+=== Modules/Status.sql
+--- CREATE UNIQUE INDEX [UIX_Status_Code] ON dbo.Status (Code);
+--- GO
++++

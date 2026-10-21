@@ -69,7 +69,7 @@ environment. M3's *existing-data tier* is the facsimile. WP 3.3 already states i
 | Team laptops run LocalDB 16.x (SQL Server 2022). That meets a Sql160 project (law S4). The estate's network has no Docker, so LocalDB is the local server there, and a configured instance serves CI and the sandbox. v3's latest `io/LocalServer` already turns to LocalDB only when nothing else is chosen | the operator | 2026-10-19 |
 | Access: developers read Dev; dev leads read QA and UAT, so a lead's review extends the proof; nobody reads Prod. Prod is proved with `--assume Prod=worst` until a VIEW DEFINITION-only login exists. A data-reader-only login is refused by Extract and Script | the operator | 2026-10-18 |
 | Two principals keep the tool, one on the team and one on the supporting team. They are deliberately not named in any repository. Break-glass is the on-team principal plus a dev lead | the operator | 2026-10-18 |
-| The Twin stays in service until parity (G3) and one release cycle side by side (G4). `ARCHITECTURE.md` §10 has the gates | this spec | 2026-10-18 |
+| The Twin stays in service until parity (G3) and one release cycle side by side (G4). `../../../../tests/Cases/ARCHITECTURE.md` §10 has the gates | this spec | 2026-10-18 |
 
 Assume the person who commissioned this may not be reachable for long. Everything above is written
 so that the principals can carry it without them.
@@ -95,7 +95,7 @@ The shape tier was buying two things, and both have homes without it:
 1. Build the existing-data tier as the facsimile's planter, behind WP 3.3's existing interface.
 2. Take the shape and scale tiers, and the port of v2's `SyntheticData`, off the critical path.
 3. Bring them back on a named trigger: `planter-needs-row` turning out to be frequent on the real
-   estate (`ARCHITECTURE.md` §11, question 7), or a question about scale.
+   estate (`../../../../tests/Cases/ARCHITECTURE.md` §11, question 7), or a question about scale.
 
 Do not make this decision silently. Write it as one line in `<v3>/DECISIONS.md` in the pull request
 that brings the facsimile in, and let the operator confirm or overturn it.
@@ -107,13 +107,13 @@ that brings the facsimile in, and let the operator confirm or overturn it.
 | The pure core: `Questions.Derive`, the delta comparison, `Tiering`, `Planning`, `Acceptance`, `Outcomes.Classify`, `Records`, `Config.Read` (`TARGET.md` §3) | `<v3>/kernel/`: `Preconditions`, `ExistingData`, `Outcome`, `Claims` | **The kernel references the BCL and nothing else.** `TARGET.md` §3 has `Core/Questions` calling ScriptDom, and that is wrong for v3. In v3, `io/TSql` (already `TSql160Parser`) parses the delta, and io hands the kernel typed statements |
 | The schema read | `<v3>/io/SqlServer.Model` | the same VIEW DEFINITION read |
 | The count read (one batched query per environment) | `<v3>/io/SqlServer.Measure` | one `SELECT` whose columns are `CASE WHEN EXISTS (…)` or `SUM(CASE …)` already passes Measure's allowlist. Reading `HasRows` from `sys.partitions` under a VIEW DEFINITION-only login may need one more allowlist entry, with its negative case |
-| The planter: `witness.sql`, the trust suspend-and-restore envelope, the 12-step copy build (`ARCHITECTURE.md` §5) | `<v3>/io/` under the `Copy` type, inside WP 3.5's `synthetic-copy up --tier existing-data` | `Publish` exists only on `Copy`, so law S1 (disposable only) is already a v3 capability law |
+| The planter: `witness.sql`, the trust suspend-and-restore envelope, the 12-step copy build (`../../../../tests/Cases/ARCHITECTURE.md` §5) | `<v3>/io/` under the `Copy` type, inside WP 3.5's `synthetic-copy up --tier existing-data` | `Publish` exists only on `Copy`, so law S1 (disposable only) is already a v3 capability law |
 | `fx_` databases, `.facsimile/` | v3's `dbchange_<host>_<pid>_<rand>`, `.dbchange/copies.json`, `.dbchange/cache/` | the T laws (teardown) attach to v3's registry and its sweep |
 | `proofs/<slug>/answers.<env>.json` | `ExistingData` in the pull request's machine block, and `--existing-data <file>` | same content, v3's form |
 | Verbs | `read` → the reading half of `predict`; `prove` → `prove`; `up`, `status`, `down` → `synthetic-copy up`, `status`, `down`; `shape` → `profile`, value-free; `doctor` → `doctor`; `init` → `dbchange/environments.json` | v3 keeps `predict` (pure, from counts) beside `prove` (published). v3's law P (on a copy, prediction equals proof) is the check between them, and the facsimile's corpus feeds it |
 | The stdout grammar (`VERDICT`, `STOP`, `DONE`) and the stop list | `<v3>/cli/Render`, `<v3>/cli/Contract`, and the versioned schemas under `<v3>/cli/schemas/` | every stop still names one next step (A5) |
 | MCP mode (`TARGET.md` §8) | `dbchange serve --mcp`, generated from v3's verb table | three-sentence server instructions; no resources and no prompts; knowledge lives in the skill files |
-| The planned skill-tree changes at G4 (`ARCHITECTURE.md` §10) | `<v3>/knowledge/`, in the parallel lane that rebuilds it | v3 rebuilds the skill files itself; apply the changes there, not here |
+| The planned skill-tree changes at G4 (`../../../../tests/Cases/ARCHITECTURE.md` §10) | `<v3>/knowledge/`, in the parallel lane that rebuilds it | v3 rebuilds the skill files itself; apply the changes there, not here |
 
 ## Translations
 
@@ -130,7 +130,7 @@ spec's terms are translated on the way in. Case IDs and law IDs stay as they are
 | `NotNull`, `Fits`, `Unique` | `NotNull`, `Fits`, `Unique` | the facsimile adds the value classes of `Fits` (overlen, overbytes, nonconvertible, roundtrip, empty, overflow) and the collation classes of `Unique` (exact, case, accent, trailing, nulls) |
 | `Orphan` | `ForeignKey` | |
 | `CheckFalse` | `Check` | |
-| `KeyLength`, `Rebuild`, `Computed`, `Temporal`, `Scan`, `Authored`, `SeedDrift`, `Unknown` | none yet | each arrives with its cases from `cases/10-questions.md`. The coordinate rules (`ARCHITECTURE.md` §4) and the predicate exception (P2) arrive with them |
+| `KeyLength`, `Rebuild`, `Computed`, `Temporal`, `Scan`, `Authored`, `SeedDrift`, `Unknown` | none yet | each arrives with its cases from `../../../../tests/Cases/10-questions.md`. The coordinate rules (`../../../../tests/Cases/ARCHITECTURE.md` §4) and the predicate exception (P2) arrive with them |
 | witness row, planter | none yet | new concepts: introduce each with a `<v3>/DECISIONS.md` line, or name them inside `SyntheticData` at the existing-data tier |
 
 **Exit codes: v3's frozen table wins.** `<v3>/cli/exits.frozen` adds a code only in the change that
@@ -168,16 +168,16 @@ pass at the overlap, to confirm law by law:
 | Test | What it will flag | The fix |
 |---|---|---|
 | **Manifest** | Every markdown file outside `archive/` needs a row in `<v3>/ci/docs.manifest.json`, with its reader, its moment and its line budget. The case files run from about 200 to 2,400 lines each (2026-10-19) | add the rows |
-| **NoRestatedCounts** | This spec restates counts of laws and operations in prose | point to `cases/90-traceability.md`, which is generated; or drop the number; or date the line |
+| **NoRestatedCounts** | This spec restates counts of laws and operations in prose | point to `../../../../tests/Cases/90-traceability.md`, which is generated; or drop the number; or date the line |
 | **Citations** | The spec's relative paths assume `sidecar/projection/ssdt-agent/facsimile/`, and every `../../../../` breaks on the move | fix each one |
-| The Python lint `tests/catalog_lint.py` | becomes a C# test in `<v3>/tests/Budgets.Tests/`, as milestone M-a of `TARGET.md` §11 already plans. Its `--matrix` mode is the generator of `90-traceability.md`, so the generated file's banner names the new generator | port it |
+| The Python lint `tests/catalog_lint.py` | becomes a C# test in `<v3>/tests/Budgets.Tests/`, as milestone M-a of `TARGET.md` §11 already plans. Its `--matrix` mode is the generator of `../../../../tests/Cases/90-traceability.md`, so the generated file's banner names the new generator | port it |
 
 **My recommendation for where the files go:**
 
 | File | Destination |
 |---|---|
 | `../../TWIN_SUCCESSION.md` | `<v3>/archive/`, with an `<v3>/archive/INDEX.md` row. It is the reasoning, and in v3 reasoning is provenance |
-| `ARCHITECTURE.md`, `INVARIANTS.md`, `cases/` | beside the corpus under `<v3>/tests/Golden/`, because the catalog *is* the suite |
+| `../../../../tests/Cases/ARCHITECTURE.md`, `../../../../tests/Cases/INVARIANTS.md`, `../../../../tests/Cases/` | beside the corpus under `<v3>/tests/Golden/`, because the catalog *is* the suite |
 | the parts of `TARGET.md` that survive | folded into `<v3>/V3_MILESTONES.md` as amendments |
 | the rest of `TARGET.md` | archived |
 
@@ -195,16 +195,16 @@ but M2 itself is held until the operator allows it (`<v3>/NEXT.md`).
 
 | v3 package | What the facsimile brings | The cases |
 |---|---|---|
-| **WP 2.1** (`Preconditions`, `Outcome.Predict`) | extend the precondition table with the facsimile's kinds and the coordinate rules. Coordinates: an object the delta creates is answered from the delta; one it renames or moves is counted under its old name; anything else is counted where it is, or stops `missing-object` | `cases/10-questions.md` |
-| **WP 2.6** (the corpus begins) | seed `<v3>/tests/Golden/changes/` from the four operations files | `cases/40-ops-columns.md`, `cases/41-ops-keys.md`, `cases/42-ops-tables.md`, `cases/43-compound.md` |
-| **WP 3.3** (`Generate`, existing-data tier) | the planter, if the operator agrees to the recommendation above | `cases/20-planter.md` |
+| **WP 2.1** (`Preconditions`, `Outcome.Predict`) | extend the precondition table with the facsimile's kinds and the coordinate rules. Coordinates: an object the delta creates is answered from the delta; one it renames or moves is counted under its old name; anything else is counted where it is, or stops `missing-object` | `../../../../tests/Cases/10-questions.md` |
+| **WP 2.6** (the corpus begins) | seed `<v3>/tests/Golden/changes/` from the four operations files | `../../../../tests/Cases/40-ops-columns.md`, `../../../../tests/Cases/41-ops-keys.md`, `../../../../tests/Cases/42-ops-tables.md`, `../../../../tests/Cases/43-compound.md` |
+| **WP 3.3** (`Generate`, existing-data tier) | the planter, if the operator agrees to the recommendation above | `../../../../tests/Cases/20-planter.md` |
 | **WP 3.4** (`LocalServer`) | LocalDB 16.x is confirmed. Keep the 180 s DDL wait, `SINGLE_USER WITH ROLLBACK IMMEDIATE`, `ClearPool`, and the single retry on the first connect | `TARGET.md` §9 item 5 |
-| **WP 3.5** (`synthetic-copy up`) | the 12-step copy build | `ARCHITECTURE.md` §5 |
-| **WP 3.6** (`check`, `status`, `down`) | "the deploy plan against it is empty" is F2 (shape identity); silence on replay is D6 | `cases/00-invariants.md` |
-| **M4** (`prove`) | `Outcomes.Classify` and the verdict and stop tables | `cases/30-outcomes.md` |
-| **M4** (`prove`) | per-environment proof, drift, Prod | `cases/50-environments.md` |
-| **M4** (`prove`) | the privacy laws, attacked | `cases/60-privacy.md` |
-| **G3** | Twin parity: every Twin responsibility kept or safely retired | `cases/80-twin-parity.md` |
+| **WP 3.5** (`synthetic-copy up`) | the 12-step copy build | `../../../../tests/Cases/ARCHITECTURE.md` §5 |
+| **WP 3.6** (`check`, `status`, `down`) | "the deploy plan against it is empty" is F2 (shape identity); silence on replay is D6 | `../../../../tests/Cases/00-invariants.md` |
+| **M4** (`prove`) | `Outcomes.Classify` and the verdict and stop tables | `../../../../tests/Cases/30-outcomes.md` |
+| **M4** (`prove`) | per-environment proof, drift, Prod | `../../../../tests/Cases/50-environments.md` |
+| **M4** (`prove`) | the privacy laws, attacked | `../../../../tests/Cases/60-privacy.md` |
+| **G3** | Twin parity: every Twin responsibility kept or safely retired | `../../../../tests/Cases/80-twin-parity.md` |
 
 ## Still owed by people (merge these with v3's asks, so nobody is asked twice)
 
@@ -218,7 +218,7 @@ but M2 itself is held until the operator allows it (`<v3>/NEXT.md`).
 
 ## Questions only a first run can answer
 
-`ARCHITECTURE.md` §11 lists thirteen of them, and `cases/90-traceability.md` lists every `verify`
+`../../../../tests/Cases/ARCHITECTURE.md` §11 lists thirteen of them, and `../../../../tests/Cases/90-traceability.md` lists every `verify`
 case. Each first run decides its case, and the receipt replaces the expectation. Four of them could
 change the design rather than a case:
 
@@ -253,7 +253,7 @@ change the design rather than a case:
 | File | What it holds |
 |---|---|
 | `../../TWIN_SUCCESSION.md` | the reasoning and the receipts. §0.1: the offline delta equals the live delta. §6b: the boundary, and what VIEW DEFINITION alone reads. Appendix A: the red team's dispositions. Appendix B: the v3 donor parts, most of which v3 has since built. Appendix C: the laptop check. Appendix D: the shape-profile SQL |
-| `cases/90-traceability.md` | which cases witness which law, operation, question kind, stop and Twin responsibility, plus the open `verify` cases and the audit history |
+| `../../../../tests/Cases/90-traceability.md` | which cases witness which law, operation, question kind, stop and Twin responsibility, plus the open `verify` cases and the audit history |
 | `README.md` | the reading order for the spec itself |
 
 The work that was hardest to see is already done: what to leave out. The Twin tried to resemble the

@@ -1,0 +1,4 @@
+precondition Unique on [dbo].[Status] ([Code], [IsActive])
+empty: applies
+populated: applies
+violating: applies

@@ -1,0 +1,5 @@
+precondition TableEmpty on [dbo].[Customer]
+precondition NotNull on [dbo].[Customer] ([Email])
+empty: applies
+populated: blocks by TableEmpty on [dbo].[Customer]; ships in two releases
+violating: blocks by TableEmpty on [dbo].[Customer], NotNull on [dbo].[Customer] ([Email]); ships in two releases

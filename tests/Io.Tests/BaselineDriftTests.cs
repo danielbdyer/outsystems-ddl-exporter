@@ -83,6 +83,25 @@ public sealed class BaselineDriftTests : IDisposable
     }
 
     /// <summary>
+    /// A clustered primary key redefined over other columns, as the sample change redefine-the-primary-key does: DacFx rebuilds the
+    /// table, and drops and creates its default around the rebuild. The rebuild is the change's, though the change alters no element of
+    /// the table but its keys, and the plan holds no baseline drift.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_primary_key_redefined_over_other_columns_rebuilds_its_table_as_the_change_s_own_and_no_baseline_drift()
+    {
+        const string Line = "CREATE TABLE dbo.L (Id INT NOT NULL, OrderId INT NOT NULL, LineNumber INT NOT NULL,"
+            + " Amount DECIMAL(18, 2) NOT NULL CONSTRAINT DF_L_Amount DEFAULT (0), ";
+
+        var planned = Planned([Line + "CONSTRAINT PK_L_Id PRIMARY KEY CLUSTERED (Id));"],
+            [Line + "CONSTRAINT PK_L PRIMARY KEY CLUSTERED (OrderId, LineNumber));"]);
+
+        Assert.Contains(planned.Plan.Report.Operations, o => o.Kind is PlanOperationKind.TableRebuild && o.Key.ToString() == "Table [dbo].[L]");
+        Assert.Empty(Preconditions.BaselineDrift(planned.Plan.Report, planned.After, planned.Change, planned.Collation));
+    }
+
+    /// <summary>
     /// The same change of type planned against an environment that lacks the unique index over the column and an index on a table the
     /// change leaves alone: DacFx creates each and drops neither, and each Create is drift by its object.
     /// </summary>

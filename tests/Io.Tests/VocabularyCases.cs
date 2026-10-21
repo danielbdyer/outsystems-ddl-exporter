@@ -11,7 +11,7 @@ using static DbChange.Kernel.Tests.KernelProperties;
 namespace DbChange.Io.Tests;
 
 /// <summary>
-/// The pure cases of the Facsimile's question catalog (archive/v2/ssdt-agent/facsimile/cases/10-questions.md) that read a plan's statements
+/// The pure cases of the Facsimile's question catalog (tests/Cases/10-questions.md) that read a plan's statements
 /// (WP 2.1's second slice): each case's plan read by io/PlanStatements, its BlockOnPossibleDataLoss sites by io/BlockOnPossibleDataLoss, the
 /// property read by Preconditions.Of, and the plan by the kernel's vocabulary, whose preconditions and unclassified statements are the
 /// case's expectation. Every row of the vocabulary names a case that fails when the row is removed (the Facsimile's M1 and E1, QST-95):

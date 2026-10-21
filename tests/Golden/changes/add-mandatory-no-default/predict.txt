@@ -1,0 +1,4 @@
+precondition TableEmpty on [dbo].[Customer]
+empty: applies
+populated: blocks by TableEmpty on [dbo].[Customer]; ships as add-mandatory
+violating: blocks by TableEmpty on [dbo].[Customer]; ships as add-mandatory

@@ -11,7 +11,7 @@ namespace DbChange.Kernel.Tests;
 /// <summary>
 /// Witness.Plan (V3_MILESTONES.md WP 3.8) where the planter catalog's text form says less than its case: a literal past its type's range
 /// or width, presence rows without existing data, a precondition the change renames or creates, the errors, and what a need says. The
-/// PLT cases are archive/v2/ssdt-agent/facsimile/cases/20-planter.md's.
+/// PLT cases are tests/Cases/20-planter.md's.
 /// </summary>
 public sealed class WitnessTests
 {

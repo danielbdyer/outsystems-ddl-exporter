@@ -38,7 +38,7 @@ public sealed class ColumnTypeTests
     }
 
     /// <summary>
-    /// PLT-27 (archive/v2/ssdt-agent/facsimile/cases/20-planter.md): a column of TYPE dbo.ShortCode FROM nvarchar(6) declares the alias,
+    /// PLT-27 (tests/Cases/20-planter.md): a column of TYPE dbo.ShortCode FROM nvarchar(6) declares the alias,
     /// Length 0 as DacFx writes it, and stores as nvarchar(6) under the column's own collation.
     /// </summary>
     [Fact]

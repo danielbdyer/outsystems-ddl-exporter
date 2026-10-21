@@ -12,7 +12,7 @@ namespace DbChange.Kernel.Tests;
 /// deferred to a second pass; a cycle of mandatory references reported with its error. Generated schemas hold up to eight tables in dbo
 /// and references between them at random, a table's own included, each through one column of its own whose nullability makes the
 /// reference optional or mandatory. Reachability is checked against Floyd-Warshall's closure. The PLT cases are
-/// archive/v2/ssdt-agent/facsimile/cases/20-planter.md's.
+/// tests/Cases/20-planter.md's.
 /// </summary>
 public sealed class OrderTests
 {

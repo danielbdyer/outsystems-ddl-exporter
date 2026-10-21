@@ -1,0 +1,4 @@
+precondition ForeignKey on [dbo].[Customer] ([AccountId])
+empty: applies
+populated: applies
+violating: blocks by ForeignKey on [dbo].[Customer] ([AccountId]); ships as create-fk-clean

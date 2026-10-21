@@ -15,7 +15,7 @@ namespace DbChange.Io.Tests;
 /// <summary>
 /// Spike S2 (V3_MILESTONES.md §6) on every sample change: the BlockOnPossibleDataLoss checks DacFx 162.5.57, the release the pipeline is
 /// presumed to run, and 170.5.96, the committed one, write for it, held to the extracted checks committed under
-/// tests/Golden/data-loss-checks/; and the statement shapes the Facsimile's vocabulary matches (archive/v2/ssdt-agent/facsimile/
+/// tests/Golden/data-loss-checks/; and the statement shapes the Facsimile's vocabulary matches (tests/Cases/
 /// ARCHITECTURE.md §4, its §11 question 3) found in both releases' plans. Statements are compared within one way of planning, a live
 /// Script against the copy, because a live plan adds WAITFOR DELAY batches a plan between two packages lacks. The releases' plans differ
 /// in one block, Query Store's, which each release plans on a copy the other published; the tests pin that block and compare the rest.

@@ -100,6 +100,13 @@
       "exclude": [],
       "ceiling": 3000,
       "planned": null
+    },
+    "cases": {
+      "about": "the Facsimile's case catalog under tests/Cases/, with its ARCHITECTURE.md and INVARIANTS.md, moved from archive/v2/ssdt-agent/facsimile/ by WP 2.6 at 20,552 lines (2026-10-20): data the catalog's lint, Budgets.Tests: CaseCatalog, reads, the generated 90-traceability.md included.",
+      "include": ["tests/Cases/**"],
+      "exclude": [],
+      "ceiling": 21000,
+      "planned": null
     }
   }
 }

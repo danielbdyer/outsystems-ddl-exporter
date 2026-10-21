@@ -21,7 +21,7 @@ namespace DbChange.Io.Tests;
 /// <summary>
 /// Spikes S9, S10 and S11 of V3_MILESTONES.md §6, each answered where its fact can be measured, on DacFx 170.5.96 in this process and on
 /// 162.5.57 through tests/DacFx162/ (the partial class beside this file): the receipts the Facsimile's §11 questions 1, 9 and 10 wait for
-/// (archive/v2/ssdt-agent/facsimile/ARCHITECTURE.md), held here until WP 2.6 moves the Facsimile's case catalog to tests/Cases/. S9: a
+/// (tests/Cases/ARCHITECTURE.md), and the receipts of the verify cases of tests/Cases/ they settle. S9: a
 /// schema read keeps a disabled check or foreign key as the public property Disabled and an untrusted one only as the internal annotation
 /// IsNotTrustedPropertyAnnotation, a project cannot declare a key untrusted, no plan of the repository touches an untrusted key, and every
 /// plan drops a disabled key the project does not declare and adds one it declares again WITH CHECK, so WP 3.5's trust step reads trust

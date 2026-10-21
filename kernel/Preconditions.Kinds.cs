@@ -5,7 +5,7 @@ namespace DbChange.Kernel;
 /// <summary>
 /// The kinds only a plan's statements show (WP 2.1's second slice, V3_MILESTONES.md §4 row 20), each found by a row of
 /// <see cref="Vocabulary"/> on io's statements of DacFx's plan: KeyLength, Rebuild, Computed, Temporal, Scan, Authored and SeedDrift, after
-/// the six kinds the property read finds, in the Facsimile's row order (archive/v2/ssdt-agent/facsimile/ARCHITECTURE.md §4). Scan and
+/// the six kinds the property read finds, in the Facsimile's row order (tests/Cases/ARCHITECTURE.md §4). Scan and
 /// Rebuild read the rows but no value can make their statement fail, so neither is ever violating; a Computed or an Authored state is
 /// declared by a person, never counted (<see cref="PreconditionKind.Declared"/>).
 /// </summary>

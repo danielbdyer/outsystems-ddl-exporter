@@ -1,0 +1,6 @@
+=== Modules/Account.sql
+--- Region  NVARCHAR(50)    NULL,
++++ Region  NVARCHAR(50)    NULL
+=== Modules/Account.sql
+--- CONSTRAINT PK_Account_Id PRIMARY KEY CLUSTERED (Id)
++++

@@ -1,0 +1,3 @@
+add-mandatory Column [dbo].[Customer].[Tier]
+create-entity Table [dbo].[Channel]
+create-entity Table [dbo].[Segment]

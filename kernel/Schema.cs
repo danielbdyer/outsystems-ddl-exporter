@@ -116,7 +116,7 @@ public readonly record struct Identity(long Seed, long Increment);
 
 /// <summary>
 /// A column's default: its constraint's two-part name, none for an unnamed one; its expression as the model holds it; and the sequence a
-/// NEXT VALUE FOR in it draws from (PLT-33, archive/v2/ssdt-agent/facsimile/cases/20-planter.md), none when it draws from no sequence.
+/// NEXT VALUE FOR in it draws from (PLT-33, tests/Cases/20-planter.md), none when it draws from no sequence.
 /// </summary>
 public sealed record Default(Name? Constraint, Value.Script Expression, Name? Sequence);
 

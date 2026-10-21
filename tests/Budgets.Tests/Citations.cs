@@ -25,7 +25,8 @@ namespace DbChange.Budgets.Tests;
 /// excuses nothing. <c>until M8</c> and <c>M0's exit</c> never excuse a path: neither says the path arrives. Nor does
 /// any milestone excuse a missing path one edit from an existing one, which is a misspelling.</item>
 /// </list>
-/// The root design documents are excluded until M8 starts; knowledge/ joins at M7.
+/// The root design documents are excluded until M8 starts, and the case catalog under tests/Cases/, whose own citations CaseCatalog
+/// holds; knowledge/ joins at M7.
 /// Each document also cites in v3's forms, so a file WP 7.2 moves from v2's skills passes only once its citations are rewritten
 /// (<see cref="Forms"/>): a finding by its identifier, never by v2's file, FINDINGS_AND_CHANGES.md, or FINDINGS with a part or an
 /// identifier; a part of that file by what replaced it (value S1 for Part 1, DECISIONS.md for Part 5), never as Part n; an operation

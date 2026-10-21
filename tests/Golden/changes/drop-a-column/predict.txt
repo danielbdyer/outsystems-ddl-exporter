@@ -1,0 +1,4 @@
+precondition TableEmpty on [dbo].[Product]
+empty: applies
+populated: blocks by TableEmpty on [dbo].[Product]; ships as delete-attribute
+violating: blocks by TableEmpty on [dbo].[Product]; ships as delete-attribute

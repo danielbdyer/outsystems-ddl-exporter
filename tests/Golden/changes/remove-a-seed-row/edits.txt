@@ -1,0 +1,4 @@
+=== Data/Seed.sql
+--- (2, N'Shipped',   1),
+---     (3, N'Cancelled', 1)
++++ (2, N'Shipped',   1)

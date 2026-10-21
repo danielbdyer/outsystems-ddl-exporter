@@ -10,7 +10,7 @@ namespace DbChange.Kernel.Tests;
 
 /// <summary>
 /// Schema.Of reads the typed schema the planter reads from a model's elements (V3_MILESTONES.md WP 3.1), in the shapes DacFx 170.5.96
-/// gives a published copy's objects; the PLT cases are archive/v2/ssdt-agent/facsimile/cases/20-planter.md's. Io.Tests' ReadSideTests
+/// gives a published copy's objects; the PLT cases are tests/Cases/20-planter.md's. Io.Tests' ReadSideTests
 /// compares it, on a published copy, with what v2's read side writes for the same copy.
 /// </summary>
 public sealed class SchemaTests

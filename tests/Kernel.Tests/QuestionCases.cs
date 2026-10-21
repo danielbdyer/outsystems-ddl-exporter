@@ -7,7 +7,7 @@ using static DbChange.Kernel.Tests.KernelProperties;
 namespace DbChange.Kernel.Tests;
 
 /// <summary>
-/// The pure cases of the Facsimile's question catalog (archive/v2/ssdt-agent/facsimile/cases/10-questions.md) for the kinds the first slice
+/// The pure cases of the Facsimile's question catalog (tests/Cases/10-questions.md) for the kinds the first slice
 /// of WP 2.1 holds, each under its identifier. A case gives the environment's model, the model the change brings and the plan's
 /// BlockOnPossibleDataLoss sites, which WP 2.2's reader will find in DacFx's script; the preconditions the change asserts are the case's
 /// questions in v3's words (V3_MILESTONES.md §3.1: HasRows is TableEmpty, Orphan is ForeignKey, CheckFalse is Check). What else a case
@@ -334,7 +334,7 @@ public sealed class QuestionCases
     [Trait("Category", "fast")]
     public void Every_pure_case_of_the_question_catalog_is_ported_or_left_to_the_work_that_holds_it()
     {
-        var pure = System.IO.File.ReadAllText(System.IO.Path.Combine(Root(), "archive/v2/ssdt-agent/facsimile/cases/10-questions.md"))
+        var pure = System.IO.File.ReadAllText(System.IO.Path.Combine(Root(), "tests/Cases/10-questions.md"))
             .Split("\n### ").Skip(1).Where(c => c.Contains("\nkind:     pure", StringComparison.Ordinal))
             .Select(c => c[..c.IndexOf(" · ", StringComparison.Ordinal)]).ToList();
 

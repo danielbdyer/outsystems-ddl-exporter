@@ -84,7 +84,7 @@ public sealed record Reading(SortedArray<Precondition> Preconditions, SortedArra
 }
 
 /// <summary>
-/// The Facsimile's vocabulary (archive/v2/ssdt-agent/facsimile/ARCHITECTURE.md §4) as v3 reads it (WP 2.1's second slice): a table of rows,
+/// The Facsimile's vocabulary (tests/Cases/ARCHITECTURE.md §4) as v3 reads it (WP 2.1's second slice): a table of rows,
 /// which is data, matched on io's statements of DacFx's plan. Every row whose type, words and conditions a statement meets adds what it
 /// asks; a kind the property read finds counts only where Preconditions.Of holds one for the statement's object, and a statement no row
 /// counts for is unclassified, so the world is closed: a new DacFx shape enters as a row with its case. A statement that asks a kind a

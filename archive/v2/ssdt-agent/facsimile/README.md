@@ -13,7 +13,7 @@ synthetic row for every "yes" in a LocalDB copy of that schema, and lets DacFx p
 onto it. What happens is the verdict. The Twin tried to resemble the data; the facsimile only needs
 to agree with it.
 
-**State:** specified test-first, not yet implemented (gate G0 of `ARCHITECTURE.md` §10). Its home is
+**State:** specified test-first, not yet implemented (gate G0 of `../../../../tests/Cases/ARCHITECTURE.md` §10). Its home is
 v3, in C# (settled 2026-10-18). The Twin
 stays in service until the facsimile reaches parity (G3) and has run beside it for one release cycle
 (G4).
@@ -28,16 +28,16 @@ Bringing this into v3 (`kernel/`, `io/` and `cli/`, on this branch since 2026-10
 **`HANDOFF.md`**: what is settled,
 where each part lands in v3, and the one decision to put to the operator first.
 
-1. **`ARCHITECTURE.md` §0–§1:** the essence, and what "minimum viable code" means here.
-2. **`ARCHITECTURE.md` §2:** everything the Twin does today, and what becomes of each part.
-3. **`ARCHITECTURE.md` §3–§8:** the shape (a pure core and a thin shell), the vocabulary, the copy,
+1. **`../../../../tests/Cases/ARCHITECTURE.md` §0–§1:** the essence, and what "minimum viable code" means here.
+2. **`../../../../tests/Cases/ARCHITECTURE.md` §2:** everything the Twin does today, and what becomes of each part.
+3. **`../../../../tests/Cases/ARCHITECTURE.md` §3–§8:** the shape (a pure core and a thin shell), the vocabulary, the copy,
    the outcomes, the verbs.
-4. **`INVARIANTS.md`:** the laws, each with its mechanism and the property its cases test.
-5. **`cases/README.md`:** the grammar every case is written in, so the catalog runs as the test
+4. **`../../../../tests/Cases/INVARIANTS.md`:** the laws, each with its mechanism and the property its cases test.
+5. **`../../../../tests/Cases/README.md`:** the grammar every case is written in, so the catalog runs as the test
    suite.
 6. **`TARGET.md`:** how it is built: C# on .NET as a CLI with an MCP mode (with a PowerShell
    fallback), the layout, the dependencies, the coding style, the NFRs, and the order of work.
-7. **`cases/90-traceability.md`:** which cases witness which law, operation, question kind, stop and
+7. **`../../../../tests/Cases/90-traceability.md`:** which cases witness which law, operation, question kind, stop and
    Twin responsibility, plus the open `verify` questions.
 
 The reasoning that led here, with its evidence, is `../../TWIN_SUCCESSION.md`, beside the ssdt-agent
@@ -47,13 +47,13 @@ tree.
 
 | File | What it specifies |
 |---|---|
-| `cases/00-invariants.md` | property cases for the laws |
-| `cases/10-questions.md` | which questions a delta asks |
-| `cases/20-planter.md` | how witness rows are made, for every type and structure |
-| `cases/30-outcomes.md` | how a publish is classified, tiered and recorded |
-| `cases/40-ops-columns.md`, `cases/41-ops-keys.md`, `cases/42-ops-tables.md` | the 45 operations, each in its standard situations |
-| `cases/43-compound.md` | releases made of several operations |
-| `cases/50-environments.md` | access, drift, per-environment proof, Prod |
-| `cases/60-privacy.md` | the privacy laws, attacked |
-| `cases/70-process.md` | the verbs, `up`, config, CI, the toolchain |
-| `cases/80-twin-parity.md` | every Twin responsibility and every Twin fact: kept or safely retired |
+| `../../../../tests/Cases/00-invariants.md` | property cases for the laws |
+| `../../../../tests/Cases/10-questions.md` | which questions a delta asks |
+| `../../../../tests/Cases/20-planter.md` | how witness rows are made, for every type and structure |
+| `../../../../tests/Cases/30-outcomes.md` | how a publish is classified, tiered and recorded |
+| `../../../../tests/Cases/40-ops-columns.md`, `../../../../tests/Cases/41-ops-keys.md`, `../../../../tests/Cases/42-ops-tables.md` | the 45 operations, each in its standard situations |
+| `../../../../tests/Cases/43-compound.md` | releases made of several operations |
+| `../../../../tests/Cases/50-environments.md` | access, drift, per-environment proof, Prod |
+| `../../../../tests/Cases/60-privacy.md` | the privacy laws, attacked |
+| `../../../../tests/Cases/70-process.md` | the verbs, `up`, config, CI, the toolchain |
+| `../../../../tests/Cases/80-twin-parity.md` | every Twin responsibility and every Twin fact: kept or safely retired |

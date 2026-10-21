@@ -534,6 +534,166 @@
       "ancestor": ["archive/v2/ssdt-agent/THE_RECORD.md", "V3_INSTRUCTION_ARCHITECTURE.md"]
     },
     {
+      "path": "tests/Cases/00-invariants.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 1100,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/10-questions.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 2100,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/20-planter.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 1800,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/30-outcomes.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 2100,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/40-ops-columns.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 2000,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/41-ops-keys.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 1900,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/42-ops-tables.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 2500,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/43-compound.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 600,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/50-environments.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 1100,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/60-privacy.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 600,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/70-process.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 1700,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/80-twin-parity.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 2000,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/90-traceability.md",
+      "kind": "generated",
+      "owner": "tool",
+      "reader": ["a work package that ports a case", "a review of the catalog's coverage"],
+      "moment": ["a change to a case", "a gate of the Facsimile's"],
+      "budget": null,
+      "generator": "Budgets.Tests: CaseCatalog, the catalog's lint, which writes it when it is stale",
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/ARCHITECTURE.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 600,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/INVARIANTS.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 500,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/README.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["whoever writes or ports a case", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 300,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
       "path": "archive/INDEX.md",
       "kind": "generated",
       "owner": "tool",

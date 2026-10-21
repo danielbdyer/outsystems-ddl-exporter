@@ -1,7 +1,7 @@
 # The Facsimile: target implementation
 
-*What "go" executes. `ARCHITECTURE.md` says what the facsimile is; `INVARIANTS.md` says what must hold;
-`cases/` says how each is tested. This document says how it is built: the realization, the layout,
+*What "go" executes. `../../../../tests/Cases/ARCHITECTURE.md` says what the facsimile is; `../../../../tests/Cases/INVARIANTS.md` says what must hold;
+`../../../../tests/Cases/` says how each is tested. This document says how it is built: the realization, the layout,
 the dependencies, the coding style, the non-functional requirements, the test strategy, the
 distribution, and the order of work. Written 2026-10-18.*
 
@@ -259,7 +259,7 @@ F# discipline (§10).
 
 ## 7. The test strategy: the catalog is the suite
 
-- **The parser.** `tests/Catalog` reads `cases/*.md` in the grammar of `cases/README.md` into
+- **The parser.** `tests/Catalog` reads `../../../../tests/Cases/*.md` in the grammar of `../../../../tests/Cases/README.md` into
   `Case` records. The lint (a port of `tests/catalog_lint.py`) runs as tests. The Python prototype
   retires the day the C# lint is green in CI.
 - **By kind:**
@@ -431,11 +431,11 @@ These cases name PowerShell, ConstrainedLanguage, `run-cases.ps1` or `.psd1` (co
 
 | File | Mentions |
 |---|---:|
-| `cases/70-process.md` | 38 (toolchain, CI, language mode) |
-| `cases/00-invariants.md` | 21 (mostly A2) |
-| `cases/80-twin-parity.md` | 7 |
-| `cases/60-privacy.md` | 3 |
-| `cases/10-questions.md` | 2 |
+| `../../../../tests/Cases/70-process.md` | 38 (toolchain, CI, language mode) |
+| `../../../../tests/Cases/00-invariants.md` | 21 (mostly A2) |
+| `../../../../tests/Cases/80-twin-parity.md` | 7 |
+| `../../../../tests/Cases/60-privacy.md` | 3 |
+| `../../../../tests/Cases/10-questions.md` | 2 |
 
 Under C#, A2's object changes. It becomes "runs under the laptop's application-control policy as
 the laptop check measures it: framework-dependent, loaded by the signed `dotnet` host, no unsigned
