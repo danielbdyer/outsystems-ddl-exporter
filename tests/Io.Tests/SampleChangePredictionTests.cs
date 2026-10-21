@@ -64,6 +64,13 @@ public sealed class SampleChangePredictionTests(CorpusCopy copy) : IClassFixture
             + actual);
         Assert.True(File.Exists(violating) || populated.Outcome == broken.Outcome);
     }
+}
+
+/// <summary>The corpus's INSERT scripts, read as files. A class of its own, because a test of SampleChangePredictionTests waits for
+/// CorpusCopy, which publishes to the fixture's SQL Server, and the fast lane has none.</summary>
+public sealed class SampleChangeCopyScriptTests
+{
+    private static readonly string Golden = Path.Combine(Repository.Root, "tests", "Golden");
 
     /// <summary>The populated copy's script and every violating.sql insert rows and nothing else, so each copy is the one before it with
     /// rows added; and a violating.sql lies beside the edits of a sample change.</summary>
