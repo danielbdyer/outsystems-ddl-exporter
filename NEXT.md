@@ -1,15 +1,12 @@
 # Next — rewritten by the session that finishes something; never appended
-Updated 2026-10-20 by #705, after wave 5 of the build. Wave 4 landed WP 3.1 (kernel `Schema` and `Order`), WP 2.3 (`io/AggregateQueries.cs`
-and its partial files), WP 2.4 (kernel `Classify`), spike S2 (DacFx 162.5.57 beside 170.5.96, `tests/DacFx162/`) and io's refusal of
-DacFx's `xp_msver` call, so the read-only principal sends no `EXEC`. Wave 5 lands WP 2.2 (the BlockOnPossibleDataLoss reader), WP 3.8
-(kernel `Witness`), spikes S9 to S11 with check drift's warning for a check written with IN, and the review findings of waves 3 and 4.
+Updated 2026-10-20 by #705, after wave 6: WP 3.4 (`LocalServer`'s copy cache) and WP 7.1 (the citation test's forms).
 
 ## The operator's actions
 - The laptop check against Dev (M1 exit 1, spikes S1 and S3) waits until the operator brings the branch to a laptop:
   in the v3 clone, `git switch claude/v3-architecture-design-sl95mx`, `git pull` and `ci/publish.ps1`; then, in the SSDT
   repository's clone, with `<v3 clone>\dist\dbchange\dbchange.exe` as `dbchange`, run
   `dbchange check drift --target env:dev --at <Dev's deployed tag> --json` and `dbchange read --from env:dev --json`,
-  and `sqlcmd -S <Dev's server> -d <Dev's database> -E -Q "SELECT collation_name FROM sys.databases WHERE name = DB_NAME()"`.
+  and, on Dev's database under your own login, `SELECT collation_name FROM sys.databases WHERE name = DB_NAME()`.
   Report check drift's exit code and its JSON answer (its `elapsedMs`), the read's `elapsedMs` and the `collation_name`:
   M1 exit 1 passes on exit 0, or 5 naming each differing object, in a minute.
 - At M0, install the SessionStart and SessionEnd hooks in `.claude/hooks/` as `CLAUDE.md` describes them; no agent may edit them.
@@ -21,12 +18,16 @@ DacFx's `xp_msver` call, so the read-only principal sends no `EXEC`. Wave 5 land
 ## Next
 - WP 2.1's second slice: the statement kinds the plan's §4 shapes name, with the four refinements of spike S2's decision lines.
 - S4's laptop half, the SSDT repository's own schema on LocalDB 16.x, waits on S6; its CI half is a decision line.
-- WP 7.1, the citations rewritten. Then WP 2.5, which reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into
-  `Preconditions.Of`; WP 2.6, which moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6) and re-reads against
-  `Io.Tests: SpikeReceiptTests` the cases S9 to S11 bear on: PLT-87, 88, 90, QST-55, 59, OP-toggle-trust-03 to 05, OP-add-default-04,
-  OP-temporal-convert-04, INV-H6-01, CLS-14, REC-19; WP 3.5, whose identity step calls `CheckWrittenWithIn.Of`; then M2's exit checks.
-- Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the vendoring verb's two
-  names, R18's exit, who writes deployments.md, and the gate's wiki cells. `ParityResolves` prints where the ledger stands.
+- WP 7.2 rewrites each moved skill's citations to the forms `Citations` accepts (no rewrite map is kept). Of v2's skills/ and agents/,
+  one passing block still cites v2 outside the words `Register.Prose` refuses: add-index's line 29, whose bare §19 is the handbook's
+  anti-pattern chapter. The words intake, decompose, adversary and reviewer name v2 agents and skills only by sense, so WP 7.2 reads
+  each plain use by hand; every other bare §n sits in a block `Citations` refuses, and the refusal names the §n with it.
+- Then WP 2.5, which reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`; WP 2.6, which
+  moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6) and re-reads against `Io.Tests: SpikeReceiptTests`
+  the cases S9 to S11 bear on: PLT-87, 88, 90, QST-55, 59, OP-toggle-trust-03 to 05, OP-add-default-04, OP-temporal-convert-04,
+  INV-H6-01, CLS-14, REC-19; WP 3.5, whose identity step calls `CheckWrittenWithIn.Of`; then M2's exit checks.
+- Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the vendoring verb's two names, R18's exit,
+  who writes the deployments file beside the wiki page, and the gate's wiki cells. `ParityResolves` prints where the ledger stands.
 
 ## Waiting on others
 - S5, a lead who reads Dev's platform database: which `ossys_` tables and columns hold consumer references and publish times.

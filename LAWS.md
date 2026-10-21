@@ -99,6 +99,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | O2 | A connection file git tracks is refused under each spelling that opens it though gitignore lists it | `DbChange.Io.Tests.TargetTests.A_connection_file_git_tracks_is_refused_under_each_spelling_that_opens_it_though_gitignore_lists_it` |
 | O2 | A connection file whose name Windows forbids resolves to nothing on every operating system | `DbChange.Io.Tests.TargetTests.A_connection_file_whose_name_Windows_forbids_resolves_to_nothing_on_every_operating_system` |
 | O2 | Writes utf8 without a bom in the line ending on disk | `DbChange.Io.Tests.WriteTests.Writes_utf8_without_a_bom_in_the_line_ending_on_disk` |
+| O3 | No document outside the handbook invokes sqlpackage sqlcmd or docker | `DbChange.Budgets.Tests.OneCommandPerIntent.No_document_outside_the_handbook_invokes_sqlpackage_sqlcmd_or_docker` |
 | O4 | Every error category has an exit of the frozen table and is constructed by some path | `DbChange.Budgets.Tests.ContractTests.Every_error_category_has_an_exit_of_the_frozen_table_and_is_constructed_by_some_path` |
 | O4 | An error carries a remedy that is one move in the register | `DbChange.Budgets.Tests.Register.Errors.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
 | O4 | Every error code the kernel io and the cli construct has a driver here | `DbChange.Budgets.Tests.Register.Errors.Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here` |
@@ -198,7 +199,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X5 | Git runs with LC ALL C and without the caller's LANGUAGE and LC MESSAGES | `DbChange.Io.Tests.GitTests.Git_runs_with_LC_ALL_C_and_without_the_caller_s_LANGUAGE_and_LC_MESSAGES` |
 | X5 | Loading io opts out of telemetry before DacFx loads | `DbChange.Io.Tests.TelemetryTests.Loading_io_opts_out_of_telemetry_before_DacFx_loads` |
 
-Rows of `VALUES.md` no test declares: A1, A3, A5, A6, A7, A9, D1, D4, D5, D7, E1, E2, E3, E4, E5, E6, E7, E8, E9, G1, G2, G3, G4, G5, G7, G8, G9, L5, L10, L11, L12, O1, O3, O8, O9, O10, R2, R4, S3, S4, S5, S6, S8, X4, X6.
+Rows of `VALUES.md` no test declares: A1, A3, A5, A6, A7, A9, D1, D4, D5, D7, E1, E2, E3, E4, E5, E6, E7, E8, E9, G1, G2, G3, G4, G5, G7, G8, G9, L5, L10, L11, L12, O1, O8, O9, O10, R2, R4, S3, S4, S5, S6, S8, X4, X6.
 
 ## Milestone exits
 
