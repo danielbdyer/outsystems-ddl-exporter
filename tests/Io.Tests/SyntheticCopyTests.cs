@@ -303,6 +303,48 @@ public sealed partial class SyntheticCopyTests(ScratchRepository repository) : I
     }
 
     /// <summary>
+    /// PAR-034 and spike S9, step 4's first half: at a ref declaring FK_CustomerAddress_Customer_CustomerId, an environment holds the key
+    /// disabled over an orphan and a NULL City, and the change makes CustomerAddress.City NOT NULL and leaves the key as declared. A
+    /// release like that drops the disabled key and adds it again WITH CHECK (S9), so the environment's own plan of the change holds the
+    /// ForeignKey precondition, populated and violating. The copy disables the key before it is read, so its own plan holds the same
+    /// precondition: up exits 0, it answers every precondition as the environment does, and the copy's catalog reads the key disabled.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_copy_disables_a_key_the_environment_holds_disabled_before_its_plan_of_a_change_that_leaves_the_key_as_declared()
+    {
+        GoldenEdit keyed = new("Modules/CustomerAddress.sql", "CustomerId  INT             NOT NULL,",
+            "CustomerId  INT             NOT NULL CONSTRAINT FK_CustomerAddress_Customer_CustomerId REFERENCES dbo.Customer (Id),");
+        var at = repository.Committed(new SampleChange("a foreign key from CustomerAddress to Customer", [keyed], []), null);
+        var head = repository.Committed(new SampleChange("CustomerAddress.City made NOT NULL under its key",
+            [keyed, new("Modules/CustomerAddress.sql", "City        NVARCHAR(80)    NULL,", "City        NVARCHAR(80)    NOT NULL,")], []),
+            null);
+        var profile = Profile("a disabled key the change leaves as declared");
+        try
+        {
+            var existing = await Environment(at,
+                "ALTER TABLE dbo.CustomerAddress NOCHECK CONSTRAINT FK_CustomerAddress_Customer_CustomerId; "
+                + "INSERT INTO dbo.CustomerAddress (CustomerId, Line1, City) VALUES (999, N'9 Nowhere Lane', NULL);",
+                head, profile);
+            Assert.Equal(["ForeignKeyConstraint [dbo].[FK_CustomerAddress_Customer_CustomerId] disabled"],
+                existing.Trust.Select(t => t.ToString()));
+            Assert.Contains("ForeignKey on [dbo].[CustomerAddress] ([CustomerId]) populated violating None", existing.States.Select(Said));
+
+            var (exit, answer) = Up("--at", at, "--existing-data", Written(existing), "--profile", profile);
+
+            Assert.True(exit == 0, answer.ToJsonString());
+            Assert.Equal(JsonNode.Parse(ExistingDataFile.Text(existing))!["states"]!.ToJsonString(),
+                answer["syntheticCopy"]!["answers"]!.ToJsonString());
+            Assert.Equal(1, await SqlServerFixture.ScalarAsync(await Connection((string)answer["syntheticCopy"]!["copy"]!),
+                "SELECT CAST(is_disabled AS int) FROM sys.foreign_keys WHERE name = N'FK_CustomerAddress_Customer_CustomerId';"));
+        }
+        finally
+        {
+            await Dropped();
+        }
+    }
+
+    /// <summary>
     /// PLT-53 and WP 3.5's done-when: at a ref whose Order holds a NOT NULL foreign key to the seeded lookup Status, an environment
     /// holding an Order.StatusText over the nine characters the change narrows it to. The one Order row the copy plants links to Status's
     /// lowest seeded row, Id 1, and Status keeps its three rows and its content hash, no row planted into it.

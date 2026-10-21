@@ -19,10 +19,13 @@ namespace DbChange.Io;
 /// line and column; a block of more than one batch is witness.batch, since a block runs as one batch, so SET IDENTITY_INSERT holds for
 /// its INSERTs; a statement other than INSERT, UPDATE, DELETE, MERGE and SET IDENTITY_INSERT, an INSERT of EXEC's rows, a read of another
 /// server through OPENROWSET, OPENQUERY or OPENDATASOURCE, a name in three or four parts, of a table, a sequence or a function in
-/// another database or on another server, or a synonym of the repository, which can stand for either, is witness.not-dml, since a
-/// declared witness changes no schema, reads and writes the copy alone and carries nothing in; and a string or binary literal that is
-/// neither synthetic nor defined by the repository's model (<see cref="Synthetic"/>), or a number SQL Server makes text or bytes of
-/// whose digits the model does not define (Witnesses.Numbers.cs), is witness.not-synthetic. Each names its line and quotes no literal.
+/// another database or on another server, a synonym of the repository, which can stand for either, a view, a function or a procedure of
+/// the repository that reaches another server, and a write to a table or a view whose trigger does (Witnesses.Remote.cs), is
+/// witness.not-dml, since a declared witness changes no schema, reads and writes the copy alone and carries nothing in; and a string or
+/// binary literal that is neither synthetic nor defined by the repository's model (<see cref="Synthetic"/>), or a number SQL Server
+/// makes text or bytes of whose digits the model does not define (Witnesses.Numbers.cs), is witness.not-synthetic. Each names its line
+/// and quotes no literal. A linked server of the local server, which a seed or a trigger reaches too, is held to R15 before up makes
+/// anything (LocalServer.Linked.cs).
 /// </summary>
 public static partial class Witnesses
 {
@@ -54,22 +57,23 @@ public static partial class Witnesses
     /// <summary>
     /// What the repository holds the declared witnesses to: each string literal its models define, its quotes undone, and each binary
     /// literal, its digits in upper case; the text each LIKE pattern of the models holds before its first wildcard; each synonym the
-    /// models define or a script of theirs creates; and the copy's tables, the base's, whose columns' types say where SQL Server makes
-    /// text or bytes of a number.
+    /// models define or a script of theirs creates; each object of the models that reaches another server (Witnesses.Remote.cs); and the
+    /// copy's tables, the base's, whose columns' types say where SQL Server makes text or bytes of a number.
     /// </summary>
     public sealed record Repository(IReadOnlySet<string> Literals, IReadOnlySet<string> Prefixes, IReadOnlyList<Name> Synonyms,
-        Schema Copy)
+        IReadOnlyList<Remote> Remotes, Schema Copy)
     {
         /// <summary>
         /// What <paramref name="models"/>, the elements of the base and of the change, define, with the copy's tables: the literals of each
         /// script and text of the elements (a seed's MERGE, a default's, a check's); the LIKE patterns and the CREATE SYNONYM statements of
         /// each script that names either and that TSql160Parser reads as a predicate, an expression or a batch (a check's, a module's, a
-        /// deploy script's), a script it reads as none giving neither; and each Synonym element.
+        /// deploy script's), a script it reads as none giving neither; each Synonym element; and the views, functions, procedures, DML
+        /// triggers and synonyms that reach another server.
         /// </summary>
         public static Repository Of(IEnumerable<Element> models, Schema copy)
         {
-            var (literals, found) = (new HashSet<string>(StringComparer.Ordinal), new Defined());
-            foreach (var element in models)
+            var (elements, literals, found) = (models.ToList(), new HashSet<string>(StringComparer.Ordinal), new Defined());
+            foreach (var element in elements)
             {
                 found.Synonyms.AddRange(element.Key.Type == "Synonym" ? [element.Key.Name] : []);
                 foreach (var value in element.Properties.Select(p => p.Value).Where(v => v is Value.Script or Value.Text))
@@ -84,7 +88,7 @@ public static partial class Witnesses
                 }
             }
 
-            return new Repository(literals, found.Prefixes, found.Synonyms, copy);
+            return new Repository(literals, found.Prefixes, found.Synonyms, RemotesOf(elements, found.Linked), copy);
         }
 
         /// <summary>A script as TSql160Parser reads it with no error: a check's predicate, a default's expression, or a batch; null where
@@ -179,12 +183,13 @@ public static partial class Witnesses
         foreach (var statement in batches.SelectMany(b => b.Statements))
         {
             var line = block.FirstLine + statement.StartLine - 1;
-            if (Unwritable(statement, repository.Synonyms) is { } what)
+            if (Unwritable(statement, repository) is { } what)
             {
                 return new Error("witness.not-dml", At(line, "holds " + what + ", and a declared witness is DML only: INSERT, UPDATE, "
                         + "DELETE, MERGE and SET IDENTITY_INSERT, reading and writing the copy alone"),
-                    "Remove the statement at that line, or name the copy's own table or function, in one or two parts and not through a "
-                        + "synonym; a declared witness changes no schema and reads no other database or server.");
+                    "Remove the statement at that line, or name the copy's own table or function, in one or two parts, through no synonym "
+                        + "and no object that reaches another server; a declared witness changes no schema and reads no other database or "
+                        + "server.");
             }
 
             var literals = new LiteralsFound();
@@ -210,16 +215,17 @@ public static partial class Witnesses
     }
 
     /// <summary>What a statement holds that no declared witness may: a statement other than DML, an INSERT of EXEC's rows, a read through
-    /// OPENROWSET, OPENQUERY or OPENDATASOURCE, a name in three or four parts, or a synonym the repository defines; null for a DML
-    /// statement that reads and writes the copy alone.</summary>
-    private static string? Unwritable(TSqlStatement statement, IReadOnlyList<Name> synonyms)
+    /// OPENROWSET, OPENQUERY or OPENDATASOURCE, a name in three or four parts, a synonym the repository defines, an object of the
+    /// repository that reaches another server, or a write that fires a trigger that does; null for a DML statement that reads and writes
+    /// the copy alone.</summary>
+    private static string? Unwritable(TSqlStatement statement, Repository repository)
     {
         if (statement is not (InsertStatement or UpdateStatement or DeleteStatement or MergeStatement or SetIdentityInsertStatement))
         {
             return "a statement of the kind " + statement.GetType().Name.Replace("Statement", "", StringComparison.Ordinal);
         }
 
-        var outside = new Outside(synonyms);
+        var outside = new Outside(repository);
         statement.Accept(outside);
         return outside.Found;
     }
@@ -284,13 +290,15 @@ public static partial class Witnesses
 
     /// <summary>
     /// What a model's script defines beside its literals: the text before the first wildcard of each LIKE pattern written as a string,
-    /// and each synonym a CREATE SYNONYM names, in dbo where it names no schema.
+    /// and each synonym a CREATE SYNONYM names, in dbo where it names no schema, those for a name with a server part among them apart.
     /// </summary>
     private sealed class Defined : TSqlFragmentVisitor
     {
         public HashSet<string> Prefixes { get; } = new(StringComparer.Ordinal);
 
         public List<Name> Synonyms { get; } = [];
+
+        public List<Name> Linked { get; } = [];
 
         public override void Visit(LikePredicate node)
         {
@@ -306,6 +314,7 @@ public static partial class Witnesses
             if (Name.Of(node.Name.SchemaIdentifier?.Value ?? "dbo", node.Name.BaseIdentifier.Value) is Result<Name>.Ok(var synonym))
             {
                 Synonyms.Add(synonym);
+                Linked.AddRange(node.ForName.ServerIdentifier is not null ? [synonym] : []);
             }
         }
     }
@@ -317,23 +326,35 @@ public static partial class Witnesses
     /// copy's connection, so a four-part name reaches whatever linked server the local server holds, a named environment's included, and a
     /// three-part name another database on the local server. A synonym of the repository, a table's or a function's in one or two parts,
     /// can stand for either, which the block's text cannot show (DECISIONS.md, 2026-09-25, refuses one to Measure alike); its name is
-    /// compared ignoring case, as a case-insensitive database resolves it, and one named in one part matches a synonym of any schema.
+    /// compared ignoring case, as a case-insensitive database resolves it, and one named in one part matches a synonym of any schema. A
+    /// view, a function or a procedure of the repository that reaches another server is compared alike, and so is the table or the view
+    /// an INSERT, an UPDATE, a DELETE or a MERGE writes, under its own name or a FROM's alias, with each table or view whose trigger
+    /// reaches another server, since the block runs with triggers firing.
     /// </summary>
-    private sealed class Outside(IReadOnlyList<Name> synonyms) : TSqlFragmentVisitor
+    private sealed class Outside(Repository repository) : TSqlFragmentVisitor
     {
         public string? Found { get; private set; }
 
         public override void Visit(SchemaObjectName node) => Found ??= node.ServerIdentifier is not null ? "a name on another server"
             : node.DatabaseIdentifier is not null ? "a name in another database"
-            : Synonym(node.SchemaIdentifier?.Value, node.BaseIdentifier?.Value);
+            : Synonym(node.SchemaIdentifier?.Value, node.BaseIdentifier?.Value) ?? Reaching(node.SchemaIdentifier?.Value,
+                node.BaseIdentifier?.Value);
 
         public override void Visit(FunctionCall node) => Found ??= node.CallTarget switch
         {
             MultiPartIdentifierCallTarget { MultiPartIdentifier.Count: >= 2 } => "a function in another database",
             MultiPartIdentifierCallTarget { MultiPartIdentifier.Identifiers: [var schema] } =>
-                Synonym(schema.Value, node.FunctionName.Value),
+                Synonym(schema.Value, node.FunctionName.Value) ?? Reaching(schema.Value, node.FunctionName.Value),
             _ => null,
         };
+
+        public override void Visit(InsertSpecification node) => Found ??= Fired(Written(node.Target, null));
+
+        public override void Visit(UpdateSpecification node) => Found ??= Fired(Written(node.Target, node.FromClause));
+
+        public override void Visit(DeleteSpecification node) => Found ??= Fired(Written(node.Target, node.FromClause));
+
+        public override void Visit(MergeSpecification node) => Found ??= Fired(Written(node.Target, null));
 
         public override void Visit(ExecuteInsertSource node) => Found ??= "an INSERT of the rows an EXEC returns";
 
@@ -345,8 +366,23 @@ public static partial class Witnesses
 
         public override void Visit(AdHocTableReference node) => Found ??= "a read through OPENDATASOURCE";
 
-        private string? Synonym(string? schema, string? name) => synonyms.Where(s => Same(s.Base, name) && (schema is null
-                || Same(s.Schema, schema))).Select(s => (Name?)s).FirstOrDefault() is { } synonym
+        private string? Synonym(string? schema, string? name) => repository.Synonyms.Where(s => Is(s, schema, name))
+                .Select(s => (Name?)s).FirstOrDefault() is { } synonym
             ? "the synonym " + synonym + ", which can stand for a table or a function in another database or on a linked server" : null;
+
+        /// <summary>A view, a function or a procedure of the repository that reaches another server, named as the statement names it;
+        /// null where none is.</summary>
+        private string? Reaching(string? schema, string? name) =>
+            repository.Remotes.FirstOrDefault(r => r.FiresOn is null && Is(r.Key.Name, schema, name)) is { } remote
+                ? "the " + remote.Key.Type switch { "View" => "view", "Procedure" => "procedure", "Synonym" => "synonym", _ => "function" }
+                    + " " + remote.Key.Name + ", which reaches another server, itself or through an object it names"
+                : null;
+
+        /// <summary>A trigger that reaches another server on a table or a view the statement writes; null where none is.</summary>
+        private string? Fired(IEnumerable<(string? Schema, string Name)> written) =>
+            written.SelectMany(w => repository.Remotes.Where(r => r.FiresOn is { } table && Is(table, w.Schema, w.Name))).FirstOrDefault()
+                is { FiresOn: { } table } trigger
+                ? "a write to " + table + ", whose trigger " + trigger.Key.Name + ", which reaches another server, fires with the block"
+                : null;
     }
 }

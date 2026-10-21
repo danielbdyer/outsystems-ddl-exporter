@@ -155,15 +155,6 @@ public static partial class Witnesses
                 : repository.Copy.Tables.FirstOrDefault(t => Same(t.Name.Schema, schema) && Same(t.Name.Base, table));
         }
 
-        /// <summary>The name of the table a FROM names under an alias, its joins' included; null where none has it.</summary>
-        private static SchemaObjectName? Aliased(IEnumerable<TableReference> joined, string alias) => joined.Select(r => r switch
-        {
-            NamedTableReference named when Same(named.Alias?.Value, alias) => named.SchemaObject,
-            JoinTableReference join => Aliased([join.FirstTableReference, join.SecondTableReference], alias),
-            JoinParenthesisTableReference parenthesis => Aliased([parenthesis.Join], alias),
-            _ => null,
-        }).FirstOrDefault(n => n is not null);
-
         /// <summary>The columns an INSERT that lists none writes: each stored column of the table in order but an identity and a
         /// rowversion, which SQL Server fills.</summary>
         private static IReadOnlyList<string?> Insertable(Table? table) => table is null ? []
@@ -280,6 +271,15 @@ public static partial class Witnesses
             }
         }
     }
+
+    /// <summary>The name of the table a FROM names under an alias, its joins' included; null where none has it.</summary>
+    private static SchemaObjectName? Aliased(IEnumerable<TableReference> joined, string alias) => joined.Select(r => r switch
+    {
+        NamedTableReference named when Same(named.Alias?.Value, alias) => named.SchemaObject,
+        JoinTableReference join => Aliased([join.FirstTableReference, join.SecondTableReference], alias),
+        JoinParenthesisTableReference parenthesis => Aliased([parenthesis.Join], alias),
+        _ => null,
+    }).FirstOrDefault(n => n is not null);
 
     /// <summary>A column a statement names, by its last part.</summary>
     private static string? Last(ColumnReferenceExpression column) => column.MultiPartIdentifier?.Identifiers is { Count: > 0 } parts

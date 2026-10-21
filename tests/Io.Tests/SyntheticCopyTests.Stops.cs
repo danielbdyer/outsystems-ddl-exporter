@@ -174,6 +174,67 @@ public sealed partial class SyntheticCopyTests
         }
     }
 
+    /// <summary>
+    /// R15 over the local server's linked servers (DECISIONS.md, 2026-10-21): dbchange/environments.json names an environment on a host
+    /// of its own, and the local server holds a linked server whose data source is that host, as sp_addlinkedserver makes one for a SQL
+    /// Server by its network name. A seed, a trigger or a declared witness on a copy there could reach the environment, so
+    /// synthetic-copy up is copy.named-host at exit 9, naming the linked server, and its log holds one statement, the read of
+    /// sys.servers: it made and planted nothing. So it is before any copy is built and after one is, which stands and is not answered
+    /// current; with the linked server dropped, up builds the copy.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    [Trait("Value", "P1")]
+    public async Task Up_on_a_local_server_linked_to_a_named_environment_s_host_is_refused_before_it_makes_or_plants_anything()
+    {
+        var profile = Profile("a linked server to a named environment's host");
+        var environments = Path.Combine(repository.Root, "dbchange", "environments.json");
+        var unnamed = File.ReadAllText(environments);
+        var host = "dbchange-linked-" + Guid.NewGuid().ToString("N")[..8] + ".invalid";
+        async Task Linked(bool linked) => await SqlServerFixture.ExecuteAsync(await SqlServerFixture.ServerAsync(), linked
+            ? "EXEC sp_addlinkedserver @server = @name, @srvproduct = N'SQL Server';"
+            : "IF EXISTS (SELECT 1 FROM sys.servers WHERE name = @name) EXEC sp_dropserver @server = @name, @droplogins = 'droplogins';",
+            host);
+        void Refused(int exit, System.Text.Json.Nodes.JsonNode answer)
+        {
+            Assert.True(exit == 9, answer.ToJsonString());
+            var finding = Assert.Single(answer["findings"]!.AsArray())!;
+            Assert.Equal("copy.named-host", (string?)finding["code"]);
+            Assert.StartsWith("The local server holds the linked server [" + host + "], which names " + host, (string)finding["message"]!,
+                StringComparison.Ordinal);
+            var log = File.ReadAllText(Path.Combine(repository.Root, (string)answer["log"]!));
+            Assert.Equal(1, log.Split("\nGO\n").Length - 1);
+            Assert.Contains(" linked servers: ", log, StringComparison.Ordinal);
+        }
+
+        try
+        {
+            EnvironmentsJson.Dev("env:DBCHANGE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), host)
+                .WriteTo(repository.Root);
+            await Linked(true);
+
+            var (exit, refused) = Up("--at", repository.Base, "--profile", profile);
+
+            Refused(exit, refused);
+            await Linked(false);
+            var (built, answer) = Up("--at", repository.Base, "--profile", profile);
+            Assert.True(built == 0, answer.ToJsonString());
+            var copy = (string)answer["syntheticCopy"]!["copy"]!;
+            await Linked(true);
+
+            (exit, refused) = Up("--at", repository.Base, "--profile", profile);
+
+            Refused(exit, refused);
+            Assert.True(await SqlServerFixture.ExistsAsync(copy), copy + " is not on the local server");
+        }
+        finally
+        {
+            await Linked(false);
+            File.WriteAllText(environments, unnamed);
+            await Dropped();
+        }
+    }
+
     /// <summary>Order's check on Total, CK_Order_Total, with the predicate given.</summary>
     private static GoldenEdit TotalChecked(string predicate) => new("Modules/Order.sql", "CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id)",
         "CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id),\n    CONSTRAINT CK_Order_Total CHECK (" + predicate + ")");

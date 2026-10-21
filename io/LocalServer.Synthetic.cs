@@ -20,21 +20,25 @@ public static partial class LocalServer
 {
     /// <summary>
     /// The synthetic copy of a name as this checkout and the local server hold it, once R15 clears the server given against
-    /// dbchange/environments.json, before anything connects: the copy on that server, the registry's row of it there, null where the
-    /// registry holds none, and whether the server holds its database, asked of master. A server on a named environment's host is
-    /// copy.named-host, so no row of it answers current and no database there is dropped or made.
+    /// dbchange/environments.json, before anything connects, and then its linked servers, read from master before any other statement
+    /// (LocalServer.Linked.cs; none are read where the file names no environment): the copy on that server, the registry's row of it
+    /// there, null where the registry holds none, and whether the server holds its database, asked of master. A server on a named
+    /// environment's host, or one linked to such a host, is copy.named-host, so no row of it answers current and no database there is
+    /// dropped or made.
     /// </summary>
     internal static Result<(SqlServer.Copy Copy, JsonObject? Row, bool Exists)> Standing(string repositoryRoot, CopyName name,
-        string server, SqlServer.QueryLog log) =>
-        ServerName(server).Bind(named => EnvironmentsFile.Read(repositoryRoot)
-            .Bind(environments => Unnamed(environments, repositoryRoot, named, Resolved))).Bind(cleared =>
-        {
-            var copy = new SqlServer.Copy(name, server, repositoryRoot);
-            return Rows(repositoryRoot).Bind(rows => Run(copy, "DB_ID", "SELECT CASE WHEN DB_ID(@name) IS NULL THEN 0 ELSE 1 END;", log,
-                    found => found is [[1]])
+        string server, SqlServer.QueryLog log)
+    {
+        var (copy, resolve) = (new SqlServer.Copy(name, server, repositoryRoot), Once(Resolved));
+        return ServerName(server).Bind(named => EnvironmentsFile.Read(repositoryRoot)
+            .Bind(environments => Unnamed(environments, repositoryRoot, named, resolve)
+                .Bind(cleared => environments.All.Count == 0 ? Result.Ok(cleared)
+                    : Linked(copy, log).Bind(linked => Unlinked(environments, cleared, linked, resolve)))))
+            .Bind(cleared => Rows(repositoryRoot).Bind(rows => Run(copy, "DB_ID",
+                    "SELECT CASE WHEN DB_ID(@name) IS NULL THEN 0 ELSE 1 END;", log, found => found is [[1]])
                 .Map(exists => (copy, rows.LastOrDefault(r => (string?)r["name"] == name.ToString()
-                    && (string?)r["server"] == cleared.ToString()), exists)));
-        });
+                    && (string?)r["server"] == cleared.ToString()), exists))));
+    }
 
     /// <summary>The fields given set on the copy's row, which moves to the registry's end: synthetic-copy names the last ready
     /// one.</summary>

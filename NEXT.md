@@ -25,7 +25,7 @@ in the existing data's file form, the declared witnesses in `dbchange/witnesses.
   `Io.Tests: SpikeReceiptTests` the cases S9 to S11 bear on: PLT-87, 88, 90, QST-55, 59, OP-toggle-trust-03 to 05, OP-add-default-04,
   OP-temporal-convert-04, INV-H6-01, CLS-14, REC-19; then M2's exit checks.
 - WP 3.6, `synthetic-copy check`, `status` and `down`, over the registry row WP 3.5 writes; WP 3.7, `profile`; WP 2.5's predict, which
-  writes the existing data `up` reads. WP 3.6 also builds the scale test VALUES.md O8 and O9 name (the golden project at 300 tables).
+  writes the existing data `up` reads, its trust list among it. WP 3.6 also builds the scale test VALUES.md O8 and O9 name.
 - Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the vendoring verb's two
   names, R18's exit, who writes deployments.md, and the gate's wiki cells. `ParityResolves` prints where the ledger stands.
 

@@ -137,9 +137,11 @@ public sealed class SyntheticCopyInputTests
     /// before any header, a header naming no table or no precondition, a block that does not parse, a second batch, a statement other
     /// than DML, an INSERT of EXEC's rows, a read through OPENROWSET, a table on a linked server, as the INSERT's target, the source of
     /// an INSERT ... SELECT or MERGE's USING, a table or a function in another database of the local server, the repository's synonym
-    /// dbo.Remote as a source, as a target named in one part and as a function named in another case, and a literal neither synthetic
-    /// nor the repository's. The block runs as one batch on the copy's connection, so a four-part name, or a synonym standing for one,
-    /// would write to a linked environment or copy its rows into the copy.
+    /// dbo.Remote as a source, as a target named in one part and as a function named in another case, OPENQUERY as an INSERT's source
+    /// and as an INSERT's, an UPDATE's and a DELETE's target, OPENDATASOURCE as an INSERT's target, OPENROWSET with a provider as a
+    /// source and as an INSERT's target, OUTPUT INTO a table on a linked server, and a literal neither synthetic nor the repository's.
+    /// The block runs as one batch on the copy's connection, so a four-part name, a rowset function, or a synonym standing for a name on
+    /// another server, would write to a linked environment or copy its rows into the copy.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -163,6 +165,21 @@ public sealed class SyntheticCopyInputTests
     [InlineData("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C)\n  SELECT r.C FROM dbo.Remote AS r;", "witness.not-dml", 2)]
     [InlineData("-- plants: [dbo].[T]\nUPDATE dbo.T SET C = N'wA';\nINSERT INTO Remote (C) VALUES (N'wB');", "witness.not-dml", 3)]
     [InlineData("-- plants: [dbo].[T]\nINSERT INTO dbo.T (N) VALUES (dbo.REMOTE(1));", "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) SELECT q.C FROM OPENQUERY([prod-sql], 'SELECT C FROM Catalog.dbo.Customer') AS q;",
+        "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nINSERT INTO OPENQUERY([prod-sql], 'SELECT C FROM Catalog.dbo.Customer') VALUES (N'wA');",
+        "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nUPDATE OPENQUERY([prod-sql], 'SELECT C FROM Catalog.dbo.Customer') SET C = N'wA';",
+        "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nDELETE OPENQUERY([prod-sql], 'SELECT C FROM Catalog.dbo.Customer');", "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nINSERT INTO OPENDATASOURCE('MSOLEDBSQL', 'Server=prod-sql;Trusted_Connection=yes;').Catalog.dbo.Customer "
+        + "(Name) VALUES (N'wA');", "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) SELECT r.Name FROM OPENROWSET('MSOLEDBSQL', "
+        + "'Server=prod-sql;Trusted_Connection=yes;', 'SELECT Name FROM Catalog.dbo.Customer') AS r;", "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nINSERT INTO OPENROWSET('MSOLEDBSQL', 'Server=prod-sql;Trusted_Connection=yes;', "
+        + "'SELECT Name FROM Catalog.dbo.Customer') VALUES (N'wA');", "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nDELETE FROM dbo.T OUTPUT deleted.C INTO [prod-sql].[Catalog].[dbo].[Customer] (Name);",
+        "witness.not-dml", 2)]
     [InlineData("-- plants: [dbo].[T]\nUPDATE dbo.T SET C = N'wA';\nUPDATE dbo.T\n  SET C = N'Bob';", "witness.not-synthetic", 4)]
     public void A_declared_witness_is_refused_by_its_line_for_each_statement_or_literal_it_may_not_carry(string text, string code,
         int line)
@@ -299,6 +316,58 @@ public sealed class SyntheticCopyInputTests
         Failed(Declared("INSERT INTO dbo.Product (Id, Code) VALUES (1, N'ABC1');"), "witness.not-synthetic");
         Failed(Declared("INSERT INTO dbo.Product (Id, Code) VALUES (2065550101, 2065550101);"), "witness.not-synthetic");
         Assert.IsType<Result<IReadOnlyList<Witnesses.Block>>.Ok>(Declared("INSERT INTO dbo.Product (Id, Code) VALUES (2065550101, N'w1');"));
+    }
+
+    /// <summary>
+    /// PAR-033 and VALUES.md P1: a declared block runs as one batch on the copy's connection, with triggers firing, so an object of the
+    /// repository that reads another server reaches it for the block. In a model DacFx 170.5.96 builds from T-SQL, the view
+    /// dbo.RemoteView reads [prod-sql].[Catalog].[dbo].[Customer] and dbo.OverRemote reads dbo.RemoteView; the function dbo.RemoteRows
+    /// returns OPENQUERY's rows and dbo.RemoteCount counts through OPENDATASOURCE; dbo.Ship executes its batch AT [prod-sql], and the
+    /// trigger dbo.Audit_Copied runs dbo.Ship on each row inserted into dbo.Audit. A block reading any of the four objects, or writing
+    /// dbo.Audit, under its own name or an alias, is witness.not-dml by its line, naming the object; a block reading the view
+    /// dbo.LocalView over dbo.Customer, reading dbo.Audit or writing dbo.Customer enters.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Value", "P1")]
+    public void A_model_s_view_function_or_trigger_that_reaches_another_server_is_refused_to_a_declared_witness_by_its_line()
+    {
+        using var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160,
+            new Microsoft.SqlServer.Dac.Model.TSqlModelOptions());
+        model.AddObjects("CREATE TABLE dbo.Customer (Id INT NOT NULL PRIMARY KEY, Name NVARCHAR(40) NULL);");
+        model.AddObjects("CREATE TABLE dbo.Audit (Id INT NOT NULL PRIMARY KEY, Name NVARCHAR(40) NULL);");
+        model.AddObjects("CREATE VIEW dbo.RemoteView AS SELECT Name FROM [prod-sql].[Catalog].[dbo].[Customer];");
+        model.AddObjects("CREATE VIEW dbo.OverRemote AS SELECT Name FROM dbo.RemoteView;");
+        model.AddObjects("CREATE VIEW dbo.LocalView AS SELECT Id, Name FROM dbo.Customer;");
+        model.AddObjects("CREATE FUNCTION dbo.RemoteRows() RETURNS TABLE AS RETURN SELECT q.Name FROM OPENQUERY([prod-sql], "
+            + "'SELECT Name FROM Catalog.dbo.Customer') AS q;");
+        model.AddObjects("CREATE FUNCTION dbo.RemoteCount() RETURNS INT AS BEGIN RETURN (SELECT COUNT(*) FROM OPENDATASOURCE("
+            + "'MSOLEDBSQL', 'Server=prod-sql;Trusted_Connection=yes;').Catalog.dbo.Customer); END");
+        model.AddObjects("CREATE PROCEDURE dbo.Ship AS EXEC ('INSERT INTO Catalog.dbo.Audit (Name) VALUES (1);') AT [prod-sql];");
+        model.AddObjects("CREATE TRIGGER dbo.Audit_Copied ON dbo.Audit AFTER INSERT AS EXEC dbo.Ship;");
+        var elements = Value(Ssdt.ReadModel(model));
+        var repository = Witnesses.Repository.Of(elements, Value(Schema.Of(elements)));
+        Result<IReadOnlyList<Witnesses.Block>> Declared(string statement) =>
+            Witnesses.Parse("-- plants: [dbo].[Customer]\n" + statement, repository);
+
+        var remote = Failed(Declared("INSERT INTO dbo.Customer (Id, Name) SELECT 1, v.Name FROM dbo.RemoteView AS v;"), "witness.not-dml");
+
+        Assert.StartsWith("dbchange/witnesses.sql line 2 holds the view [dbo].[RemoteView], which reaches another server",
+            remote.Message, StringComparison.Ordinal);
+        Assert.All(new[]
+        {
+            ("INSERT INTO dbo.Customer (Id, Name) SELECT 1, v.Name FROM dbo.OverRemote AS v;", "the view [dbo].[OverRemote]"),
+            ("INSERT INTO dbo.Customer (Id, Name) SELECT 1, r.Name FROM dbo.RemoteRows() AS r;", "the function [dbo].[RemoteRows]"),
+            ("INSERT INTO dbo.Customer (Id) VALUES (dbo.REMOTECOUNT());", "the function [dbo].[RemoteCount]"),
+            ("INSERT INTO dbo.Audit (Id, Name) VALUES (1, N'w1');", "a write to [dbo].[Audit], whose trigger [dbo].[Audit_Copied]"),
+            ("UPDATE a SET a.Name = N'w2' FROM dbo.Audit AS a;", "a write to [dbo].[Audit], whose trigger [dbo].[Audit_Copied]"),
+        }, refused => Assert.StartsWith("dbchange/witnesses.sql line 2 holds " + refused.Item2 + ", which reaches another server",
+            Failed(Declared(refused.Item1), "witness.not-dml").Message, StringComparison.Ordinal));
+        Assert.All(new[]
+        {
+            "INSERT INTO dbo.Customer (Id, Name) SELECT v.Id, v.Name FROM dbo.LocalView AS v;",
+            "INSERT INTO dbo.Customer (Id, Name) SELECT a.Id, a.Name FROM dbo.Audit AS a;", "UPDATE dbo.Customer SET Name = N'w3';",
+        }, admitted => Assert.IsType<Result<IReadOnlyList<Witnesses.Block>>.Ok>(Declared(admitted)));
     }
 
     /// <summary>

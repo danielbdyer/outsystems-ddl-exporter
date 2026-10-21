@@ -22,9 +22,10 @@ namespace DbChange.Io;
 /// makes a copy anywhere else, and started by ci/sql.sh up or ci/sql.ps1 up, never by io; Create, which names a copy for this host and
 /// process, records it and its server in .dbchange/copies.json and makes its database; Drop, which removes both; and the registry,
 /// against which alone copy: resolves, on the server its row records. A local server on the host an environment names in
-/// dbchange/environments.json, by spelling or by address, is refused before anything connects (R15). Before a copy is made, this host's
-/// copies registered on the same server more than a day earlier are dropped (the sweep, LocalServer.Sweep.cs), and a copy is backed up
-/// into the copy cache and restored from it (LocalServer.Cache.cs). Its CREATE, DROP, BACKUP and RESTORE go through io/SqlServer.Query,
+/// dbchange/environments.json, by spelling or by address, is refused before anything connects (R15), and synthetic-copy up holds the
+/// local server's linked servers to the same comparison before it makes anything (LocalServer.Linked.cs). Before a copy is made, this
+/// host's copies registered on the same server more than a day earlier are dropped (the sweep, LocalServer.Sweep.cs), and a copy is backed
+/// up into the copy cache and restored from it (LocalServer.Cache.cs). Its CREATE, DROP, BACKUP and RESTORE go through io/SqlServer.Query,
 /// the one statement path, whose first connect to the local server is retried once (FirstConnect).
 /// </summary>
 public static partial class LocalServer
@@ -73,7 +74,8 @@ public static partial class LocalServer
 
     /// <summary>
     /// How long the one outbound lookup dbchange makes may take (VALUES.md X5): DNS for a named environment's host, which R15 compares with
-    /// the local server's; a lookup that does not answer in time reads as an address it does not have.
+    /// the local server's and with each host its linked servers name; a lookup that does not answer in time reads as an address it does
+    /// not have.
     /// </summary>
     private static readonly TimeSpan DnsTimeout = TimeSpan.FromSeconds(5);
 
@@ -318,18 +320,12 @@ public static partial class LocalServer
                 "Write " + environment.Target + "'s host in " + EnvironmentsFile.Json
                     + " as its connection string spells the server, or correct the connection string.")
             : Result.Ok(environment))))
-        .Bind(compared =>
-        {
-            var addresses = new Lazy<HashSet<IPAddress>>(() => Addresses(server.Host, resolve));
-            return compared.Where(e => e.Host == server.Host)
-                .Concat(compared.Where(e => e.Host != server.Host && Addresses(e.Host, resolve).Overlaps(addresses.Value)))
-                .FirstOrDefault() is { } named
-                ? new Error("copy.named-host",
-                    "The local server is on " + named.Host + ", the host " + named.Target
-                    + " runs on, and a copy is made only where no named environment lives.",
-                    "Point DBCHANGE_SQL at a local SQL Server, or unset it and run ci/sql.sh up (ci/sql.ps1 up on Windows).")
-                : Result.Ok(server);
-        });
+        .Bind(compared => On(compared, server.Host, resolve) is { } named
+            ? new Error("copy.named-host",
+                "The local server is on " + named.Host + ", the host " + named.Target
+                + " runs on, and a copy is made only where no named environment lives.",
+                "Point DBCHANGE_SQL at a local SQL Server, or unset it and run ci/sql.sh up (ci/sql.ps1 up on Windows).")
+            : Result.Ok(server));
 
     /// <summary>
     /// A host's addresses: this machine's, for a host spelled as this machine or LocalDB or resolving to any of this machine's; else what

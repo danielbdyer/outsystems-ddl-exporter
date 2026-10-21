@@ -538,6 +538,10 @@ internal static partial class ErrorPaths
                 RepositoryAt(scratch,
                 Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password="
                 + planted), host: "localhost")))))))),
+        new("a local server holding a linked server to the host an environment runs on", "copy.named-host", true, (scratch, planted) =>
+            Failed(LocalServer.Unlinked(Made(Io.EnvironmentsFile.Read(RepositoryAt(scratch, Environments(Dev())))),
+                ServerName.Of("localhost,11434", Environment.MachineName),
+                [new LocalServer.LinkedServer("prod-link", null, "Server=dev-sql;UID=reader;PWD=" + planted)], _ => []))),
         new("a copy beside an environment whose connection SqlClient cannot read", "connection.malformed", true, (scratch, planted) =>
             Failed(SqlServer.Resolve(Target("copy:" + Copied),
             Registered(Initialized(

@@ -148,11 +148,12 @@ public static partial class SyntheticCopy
     }
 
     /// <summary>
-    /// Step 1 under the lock: the local server cleared by R15 before anything connects, then the registry's row of the copy read and its
-    /// database looked for; a copy of the same inputs built to its end answered as current; a row of other inputs, or of a build that did
-    /// not end, dropped with its database; a database the registry does not hold refused as another checkout's (copy.foreign); and a fresh
-    /// copy made from the base, its inputs set on its row, planted, and set ready where it was built to its end, its schema the base's but
-    /// for the checks written with IN that every plan drops and creates (<see cref="Usable"/>).
+    /// Step 1 under the lock: the local server cleared by R15 before anything connects, and its linked servers by R15 before any other
+    /// statement (LocalServer.Linked.cs), then the registry's row of the copy read and its database looked for; a copy of the same inputs
+    /// built to its end answered as current; a row of other inputs, or of a build that did not end, dropped with its database; a database
+    /// the registry does not hold refused as another checkout's (copy.foreign); and a fresh copy made from the base, its inputs set on its
+    /// row, planted, and set ready where it was built to its end, its schema the base's but for the checks written with IN that every plan
+    /// drops and creates (<see cref="Usable"/>).
     /// </summary>
     private static Stamped<Answer> Locked(string root, string server, ServerName serverName, CopyName name, Fingerprint baseFingerprint,
         JsonObject inputs, SqlServer.QueryLog log, Stamp stamp, string dacpac, Func<SqlServer.Copy, Inputs> planting, GitRef at,
