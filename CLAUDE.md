@@ -15,10 +15,10 @@
   `synthetic-copy up`, `synthetic-copy down`; `dotnet build`, `dotnet test`, `dotnet clean`.
 - Always asked: every verb that pushes (`profile --commit`, `check cdc --commit`,
   `check environments --page --commit`, `knowledge vendor`).
-- Before a workflow launches, write its `args` to `waves/<name>-args.json` in the session's scratchpad, and
-  its run ID once known: a resume replays only agents given the same argument values, and the run's journal
-  does not keep them. Resume with `scriptPath`, `resumeFromRunId` and those `args`; without them, continue
-  from `journal.jsonl` as `V3_BUILD_PROMPT.md` §4 *Resume* says, and never re-run a finished agent.
+- Before a workflow launches, write its `args` to `waves/<name>-args.json` in the scratchpad, then its run ID:
+  a resume replays agents only for the same argument values, which the journal does not keep. Resume with
+  `scriptPath`, `resumeFromRunId` and those `args`, and stop it at once if a finished agent starts again; then,
+  or without them, continue from `journal.jsonl` as `V3_BUILD_PROMPT.md` §4 *Resume* says.
 
 ## Operator reviews and intake
 
