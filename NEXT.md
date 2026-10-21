@@ -1,5 +1,5 @@
 # Next — rewritten by the session that finishes something; never appended
-Updated 2026-10-20 by #705, after wave 6: WP 3.4 (`LocalServer`'s copy cache) and WP 7.1 (the citation test's forms).
+Updated 2026-10-21 by #705, in wave 7: WP 2.1's second slice, WP 3.5's `synthetic-copy up` and WP 7.1's last citation forms.
 
 ## The operator's actions
 - The laptop check against Dev (M1 exit 1, spikes S1 and S3) waits until the operator brings the branch to a laptop:
@@ -16,16 +16,16 @@ Updated 2026-10-20 by #705, after wave 6: WP 3.4 (`LocalServer`'s copy cache) an
 - Run the sql-windows job on the branch: DacFx 162.5.57 plans LocalDB 17.0 as Sql160, and no run of the 162 half there is measured.
 
 ## Next
-- WP 2.5 chains `Vocabulary.Read` and `Coordinates.Of`: a `Declared` takes a person's state; an unclassified statement goes to proof.
+- WP 2.5's predict chains `Vocabulary.Read` and `Coordinates.Of` (a `Declared` takes a person's state; an unclassified statement goes
+  to proof), reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`, and writes the existing
+  data `up` reads, its trust list among it. Then WP 3.6's `synthetic-copy check`, `status`, `down` and O8's scale test; WP 3.7's `profile`.
 - S4's laptop half, the SSDT repository's own schema on LocalDB 16.x, waits on S6; its CI half is a decision line.
 - WP 7.2 rewrites each moved skill's citations to the forms `Citations` accepts (no rewrite map is kept). Of v2's skills/ and agents/,
-  one passing block still cites v2 outside the words `Register.Prose` refuses: add-index's line 29, whose bare §19 is the handbook's
-  anti-pattern chapter. The words intake, decompose, adversary and reviewer name v2 agents and skills only by sense, so WP 7.2 reads
-  each plain use by hand; every other bare §n sits in a block `Citations` refuses, and the refusal names the §n with it.
-- Then WP 2.5, which reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`; WP 2.6, which
-  moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6) and re-reads against `Io.Tests: SpikeReceiptTests`
+  one passing block still cites v2 outside the words `Register.Prose` refuses, add-index's line 29, by a bare §19 (the handbook's
+  anti-pattern chapter); WP 7.2 reads by hand each plain use of intake, decompose, adversary and reviewer, v2's names only by sense.
+- WP 2.6 moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6) and re-reads against `Io.Tests: SpikeReceiptTests`
   the cases S9 to S11 bear on: PLT-87, 88, 90, QST-55, 59, OP-toggle-trust-03 to 05, OP-add-default-04, OP-temporal-convert-04,
-  INV-H6-01, CLS-14, REC-19; WP 3.5, whose identity step calls `CheckWrittenWithIn.Of`; then M2's exit checks.
+  INV-H6-01, CLS-14, REC-19; then M2's exit checks.
 - Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the vendoring verb's two names, R18's exit,
   who writes the deployments file beside the wiki page, and the gate's wiki cells. `ParityResolves` prints where the ledger stands.
 

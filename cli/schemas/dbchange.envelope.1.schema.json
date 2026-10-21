@@ -32,12 +32,15 @@
         "bad-arguments",
         "blocked",
         "build-failed",
+        "built",
         "configuration-refused",
+        "current",
         "degraded",
         "differs",
         "done",
         "in-sync",
         "interrupted",
+        "needs-input",
         "ready",
         "refused-by-name",
         "unparsed-input",
@@ -54,6 +57,7 @@
         5,
         6,
         7,
+        8,
         9,
         130
       ]
@@ -180,6 +184,7 @@
               2,
               4,
               6,
+              8,
               9
             ]
           }
@@ -285,6 +290,24 @@
       "if": {
         "properties": {
           "outcome": {
+            "const": "built"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
             "const": "configuration-refused"
           }
         }
@@ -294,6 +317,24 @@
           "exit": {
             "enum": [
               6
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "current"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
             ]
           }
         }
@@ -385,6 +426,24 @@
           "exit": {
             "enum": [
               130
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "needs-input"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              8
             ]
           }
         }

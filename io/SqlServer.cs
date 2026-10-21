@@ -32,9 +32,12 @@ public static partial class SqlServer
 
     /// <summary>
     /// A statement SQL Server refused on an open connection: its number, its message where a copy's may be kept, and whether the command
-    /// ran past its timeout.
+    /// ran past its timeout; and the line of the batch SQL Server raised it at, from 1.
     /// </summary>
-    internal sealed record StatementFailure(int Number, string? Message, bool TimedOut);
+    internal sealed record StatementFailure(int Number, string? Message, bool TimedOut)
+    {
+        public int Line { get; init; }
+    }
 
     /// <summary>An exception and each exception inside it, outermost first.</summary>
     private static IEnumerable<Exception> Chain(Exception failure)
@@ -135,7 +138,7 @@ public static partial class SqlServer
         internal StatementFailure? FailedStatement(Exception failure, bool opened) =>
             opened && Chain(failure).OfType<SqlException>().FirstOrDefault() is { Class: < 20 } sql
                 ? new StatementFailure(sql.Number, Withheld ? null : sql.Message,
-                    Classify(sql.Number, fatal: false, opened) == Category.TimedOut)
+                    Classify(sql.Number, fatal: false, opened) == Category.TimedOut) { Line = sql.LineNumber }
                 : null;
 
         /// <summary>
@@ -232,8 +235,8 @@ public static partial class SqlServer
     /// <summary>
     /// A target as a database, against dbchange/environments.json as the verb read it once (<paramref name="environmentsFile"/>, whose
     /// error counts only for a target that needs the environments file): env: through the environment's connection reference; copy: through
-    /// .dbchange/copies.json alone, on a server R15 clears against the environments file (io/LocalServer). A git ref and a package are read
-    /// as packages, and the synthetic copy is not in this build.
+    /// .dbchange/copies.json alone, on a server R15 clears against the environments file (io/LocalServer); synthetic-copy, the synthetic
+    /// copy whose build ended last in the registry on this machine's local server. A git ref and a package are read as packages.
     /// </summary>
     public static Result<Database> Resolve(Target target, Result<Environments> environmentsFile, string repositoryRoot) =>
         target.Match<Result<Database>>(
@@ -244,15 +247,13 @@ public static partial class SqlServer
                 ? "Add the environment to " + EnvironmentsFile.Json + " with its host, connection reference and profile."
                 : "Name one it holds: " + string.Join(", ", environments.All.Select(e => e.Target)) + ".")),
         copy => LocalServer.Registered(repositoryRoot, copy.Name, environmentsFile).Map(c => (Database)c),
-        () => new Error("synthetic-copy.not-built",
-            "synthetic-copy names the synthetic copy, which is not in this build; this build reads env: and copy: databases.",
-            "Name an env: or a copy: target; dbchange --help lists what this build runs."),
+        () => LocalServer.Synthetic(repositoryRoot, environmentsFile).Map(c => (Database)c),
         reference => NotADatabase(reference),
         dacpac => NotADatabase(dacpac));
 
     private static Error NotADatabase(Target target) => new Error("target.not-a-database",
-        target + " is read as a package, and a database is asked for here: env:<name> or copy:<name>.",
-        "Name the database as env:<name> or copy:<name>.");
+        target + " is read as a package, and a database is asked for here: env:<name>, copy:<name> or synthetic-copy.",
+        "Name the database as env:<name>, copy:<name> or synthetic-copy.");
 
     /// <summary>
     /// What this identity may read of a database it reached: the database, where it holds VIEW DEFINITION, and whether it also holds VIEW

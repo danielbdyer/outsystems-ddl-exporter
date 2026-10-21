@@ -49,6 +49,9 @@ public sealed record LocalState(string Root)
     /// <summary>The lock a run holds over its sweep, from its read of the registry to its last drop (io/LocalServer.Sweep.cs).</summary>
     public string SweepLock => Path.Combine(Folder, "sweep.lock");
 
+    /// <summary>The lock synthetic-copy up holds from its look at the registry to its last step (io/SyntheticCopy.cs).</summary>
+    public string SyntheticLock => Path.Combine(Folder, "synthetic-copy.lock");
+
     public string Temporary => Path.Combine(Folder, "tmp");
 
     /// <summary>

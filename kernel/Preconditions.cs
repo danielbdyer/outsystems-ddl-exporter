@@ -187,9 +187,11 @@ public sealed record PreconditionCount(Precondition Precondition, long Rows, lon
 
 /// <summary>
 /// An environment's data as the outcome depends on it (decision N5): the state of each precondition its plan holds, derived from counts,
-/// which the privacy closure admits, so it carries no value of any row. Two are equal when their states are, one by one.
+/// which the privacy closure admits, so it carries no value of any row; and the trust state of each constraint it holds disabled or
+/// untrusted, read from its catalog (spike S9), which WP 3.5 reproduces on a copy. Two are equal when their states and their trust states
+/// are, one by one.
 /// </summary>
-public sealed record ExistingData(SortedArray<PreconditionState> States)
+public sealed record ExistingData(SortedArray<PreconditionState> States, SortedArray<TrustState> Trust = default)
 {
     /// <summary>
     /// The states the counts give, and the states a person declares: a precondition is populated when a count finds a row in its table and
@@ -222,6 +224,27 @@ public sealed record ExistingData(SortedArray<PreconditionState> States)
 
     /// <summary>The state this existing data holds for <paramref name="precondition"/>, or null when it holds none.</summary>
     public PreconditionState? State(Precondition precondition) => States.FirstOrDefault(s => s.Precondition == precondition);
+}
+
+/// <summary>
+/// How an environment holds a constraint whose rule it does not apply to its rows as the repository declares it (spike S9; the
+/// Facsimile's F9): a foreign key or a check, by its element's key, disabled (NOCHECK CONSTRAINT), or enabled and untrusted (added WITH
+/// NOCHECK, or left so by a validation that failed), as sys.foreign_keys and sys.check_constraints hold is_disabled and is_not_trusted;
+/// a schema read keeps untrusted only as an internal annotation, so the catalog is read through SqlServer.Measure. A disabled constraint
+/// is untrusted too, as SQL Server holds it. A constraint an existing data lists no state for is enabled and trusted there. Trust states
+/// sort by constraint.
+/// </summary>
+public sealed record TrustState(ElementKey Constraint, bool Disabled, bool Untrusted) : IComparable<TrustState>
+{
+    public int CompareTo(TrustState? other) =>
+        other is null ? 1
+        : Constraint.CompareTo(other.Constraint) is var c and not 0 ? c
+        : Disabled.CompareTo(other.Disabled) is var d and not 0 ? d
+        : Untrusted.CompareTo(other.Untrusted);
+
+    /// <summary>The state as a sentence writes it: disabled, enabled and untrusted, or enabled and trusted.</summary>
+    public override string ToString() =>
+        Constraint + (Disabled ? " disabled" : Untrusted ? " enabled and untrusted" : " enabled and trusted");
 }
 
 /// <summary>

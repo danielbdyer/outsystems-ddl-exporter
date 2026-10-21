@@ -104,13 +104,13 @@ public static partial class LocalServer
     /// anything connects. <paramref name="now"/> is the clock the sweep and the row read, as Create takes it.
     /// </summary>
     internal static Result<SqlServer.Copy> Restore(string repositoryRoot, string server, Fingerprint key, SqlServer.QueryLog log,
-        DateTimeOffset? now = null) =>
+        DateTimeOffset? now = null, CopyName? named = null) =>
         ServerName(server).Bind(name => Backed(repositoryRoot, key, name).Bind(backup => backup is null
             ? new Error("copy.uncached",
                 LocalState.Name + "/cache/backups.json holds no backup of the base " + Short(key) + " on " + name + ".",
                 "Publish the base to a new copy and back it up, which records the backup in " + LocalState.Name + "/cache/backups.json.")
             : Made(repositoryRoot, server, log, Resolved, now ?? DateTimeOffset.UtcNow, copy => Restored(copy, backup.Path, log),
-                leavesDatabase: true)));
+                leavesDatabase: true, named)));
 
     /// <summary>A fresh copy of the base <paramref name="key"/> names on this machine's local server (<see cref="FromBase(string, string,
     /// Fingerprint, Func{SqlServer.Copy, Result{SqlServer.Copy}}, SqlServer.QueryLog, Func{Kernel.ServerName, Result{BackupFolder}}?,
@@ -126,21 +126,25 @@ public static partial class LocalServer
     /// has no cache: each copy is published from scratch, with the note cache.unavailable. A backup the server can no longer read
     /// (cache.unreadable) or cannot write (cache.unwritable) is a note, and the copy is published from scratch all the same.
     /// <paramref name="folder"/> chooses where the server writes a backup, <see cref="BackupFolderOf"/> unless a test gives another
-    /// choice; <paramref name="now"/> is the clock each copy's sweep and row read, as Create takes it.
+    /// choice; <paramref name="now"/> is the clock each copy's sweep and row read, as Create takes it; and <paramref name="copyName"/> is
+    /// the synthetic copy's name, where the fresh copy is it.
     /// </summary>
     internal static Result<Fresh> FromBase(string repositoryRoot, string server, Fingerprint key,
         Func<SqlServer.Copy, Result<SqlServer.Copy>> publish, SqlServer.QueryLog log,
-        Func<Kernel.ServerName, Result<BackupFolder>>? folder = null, DateTimeOffset? now = null) =>
+        Func<Kernel.ServerName, Result<BackupFolder>>? folder = null, DateTimeOffset? now = null, CopyName? copyName = null) =>
         ServerName(server).Bind(name => (folder ?? (named => BackupFolderOf(repositoryRoot, named, Resolved)))(name).Match(
-            _ => Cached(repositoryRoot, server, name, key, publish, log, now ?? DateTimeOffset.UtcNow),
-            uncached => Published(repositoryRoot, server, publish, log, now ?? DateTimeOffset.UtcNow).Map(copy => new Fresh(copy, false,
-                [Finding.Note("cache.unavailable", copy.Target.ToString(), uncached.Message + " The base was published from scratch.")]))));
+            _ => Cached(repositoryRoot, server, name, key, publish, log, now ?? DateTimeOffset.UtcNow, copyName),
+            uncached => Published(repositoryRoot, server, publish, log, now ?? DateTimeOffset.UtcNow, copyName).Map(copy =>
+                new Fresh(copy, false,
+                [
+                    Finding.Note("cache.unavailable", copy.Target.ToString(), uncached.Message + " The base was published from scratch."),
+                ]))));
 
     private static Result<Fresh> Cached(string repositoryRoot, string server, Kernel.ServerName name, Fingerprint key,
-        Func<SqlServer.Copy, Result<SqlServer.Copy>> publish, SqlServer.QueryLog log, DateTimeOffset now)
+        Func<SqlServer.Copy, Result<SqlServer.Copy>> publish, SqlServer.QueryLog log, DateTimeOffset now, CopyName? copyName)
     {
         var state = new LocalState(repositoryRoot);
-        Result<Fresh> Built(IReadOnlyList<Finding> notes) => Published(repositoryRoot, server, publish, log, now).Map(copy =>
+        Result<Fresh> Built(IReadOnlyList<Finding> notes) => Published(repositoryRoot, server, publish, log, now, copyName).Map(copy =>
             BackUp(copy, key, log).Match(_ => new Fresh(copy, false, notes), error => new Fresh(copy, false,
                 [.. notes, Finding.Note("cache.unwritable", copy.Target.ToString(), error.Message + " The base is not cached.")])));
         return state.Made(state.Cache).Bind(_ => FileLock.Take(state.BaseLock(Short(key)), BaseTimeout)).Bind(held =>
@@ -148,7 +152,7 @@ public static partial class LocalServer
             using (held)
             {
                 return Backed(repositoryRoot, key, name).Bind(backup => backup is null ? Built([])
-                    : Restore(repositoryRoot, server, key, log, now).Match(copy => new Fresh(copy, true, []),
+                    : Restore(repositoryRoot, server, key, log, now, copyName).Match(copy => new Fresh(copy, true, []),
                         error => error.Code == "server.failed"
                             ? Built([Finding.Note("cache.unreadable", backup.Path,
                                 error.Message + " The base was published from scratch.")])
@@ -159,8 +163,8 @@ public static partial class LocalServer
 
     /// <summary>A new copy the base is published to; a copy whose publish failed is dropped, and the publish's error returned.</summary>
     private static Result<SqlServer.Copy> Published(string repositoryRoot, string server,
-        Func<SqlServer.Copy, Result<SqlServer.Copy>> publish, SqlServer.QueryLog log, DateTimeOffset now) =>
-        Create(repositoryRoot, server, log, now: now).Bind(copy => publish(copy).Match(Result.Ok, error =>
+        Func<SqlServer.Copy, Result<SqlServer.Copy>> publish, SqlServer.QueryLog log, DateTimeOffset now, CopyName? named) =>
+        Create(repositoryRoot, server, log, now: now, named: named).Bind(copy => publish(copy).Match(Result.Ok, error =>
         {
             Drop(copy, log);   // a copy its DROP failed on keeps its row, and the sweep drops it
             return Result.Fail<SqlServer.Copy>(error);
@@ -168,13 +172,14 @@ public static partial class LocalServer
 
     /// <summary>
     /// The backup's files listed (RESTORE FILELISTONLY: the logical name, the type, the file's id), then the backup restored into the
-    /// copy's database, each file moved under the copy's name into the server's default data folder, or its log folder for the log.
+    /// copy's database, each file moved under the copy's name into the server's default data folder, or its log folder for the log. The
+    /// RESTORE has no REPLACE, so it never writes over a database of the name another checkout made (Making's copy.foreign).
     /// </summary>
     private static Result<SqlServer.Copy> Restored(SqlServer.Copy copy, string path, SqlServer.QueryLog log) =>
         Run(copy, "RESTORE FILELISTONLY", "RESTORE FILELISTONLY FROM DISK = @path;", log,
             rows => rows.Select(r => (Logical: (string)r[0]!, Type: (string)r[2]!, Id: Convert.ToInt64(r[6], CultureInfo.InvariantCulture)))
                 .ToList(), ("@path", path))
-        .Bind(files => Run(copy, "RESTORE DATABASE",
+        .Bind(files => Making(copy, "RESTORE DATABASE",
             "DECLARE @data nvarchar(4000) = CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(4000)), "
             + "@log nvarchar(4000) = CAST(SERVERPROPERTY('InstanceDefaultLogPath') AS nvarchar(4000)); "
             + "SET @data += " + Separator("@data") + "; SET @log += " + Separator("@log") + "; "
@@ -182,7 +187,7 @@ public static partial class LocalServer
                 $"DECLARE @to{i} nvarchar(4000) = {(f.Type == "L" ? "@log" : "@data")} + @name + N'_{f.Id}{Extension(f.Type, f.Id)}'; ")))
             + "RESTORE DATABASE @name FROM DISK = @path WITH "
             + string.Join(", ", files.Select((_, i) => string.Create(CultureInfo.InvariantCulture, $"MOVE @file{i} TO @to{i}")))
-            + ", CHECKSUM, RECOVERY;", log, _ => copy,
+            + ", CHECKSUM, RECOVERY;", log,
             [("@path", path), .. files.Select((f, i) => (string.Create(CultureInfo.InvariantCulture, $"@file{i}"), f.Logical))]));
 
     /// <summary>A file's extension by its type in RESTORE FILELISTONLY: the primary data file .mdf, another .ndf, the log .ldf; a

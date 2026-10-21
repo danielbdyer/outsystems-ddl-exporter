@@ -20,11 +20,11 @@
     }
   },
   "code": {
-    "about": "C# in the three packages together; tests are budgeted separately. The ceiling is the sum of the three package ceilings. The planned figures are M3 as re-cut, which the operator confirmed on 2026-10-19 (V3_MILESTONES.md section 17 item 20), M2 with io/AggregateQueries.cs and its partial files, and M3 with kernel Witness and its partial files, as measured on 2026-10-20; before the re-cut M3 planned 4,840, and before 2026-10-20 M2 planned 1,880 and M3 2,270.",
+    "about": "C# in the three packages together; tests are budgeted separately. The ceiling is the sum of the three package ceilings. The planned figures are M3 as re-cut, which the operator confirmed on 2026-10-19 (V3_MILESTONES.md section 17 item 20), M2 with io/AggregateQueries.cs and its partial files, and M3 with kernel Witness and io/SyntheticCopy.cs and their partial files, as measured on 2026-10-20 and, for the copy build, on 2026-10-21; before the re-cut M3 planned 4,840, and before 2026-10-20 M2 planned 1,880 and M3 2,270.",
     "budgets": ["kernel", "io", "cli"],
     "ceiling": 26600,
-    "planned": 14435,
-    "plannedByMilestone": { "M0": 1120, "M1": 2560, "M2": 3826, "M3": 3359, "M4": 790, "M5": 1440, "M6": 880, "M7": 460 }
+    "planned": 16772,
+    "plannedByMilestone": { "M0": 1120, "M1": 2560, "M2": 3826, "M3": 5696, "M4": 790, "M5": 1440, "M6": 880, "M7": 460 }
   },
   "budgets": {
     "kernel": {
@@ -54,7 +54,7 @@
       "include": ["io/**/*.cs"],
       "exclude": [],
       "ceiling": 13500,
-      "planned": 7426,
+      "planned": 9763,
       "plannedFiles": [
         { "files": ["Write.cs", "Json.cs"], "what": "and the telemetry opt-out", "lines": 250, "milestones": ["M0"] },
         { "files": ["Ssdt.cs"], "what": "build, load, read into elements with scripts and refactorlog, refactorlog read", "lines": 400, "milestones": ["M1"] },
@@ -62,7 +62,7 @@
         { "files": ["LocalServer.cs"], "what": "minimal: create, register, drop", "lines": 60, "milestones": ["M1"] },
         { "files": ["Profiles.cs", "Git.cs", "Doctor.cs"], "what": "Profiles.cs: options only; SQLCMD sensitivity", "lines": 440, "milestones": ["M1"] },
         { "files": ["AggregateQueries.cs", "AggregateQueries.Check.cs", "AggregateQueries.Fits.cs", "AggregateQueries.Keys.cs", "AggregateQueries.Trees.cs", "AggregateQueries.Types.cs", "Predict.cs"], "what": "AggregateQueries.cs with its five partial files at the 1,946 lines measured on 2026-10-20; and the BlockOnPossibleDataLoss reader, Predict.cs and the machine block's parser at the 690 this row planned for all four until then", "lines": 2636, "milestones": ["M2"] },
-        { "files": ["LocalServer.cs", "SyntheticCopy.cs", "Profile.cs"], "what": "LocalServer.cs completed; the copy build's eight steps; a column's value-free shape and row tiers", "lines": 950, "milestones": ["M3"] },
+        { "files": ["LocalServer.cs", "SyntheticCopy.cs", "SyntheticCopy.Check.cs", "SyntheticCopy.Plant.cs", "Witnesses.cs", "Witnesses.Numbers.cs", "Witnesses.Remote.cs", "ExistingDataFile.cs", "LocalServer.Synthetic.cs", "LocalServer.Linked.cs", "AggregateQueries.Trust.cs", "Profile.cs"], "what": "the copy build's eight steps, SyntheticCopy.cs and its two partial files with Witnesses.cs and its partial files Witnesses.Numbers.cs and Witnesses.Remote.cs, ExistingDataFile.cs, LocalServer.Synthetic.cs, LocalServer.Linked.cs and AggregateQueries.Trust.cs, at the 2,337 lines measured on 2026-10-21; and LocalServer.cs completed and a column's value-free shape and row tiers at the 950 this row planned for all three until then", "lines": 3287, "milestones": ["M3"] },
         { "files": ["Prove.cs", "RefactorLog.cs"], "what": null, "lines": 550, "milestones": ["M4"] },
         { "files": ["Gate.cs", "Vendor.cs", "Json.cs"], "what": "Json.cs additions", "lines": 670, "milestones": ["M5"] },
         { "files": ["Ossys.cs"], "what": "the allowlist; and the page's commit and deployments.md", "lines": 370, "milestones": ["M6"] },

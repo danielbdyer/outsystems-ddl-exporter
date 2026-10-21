@@ -61,6 +61,38 @@ public sealed class ScratchRepository : IDisposable
             .Select(file => ("project/" + file, File.ReadAllText(Path.Combine(Root, "project", file))))]);
     }
 
+    /// <summary>
+    /// The golden project as Base commits it with the sample change's edits applied, and the change's declared witnesses at
+    /// dbchange/witnesses.sql, absent where <paramref name="witnesses"/> is null, committed after the last commit; the commit, or the last
+    /// commit where it already holds both.
+    /// </summary>
+    internal string Committed(SampleChange change, string? witnesses)
+    {
+        var file = Path.Combine(Root, "dbchange", "witnesses.sql");
+        if (witnesses is null)
+        {
+            File.Delete(file);
+        }
+        else
+        {
+            File.WriteAllText(file, witnesses);
+        }
+
+        scratch.Git("checkout", Base, "--", "project");
+        foreach (var edit in change.Edits)
+        {
+            edit.ApplyTo(Path.Combine(Root, "project"));
+        }
+
+        return scratch.Git("status", "--porcelain").Length == 0 ? scratch.Git("rev-parse", "HEAD") : scratch.Commit(change.Name);
+    }
+
+    /// <summary>A clone of the repository beside it, a second checkout of the same commits; its root.</summary>
+    internal string Clone() => scratch.Clone(Root);
+
+    /// <summary>What git status lists of the working tree, each untracked file by its path; empty where nothing changed.</summary>
+    internal string Status() => scratch.Git("status", "--porcelain", "--untracked-files=all");
+
     /// <summary>dbchange run at the repository's root with --json: its exit and its answer, valid against its schema.</summary>
     public (int Exit, JsonNode Answer) Answer(params string[] arguments) => AnswerAt(Root, arguments);
 

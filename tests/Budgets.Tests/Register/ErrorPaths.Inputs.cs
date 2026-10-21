@@ -386,6 +386,9 @@ internal static partial class ErrorPaths
 
     private static string Quoted(string text) => "\"" + text + "\"";
 
+    /// <summary>A repository whose model defines no literal, no synonym and no table, against which a declared witness is read.</summary>
+    private static Witnesses.Repository EmptyModel => Witnesses.Repository.Of([], new Kernel.Schema([]));
+
     /// <summary>
     /// The error a verb's answer carries as its one finding of severity error, where the cli fails inside a verb rather than in a Result.
     /// </summary>

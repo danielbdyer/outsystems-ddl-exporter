@@ -382,13 +382,13 @@ public sealed class Citations
         + "`BannedSymbolsTests`; `Kernel.Tests: \"law 1′ under tr-TR\"` — not held yet: WP 3.3 |", 0, "")]
     [InlineData("| D2 | … | `CultureInfo.CurrentCulture` is in `kernel/BannedSymbol.txt`; law 1′ runs under `tr-TR` | "
         + "`BannedSymbolsTests`; `Kernel.Tests: \"law 1′ under tr-TR\"` — not held yet: WP 3.3 |", 0, "kernel/BannedSymbol.txt")]
-    [InlineData("| O1 | … | `io/SyntheticCopy.cs` over both | `Io.Tests` on both local servers — not held yet: WP 3.4 |", 0,
-        "io/SyntheticCopy.cs")]
-    [InlineData("| O1 | … | `io/SyntheticCopy.cs` over both, from M3 | `Io.Tests` on both local servers — not held yet: WP 3.4 |", 0, "")]
-    [InlineData("| O1 | … | `io/SyntheticCopy.cs` over both, from M3 | `Io.Tests` on both local servers — not held yet: WP 3.4 |", 4,
-        "io/SyntheticCopy.cs")]
-    [InlineData("| O1 | … | `io/SyntheticCopy.cs`, not held yet: WP 3.4 | … |", 0, "")]
-    [InlineData("| O1 | … | `io/SyntheticCopy.cs`, not held yet: WP 3.4 | … |", 4, "io/SyntheticCopy.cs")]
+    [InlineData("| O1 | … | `io/SyntheticShape.cs` over both | `Io.Tests` on both local servers — not held yet: WP 3.4 |", 0,
+        "io/SyntheticShape.cs")]
+    [InlineData("| O1 | … | `io/SyntheticShape.cs` over both, from M3 | `Io.Tests` on both local servers — not held yet: WP 3.4 |", 0, "")]
+    [InlineData("| O1 | … | `io/SyntheticShape.cs` over both, from M3 | `Io.Tests` on both local servers — not held yet: WP 3.4 |", 4,
+        "io/SyntheticShape.cs")]
+    [InlineData("| O1 | … | `io/SyntheticShape.cs`, not held yet: WP 3.4 | … |", 0, "")]
+    [InlineData("| O1 | … | `io/SyntheticShape.cs`, not held yet: WP 3.4 | … |", 4, "io/SyntheticShape.cs")]
     [InlineData("| E4 | … | `io/Emit.cs`, not held yet: the cutover tools | … |", 7, "")]
     [InlineData("| E4 | … | `io/Emit.cs`, not held yet: the cutover tools | … |", 8, "io/Emit.cs")]
     [InlineData("record the trust state of each constraint under `tests/Golden/trust-states/`", 0, "")]
