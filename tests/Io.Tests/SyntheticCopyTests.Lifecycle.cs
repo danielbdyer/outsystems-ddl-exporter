@@ -21,16 +21,18 @@ public sealed partial class SyntheticCopyTests
     /// <summary>
     /// Law 11′ in its planted form and M3 exit 2 (R8, as the planter's determinism): an environment at the golden base holding each of
     /// R6's sites, counted for the change that makes them preconditions. The copy up plants at that existing data passes check: each table
-    /// holds the rows up recorded, the one key of the base, FK_Order_Customer_CustomerId, is trusted and every row of Order finds its
-    /// Customer, the copy answers every precondition as the environment does, and its plan from the base is empty. Dropped by down and
-    /// planted again from the same inputs, restored from the cache, every table holds byte-identical rows, its content hash the same,
-    /// and check passes again. A schema edit, a nullable column added to Status at a second ref with the same rows in the environment,
-    /// replants only the table it touches: every other table hashes as at the base.
+    /// holds the rows up recorded, the base declaring no foreign key leaves no reference to resolve, the copy answers every precondition
+    /// as the environment does, and its plan from the base is empty. Dropped by down and planted again from the same inputs, restored
+    /// from the cache, every table holds byte-identical rows, its content hash the same, and check passes again. A schema edit, a
+    /// nullable column added to Status at a second ref with the same rows in the environment, replants only the table it touches: every
+    /// other table hashes as at the base. At a third ref that declares FK_Order_Status_StatusId, the copy up builds with the seed alone
+    /// passes check, the key trusted and every row of Order finding its Status.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
     [Trait("Law", "11′ a planted set repeats itself, replants only the touched tables and holds no orphan its existing data lacks")]
     [Trait("Exit", "M3.2")]
+    [Trait("Value", "D6")]
     public async Task Two_plantings_from_the_same_inputs_are_byte_identical_and_synthetic_copy_check_passes_on_each()
     {
         var head = repository.Committed(FiveSites, null);
@@ -48,9 +50,7 @@ public sealed partial class SyntheticCopyTests
 
             Assert.True(check == 0, passed.ToJsonString());
             Assert.Equal(("passed", copy), ((string?)passed["outcome"], (string?)passed["checked"]!["copy"]));
-            var key = Assert.Single(passed["checked"]!["references"]!.AsArray())!;
-            Assert.Equal(("ForeignKeyConstraint [dbo].[FK_Order_Customer_CustomerId]", "trusted", 0),
-                ((string)key["reference"]!, (string)key["state"]!, (int)key["orphans"]!));
+            Assert.Empty(passed["checked"]!["references"]!.AsArray());
             Assert.All(passed["checked"]!["tables"]!.AsArray(), t => Assert.Equal((string?)t!["recorded"], (string?)t["hash"]));
             Assert.Equal(first["syntheticCopy"]!["answers"]!.ToJsonString(), passed["checked"]!["answers"]!.ToJsonString());
 
@@ -82,6 +82,15 @@ public sealed partial class SyntheticCopyTests
             var after = Hashes(third);
             Assert.Equal(before.Keys.Order(StringComparer.Ordinal), after.Keys.Order(StringComparer.Ordinal));
             Assert.Equal(["[dbo].[Status]"], before.Keys.Where(t => before[t] != after[t]));
+
+            var keyed = repository.Committed(new SampleChange("a foreign key from Order to Status", [FiveSites.Edits[^1]], []), null);
+            Assert.Equal(0, Up("--at", keyed, "--profile", profile).Exit);
+            (check, passed) = Synthetic("check", "--at", keyed, "--profile", profile);
+
+            Assert.True(check == 0, passed.ToJsonString());
+            var key = Assert.Single(passed["checked"]!["references"]!.AsArray())!;
+            Assert.Equal(("ForeignKeyConstraint [dbo].[FK_Order_Status_StatusId]", "trusted", 0),
+                ((string)key["reference"]!, (string)key["state"]!, (int)key["orphans"]!));
         }
         finally
         {

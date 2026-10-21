@@ -69,6 +69,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | D3 | An appended entry is on disk when Append returns and a reader sees every earlier entry | `DbChange.Io.Tests.WriteTests.An_appended_entry_is_on_disk_when_Append_returns_and_a_reader_sees_every_earlier_entry` |
 | D3 | Writes utf8 without a bom in the line ending on disk | `DbChange.Io.Tests.WriteTests.Writes_utf8_without_a_bom_in_the_line_ending_on_disk` |
 | D3 | Text is fingerprinted in its canonical form | `DbChange.Kernel.Tests.FingerprintTests.Text_is_fingerprinted_in_its_canonical_form` |
+| D6 | Two plantings from the same inputs are byte identical and synthetic copy check passes on each | `DbChange.Io.Tests.SyntheticCopyTests.Two_plantings_from_the_same_inputs_are_byte_identical_and_synthetic_copy_check_passes_on_each` |
 | D6 | A schema edit changes only the rows of the tables it touches | `DbChange.Kernel.Tests.WitnessProperties.A_schema_edit_changes_only_the_rows_of_the_tables_it_touches` |
 | D6 | Two plans from the same inputs are identical | `DbChange.Kernel.Tests.WitnessProperties.Two_plans_from_the_same_inputs_are_identical` |
 | G6 | No verb writes to a named environment | `DbChange.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |

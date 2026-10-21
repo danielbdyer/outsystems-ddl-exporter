@@ -54,10 +54,12 @@ internal sealed class Scratch : IDisposable
         return origin;
     }
 
-    /// <summary>A clone beside this repository, made with the options given before the URL; its root.</summary>
+    /// <summary>A clone beside this repository, made with the options given before the URL, in a folder of its own, so the tests of
+    /// one class fixture each clone it once; its root.</summary>
     public string Clone(params string[] arguments)
     {
-        var clone = Path.Combine(Parent, "clone");
+        var clone = Enumerable.Range(1, int.MaxValue - 1).Select(n => Path.Combine(Parent, n == 1 ? "clone" : "clone-" + n))
+            .First(path => !Directory.Exists(path));
         Run(Parent, ["clone", "-q", .. arguments, clone]);
         return clone;
     }

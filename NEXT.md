@@ -19,8 +19,7 @@ Updated 2026-10-21 by #705, in wave 7: WP 2.1's second slice, WP 2.6's corpus, W
 - WP 2.5's predict chains `Vocabulary.Read` and `Coordinates.Of` (a `Declared` takes a person's state; an unclassified statement goes
   to proof), reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`, writes the existing data
   `up` reads with its trust list, and predicts as `Io.Tests: SampleChangePredictionTests` does for the corpus, whose INSERT scripts
-  the planter's copies replace in M3. M3: `synthetic-copy check`, `status` and `down` are built, with exits 2, 3 and 5; WP 3.6's
-  scale test (O8, O9: the golden project replicated to 300 tables) and WP 3.7's `profile` (exit 4) remain, then exit 1 on a laptop.
+  the planter's copies replace in M3. M3's exits 2, 3 and 5 hold; WP 3.6's scale test (O8, O9) and WP 3.7's `profile` (exit 4) remain.
 - S4's laptop half, the SSDT repository's own schema on LocalDB 16.x, waits on S6; its CI half is a decision line.
 - WP 7.2 rewrites each moved skill's citations to the forms `Citations` accepts (no rewrite map is kept). Of v2's skills/ and agents/,
   one passing block still cites v2 outside the words `Register.Prose` refuses, add-index's line 29, by a bare §19 (the handbook's
