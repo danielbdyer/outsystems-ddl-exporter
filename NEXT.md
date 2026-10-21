@@ -16,7 +16,7 @@ Updated 2026-10-20 by #705, after wave 6: WP 3.4 (`LocalServer`'s copy cache) an
 - Run the sql-windows job on the branch: DacFx 162.5.57 plans LocalDB 17.0 as Sql160, and no run of the 162 half there is measured.
 
 ## Next
-- WP 2.1's second slice: the statement kinds the plan's §4 shapes name, with the four refinements of spike S2's decision lines.
+- WP 2.5 chains `Vocabulary.Read` and `Coordinates.Of`: a `Declared` takes a person's state; an unclassified statement goes to proof.
 - S4's laptop half, the SSDT repository's own schema on LocalDB 16.x, waits on S6; its CI half is a decision line.
 - WP 7.2 rewrites each moved skill's citations to the forms `Citations` accepts (no rewrite map is kept). Of v2's skills/ and agents/,
   one passing block still cites v2 outside the words `Register.Prose` refuses: add-index's line 29, whose bare §19 is the handbook's

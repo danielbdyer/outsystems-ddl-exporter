@@ -13,11 +13,12 @@ namespace DbChange.Kernel.Tests;
 /// questions in v3's words (V3_MILESTONES.md §3.1: HasRows is TableEmpty, Orphan is ForeignKey, CheckFalse is Check). What else a case
 /// expects waits on its work package: the value classes of Fits and Unique, and the answer over a column the change creates (QST-46,
 /// QST-62, QST-100) or a parent table it creates (QST-101), on WP 2.3, whose queries read the value the coordinate rules give each
-/// existing row (CoordinatesTests) where the column's name would stand; its measures and the kinds only a plan's statements show on
-/// WP 2.1's second slice; and the reading of the script's text on WP 2.2. Two of v3's decisions differ from the catalog and the
-/// cases follow v3: any change to a column's type is Fits (decision 2.9), where the catalog asks nothing of a widening or a collation
-/// alone (QST-19, QST-21, QST-33); and a key a table the change creates declares inline is Unique, answered from the change as any
-/// precondition on that table is (QST-45, QST-58, QST-69, QST-101), where the catalog reads only a separate ADD.
+/// existing row (CoordinatesTests) where the column's name would stand; and the reading of the script's text on WP 2.2. The cases of the
+/// kinds only a plan's statements show, and of the statements that read no row, are read off their plans in tests/Io.Tests/
+/// VocabularyCases.cs (WP 2.1's second slice), which LeftOut names by "VocabularyCases:". Two of v3's decisions differ from the catalog
+/// and the cases follow v3: any change to a column's type is Fits (decision 2.9), where the catalog asks nothing of a widening or a
+/// collation alone (QST-19, QST-21, QST-33); and a key a table the change creates declares inline is Unique, answered from the change as
+/// any precondition on that table is (QST-45, QST-58, QST-69, QST-101), where the catalog reads only a separate ADD.
 /// </summary>
 public sealed class QuestionCases
 {
@@ -345,50 +346,51 @@ public sealed class QuestionCases
     internal static readonly IReadOnlyDictionary<string, string> LeftOut = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["QST-03"] = "the script's text: an offline and a live script of one change (WP 2.2)",
-        ["QST-04"] = "the script's text: its header and SQLCMD lines (WP 2.2)",
-        ["QST-05"] = "the script's text: a database option's IF EXISTS (WP 2.2)",
-        ["QST-06"] = "the script's text: database SET options (WP 2.2)",
-        ["QST-07"] = "the script's text: comments (WP 2.2)",
+        ["QST-04"] = "VocabularyCases: DacFx's header and SQLCMD lines read no row (WP 2.1, second slice)",
+        ["QST-05"] = "VocabularyCases: a database option's IF EXISTS reads no row (WP 2.1, second slice)",
+        ["QST-06"] = "VocabularyCases: database SET options read no row (WP 2.1, second slice)",
+        ["QST-07"] = "VocabularyCases: a comment is no statement (WP 2.1, second slice)",
         ["QST-13"] = "the script's text: a check's spelling (WP 2.2)",
-        ["QST-14"] = "the script's text: a RAISERROR at another state (WP 2.2)",
+        ["QST-14"] = "VocabularyCases: an IF EXISTS raising at another state is no check, and is unclassified (WP 2.1, second slice)",
         ["QST-15"] = "the script's text: a check written without WITH NOWAIT (WP 2.2)",
-        ["QST-47"] = "KeyLength (WP 2.1, second slice)",
-        ["QST-48"] = "KeyLength (WP 2.1, second slice)",
-        ["QST-49"] = "KeyLength (WP 2.1, second slice)",
-        ["QST-55"] = "a statement shape the vocabulary reads (WP 2.1, second slice)",
-        ["QST-56"] = "a statement shape the vocabulary reads (WP 2.1, second slice)",
-        ["QST-57"] = "a statement shape the vocabulary reads (WP 2.1, second slice)",
-        ["QST-59"] = "Authored (WP 2.1, second slice)",
-        ["QST-63"] = "Rebuild (WP 2.1, second slice)",
-        ["QST-64"] = "Rebuild (WP 2.1, second slice)",
-        ["QST-65"] = "Rebuild (WP 2.1, second slice)",
-        ["QST-66"] = "Computed (WP 2.1, second slice)",
-        ["QST-67"] = "Computed (WP 2.1, second slice)",
-        ["QST-68"] = "Computed (WP 2.1, second slice)",
-        ["QST-77"] = "the script's text: batch separators (WP 2.2)",
-        ["QST-78"] = "Authored (WP 2.1, second slice)",
-        ["QST-79"] = "SeedDrift (WP 2.1, second slice)",
-        ["QST-80"] = "SeedDrift (WP 2.1, second slice)",
-        ["QST-81"] = "Authored (WP 2.1, second slice)",
-        ["QST-82"] = "Authored (WP 2.1, second slice)",
-        ["QST-83"] = "Authored (WP 2.1, second slice)",
-        ["QST-84"] = "an unknown statement (WP 2.1, second slice)",
-        ["QST-85"] = "an unknown statement (WP 2.1, second slice)",
-        ["QST-86"] = "an unknown statement (WP 2.1, second slice)",
-        ["QST-87"] = "an unknown statement (WP 2.1, second slice)",
-        ["QST-88"] = "an unknown statement (WP 2.1, second slice)",
-        ["QST-89"] = "Temporal (WP 2.1, second slice)",
-        ["QST-90"] = "an unknown statement (WP 2.1, second slice)",
-        ["QST-91"] = "an unknown statement (WP 2.1, second slice)",
-        ["QST-92"] = "an unknown statement (WP 2.1, second slice)",
-        ["QST-93"] = "the vocabulary's own properties (WP 2.1, second slice)",
-        ["QST-94"] = "the vocabulary's own properties (WP 2.1, second slice)",
-        ["QST-95"] = "the vocabulary's own properties (WP 2.1, second slice)",
+        ["QST-47"] = "VocabularyCases: KeyLength (WP 2.1, second slice)",
+        ["QST-48"] = "VocabularyCases: KeyLength (WP 2.1, second slice)",
+        ["QST-49"] = "VocabularyCases: KeyLength (WP 2.1, second slice)",
+        ["QST-55"] = "VocabularyCases: a validation of no constraint the model holds is unclassified (WP 2.1, second slice)",
+        ["QST-56"] = "VocabularyCases: a foreign key DacFx never validates asks nothing (WP 2.1, second slice)",
+        ["QST-57"] = "VocabularyCases: CHECK CONSTRAINT without WITH CHECK asks nothing (WP 2.1, second slice)",
+        ["QST-59"] = "VocabularyCases: Authored (WP 2.1, second slice)",
+        ["QST-63"] = "VocabularyCases: Rebuild (WP 2.1, second slice)",
+        ["QST-64"] = "VocabularyCases: Rebuild (WP 2.1, second slice)",
+        ["QST-65"] = "VocabularyCases: Rebuild (WP 2.1, second slice)",
+        ["QST-66"] = "VocabularyCases: Computed (WP 2.1, second slice)",
+        ["QST-67"] = "VocabularyCases: Computed (WP 2.1, second slice)",
+        ["QST-68"] = "VocabularyCases: Computed (WP 2.1, second slice)",
+        ["QST-77"] = "VocabularyCases: batch separators (WP 2.1, second slice)",
+        ["QST-78"] = "VocabularyCases: Authored (WP 2.1, second slice)",
+        ["QST-79"] = "VocabularyCases: SeedDrift (WP 2.1, second slice)",
+        ["QST-80"] = "VocabularyCases: SeedDrift (WP 2.1, second slice)",
+        ["QST-81"] = "VocabularyCases: Authored (WP 2.1, second slice)",
+        ["QST-82"] = "VocabularyCases: Authored (WP 2.1, second slice)",
+        ["QST-83"] = "VocabularyCases: Authored over a program of releases, the final target's and every release's (WP 2.1, second slice)",
+        ["QST-84"] = "VocabularyCases: an unknown statement (WP 2.1, second slice)",
+        ["QST-85"] = "VocabularyCases: an unknown statement (WP 2.1, second slice)",
+        ["QST-86"] = "VocabularyCases: an unknown statement (WP 2.1, second slice)",
+        ["QST-87"] = "VocabularyCases: an unknown statement (WP 2.1, second slice)",
+        ["QST-88"] = "VocabularyCases: an unknown statement (WP 2.1, second slice)",
+        ["QST-89"] = "VocabularyCases: Temporal (WP 2.1, second slice)",
+        ["QST-90"] = "VocabularyCases: an unknown statement (WP 2.1, second slice)",
+        ["QST-91"] = "VocabularyCases: an unknown statement (WP 2.1, second slice)",
+        ["QST-92"] = "VocabularyCases: an unknown statement (WP 2.1, second slice)",
+        ["QST-93"] = "every sample change's plan on both DacFx releases, its statements each matched by a row: tests/Io.Tests (WP 2.1, second "
+            + "slice)",
+        ["QST-94"] = "the vocabulary's theory over a statement of each reading shape no row matches: tests/Io.Tests (WP 2.1, second slice)",
+        ["QST-95"] = "the vocabulary's M1, each row removed against its case: tests/Io.Tests (WP 2.1, second slice)",
         ["QST-96"] = "the script reader's determinism (WP 2.2)",
         ["QST-97"] = "the script's text: encodings and line endings (WP 2.2)",
         ["QST-98"] = "the script's text: bracketed names (WP 2.2)",
-        ["QST-99"] = "the vocabulary's own properties (WP 2.1, second slice)",
-        ["QST-105"] = "Temporal (WP 2.1, second slice)",
+        ["QST-99"] = "VocabularyCases: the plan's three classes (WP 2.1, second slice)",
+        ["QST-105"] = "VocabularyCases: Temporal (WP 2.1, second slice)",
     };
 
     internal static Precondition TableEmpty(string table) => new(Model.TableName(table), [], new PreconditionKind.TableEmpty());

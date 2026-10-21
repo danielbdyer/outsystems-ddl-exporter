@@ -270,7 +270,7 @@ of runtime, layout, exit codes, names and vocabulary give way to v3's wherever v
 | `HasRows` | `TableEmpty`: the same site, read with the opposite polarity |
 | `NotNull`, `Fits`, `Unique` | the same names; the Facsimile adds `Fits`'s value classes and `Unique`'s collation classes (WP 2.3) |
 | `Orphan`; `CheckFalse` | `ForeignKey`; `Check` |
-| `KeyLength`, `Rebuild`, `Computed`, `Temporal`, `Scan`, `Authored`, `SeedDrift`, `Unknown` | none yet; each arrives in WP 2.1 with its cases |
+| `KeyLength`, `Rebuild`, `Computed`, `Temporal`, `Scan`, `Authored`, `SeedDrift`, `Unknown` | the same names for the seven kinds (WP 2.1's second slice), each raised by a row of `kernel/Vocabulary` on `io/PlanStatements`' listing of the plan; `Computed` and `Authored` declared by a person, never counted; `Unknown` is no kind: a statement no row matches is unclassified, and the change goes to proof |
 | witness row; planter | the existing-data tier of the synthetic copy (WP 3.8) |
 | `fx_` databases; `.facsimile/` | `dbchange_<host>_<pid>_<rand>`; `.dbchange/copies.json` and `.dbchange/cache/` |
 | `read`; `prove`; `up`, `status`, `down`; `shape`; `doctor`; `init` | the reading half of `predict`; `prove`; `synthetic-copy up`, `status`, `down`; `profile`, value-free; `doctor`; `dbchange/environments.json` |

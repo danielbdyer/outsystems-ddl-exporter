@@ -84,6 +84,43 @@ public sealed class CoordinatesTests
     }
 
     /// <summary>
+    /// The coordinate rule of the kinds a person declares: a Computed or an Authored is placed where the person looks, and neither a count
+    /// nor the change answers it, on a table the change creates as on one the environment holds, since a deploy script can fill a new
+    /// table before the statement that reads it (the Facsimile's QST-59). So the existing data takes no count of it, the prediction refuses
+    /// it as plan.undeclared, an error with its remedy, until a person declares its state, and then reads the declared state; a Scan on
+    /// the same new table is answered from the change.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_Computed_or_an_Authored_is_declared_by_a_person_on_a_table_the_change_creates_and_never_answered_as_empty()
+    {
+        var after = Pg.With("Child.Id int NOT NULL", "Child.CustomerId int NOT NULL", "T.Id int NOT NULL", "T.Ref varchar(20) NULL")
+            .Computed("T.RefNum", "(CONVERT (INT, [Ref]))").ForeignKey("FK_Child_Customer", "Child", ["CustomerId"], "Customer", ["Id"]);
+        var change = Ok(Change.Between(Pg.Elements, after.Elements, []));
+        var filled = new Precondition(Model.TableName("Child"), Names(["CustomerId"]), new PreconditionKind.Authored(ScriptPart.PostDeploy, 1));
+        var computed = new Precondition(Model.TableName("T"), Names(["RefNum"]), new PreconditionKind.Computed("(CONVERT (INT, [Ref]))"));
+        var backfill = new Precondition(Model.TableName("Customer"), Names(["Email"]), new PreconditionKind.Authored(ScriptPart.PreDeploy, 4));
+        var scanned = new Precondition(Model.TableName("T"), [], new PreconditionKind.Scan());
+        var located = new[] { filled, computed, backfill, scanned }.Select(p => Ok(Coordinates.Of(p, change, Pg.Elements))).ToList();
+
+        Assert.Equal(new Coordinates[]
+        {
+            new Coordinates.Declared(filled, [Made(Model.TableKey("Child")), Made(Model.ColumnKey("Child.CustomerId"))]),
+            new Coordinates.Declared(computed, [Made(Model.TableKey("T")), Made(Model.ColumnKey("T.RefNum"))]),
+            new Coordinates.Declared(backfill, [Held(Model.TableKey("Customer")), Held(Model.ColumnKey("Customer.Email"))]),
+            Answered(scanned),
+        }, located);
+        var counted = ExistingData.Of(located.OfType<Coordinates.Answered>().Select(a => a.Count));
+        foreach (var declared in new[] { filled, computed })
+        {
+            Expect.Failed(Outcome.Predict(counted, [], [declared, scanned], []), "plan.undeclared");
+            Assert.Equal(new Outcome.Applies([]), Ok(Outcome.Predict(
+                ExistingData.Of([new PreconditionCount(scanned, 0, 0)], [new PreconditionState(declared, true, false)]), [],
+                [declared, scanned], [])));
+        }
+    }
+
+    /// <summary>
     /// Over generated edits, with the environment at the model before them: a precondition is answered exactly when the change creates its
     /// table; each object a counted one reads is held under the key it had before the change, renamed or moved, or is a column the change
     /// creates with the default the edit gave it; and an environment lacking any held object refuses the precondition, naming it.

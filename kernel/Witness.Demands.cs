@@ -34,11 +34,22 @@ public sealed partial record Witness
         /// holds, or where it names none, of the first class ALTER COLUMN refuses between the two types that the planter writes a value
         /// of, and else a need that names no class (PLT-62 to PLT-68); ForeignKey, a row whose every leg is absent from the parent, which
         /// MATCH SIMPLE checks (PLT-75 to PLT-77); Unique, two rows equal on the key, or alike in one way for its class (PLT-69 to
-        /// PLT-73); Check, a row a person declares (PLT-78). A precondition a declared row witnesses asks none.
+        /// PLT-73); Check, a row a person declares (PLT-78). Of the kinds only a plan's statements show (Witness.Kinds.cs): KeyLength, a
+        /// key just past its limit (PLT-80, PLT-81); Rebuild, two rows whose identity values leave a gap, where the environment's do
+        /// (PLT-82); Temporal, a row whose period ends before it starts; Scan, presence alone; Computed and Authored, a row a person
+        /// declares, while no clean state is declared (PLT-120, PLT-127); SeedDrift, a row a person declares where the environment's rows
+        /// disagree with the seed. A precondition a declared row witnesses asks none, and one with no state asks none but where a person
+        /// declares it.
         /// </summary>
-        private IEnumerable<Demand> Demands(Located l) =>
-            l.State is not { } state || declared.Witnesses.Contains(l.Precondition) ? []
-            : l.Here.Kind.Match<IEnumerable<Demand>>(
+        private IEnumerable<Demand> Demands(Located l)
+        {
+            if (declared.Witnesses.Contains(l.Precondition) || (l.State is null && (presenceMode || !l.Here.Kind.Declared)))
+            {
+                return [];
+            }
+
+            var state = l.State ?? new PreconditionState(l.Precondition, true, true);
+            return l.Here.Kind.Match<IEnumerable<Demand>>(
                 () => [],
                 () => state.Violating && l.Here.Columns.Count == 1
                     ? [new Demand(new Purpose(l.Precondition, RowClasses.None), [l.Here.Columns[0]], 1, (_, _, _, _) => new Planted.Null())]
@@ -49,7 +60,15 @@ public sealed partial record Witness
                 _ => state.Violating
                     ? [new Demand(new Purpose(l.Precondition, RowClasses.None), [], 0, (_, _, _, _) => null,
                         new NeedsRow.Reason.FalseCheck(l.Precondition))]
-                    : []);
+                    : [],
+                key => state.Violating ? [LongKey(l, key)] : [],
+                () => state.Classes.HasFlag(RowClasses.Gapped) ? Gaps(l) : [],
+                _ => state.Violating ? [Declares(l)] : [],
+                _ => state.Violating ? Ended(l) : [],
+                () => [],
+                _ => state.Violating ? [Declares(l)] : [],
+                _ => state.Violating ? [Declares(l)] : []);
+        }
 
         private static IEnumerable<Demand> Misfits(Located l, PreconditionKind.Fits fits, PreconditionState state)
         {
