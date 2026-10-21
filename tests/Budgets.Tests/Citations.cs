@@ -29,14 +29,17 @@ namespace DbChange.Budgets.Tests;
 /// Each document also cites in v3's forms, so a file WP 7.2 moves from v2's skills passes only once its citations are rewritten
 /// (<see cref="Forms"/>): a finding by its identifier, never by v2's file, FINDINGS_AND_CHANGES.md, or FINDINGS with a part or an
 /// identifier; a part of that file by what replaced it (value S1 for Part 1, DECISIONS.md for Part 5), never as Part n; an operation
-/// by knowledge/ops/ and a shared file by knowledge/shared/, never by v2's op/ or _index/; a step by its verb and the golden project by
-/// tests/Golden/project/, never by v2's scripts/, a .mjs name or proving-ground/; a sample by its shape under knowledge/samples/,
-/// never by v2's sample-prs/; a handbook chapter by its title, never by its number, its file name, its file stem with a section
-/// number (<c>Operation-Reference 16.8</c>) or a pattern's number (<c>playbook Pattern 17.8</c>; a bare §n passes alone, because v3
-/// cites <c>V3_MILESTONES.md §13</c>, and is refused beside a refused citation or a missing path); a ledger by knowledge/ledgers/
-/// or dbchange/ledgers/, never by a bare name or any path into v2's estate/. A backticked span starting archive/ is provenance and
-/// exempt. Every F&lt;n&gt; names a finding of knowledge/findings.md, or of v2's FINDINGS_AND_CHANGES.md until that file lands; and every
-/// <c>dbchange &lt;verb&gt;</c> a document under knowledge/ or ARCHITECTURE.md cites is a row of the verb table, built or not.
+/// by knowledge/ops/ and a shared file by knowledge/shared/, never by v2's op/, _index/ or operations/ (the family overviews v3 deletes);
+/// a skill's content by the v3 file it folds into or the verb that does its step, never by the v2 skill's or agent's name in backticks
+/// (<c>`prove-on-dacpac`</c>), or by a hyphenated name in plain text, which English never holds (<c>see prove-on-dacpac's</c>);
+/// a step by its verb and the golden project by tests/Golden/project/, never by v2's scripts/, a .mjs name or proving-ground/; a
+/// sample by its shape under knowledge/samples/, never by v2's sample-prs/; a handbook chapter by its title, never by its number, its
+/// file name, its file stem with a section number (<c>Operation-Reference 16.8</c>) or a pattern's number (<c>playbook Pattern
+/// 17.8</c>; a bare §n passes alone, because v3 cites <c>V3_MILESTONES.md §13</c>, and is refused beside a refused citation or a
+/// missing path); a ledger by knowledge/ledgers/ or dbchange/ledgers/, never by a bare name or any path into v2's estate/. A
+/// backticked span starting archive/ is provenance and exempt. Every F&lt;n&gt; names a finding of knowledge/findings.md, or of v2's
+/// FINDINGS_AND_CHANGES.md until that file lands; and every <c>dbchange &lt;verb&gt;</c> a document under knowledge/ or
+/// ARCHITECTURE.md cites is a row of the verb table, built or not.
 /// </summary>
 public sealed class Citations
 {
@@ -104,6 +107,17 @@ public sealed class Citations
             "cite knowledge/ledgers/<name> for the template the tool seeds, or dbchange/ledgers/<name> for the SSDT repository's rows"),
         (new(@"(?<![\w/.-])(?:\.\./)*(?:skills/)?(?:op|_index)/", RegexOptions.CultureInvariant),
             "a skill by its v2 path", "cite knowledge/ops/<op>.md for an operation, or knowledge/shared/<name>.md for a shared file"),
+        (new(@"(?<![\w/.-])(?:\.\./)*(?:skills/)?operations/", RegexOptions.CultureInvariant),
+            "a skill by its v2 path", "v3 deletes v2's family overviews under skills/operations/; cite knowledge/ops/<op>.md for an "
+            + "operation, or knowledge/ops/ for the operations"),
+        (new(@"(?<![\w/.-])(?:ask-the-developer|author-pr|author-review|classify-mechanism|confirm-intent|deploy-scripts|"
+            + @"os-vocabulary|prove-on-dacpac|talk-to-local-sql|dependency-scope|review-change)(?![\w-])|"
+            + @"`(?:decompose|adversary|intake|reviewer)`", RegexOptions.CultureInvariant),
+            "a skill by its v2 name", "cite the v3 file it folds into: knowledge/authoring.md for intake, confirm-intent, "
+            + "classify-mechanism, decompose and ask-the-developer; knowledge/reviewing.md for reviewer, author-review, adversary, "
+            + "dependency-scope and review-change; knowledge/description.md for author-pr; knowledge/shared/<name>.md for os-vocabulary "
+            + "and deploy-scripts; or the verb that does the step, `dbchange prove` for prove-on-dacpac and `dbchange synthetic-copy` "
+            + "for talk-to-local-sql"),
         (new(@"(?<![\w/.-])(?:\.\./)*(?:ssdt-agent/)?(?:scripts/|proving-ground\b)|\b[\w.-]+\.mjs\b", RegexOptions.CultureInvariant),
             "a v2 script or the golden project by its v2 path",
             "cite the dbchange verb that does the step (scripts/prove.mjs is `dbchange prove`), "
@@ -182,6 +196,14 @@ public sealed class Citations
     [InlineData("each phase as `../../op/<op>/SKILL.md` describes it", "a skill by its v2 path")]
     [InlineData("> Operations: [`../op/<slug>/SKILL.md`] per operation.", "a skill by its v2 path")]
     [InlineData("Read the operation's file, `knowledge/ops/<op>.md`, and `knowledge/shared/multi-phase.md` before writing it.", "")]
+    [InlineData("The per-operation `skills/operations/*.md` entry carries the **specific** flip table. Read it.", "a skill by its v2 path")]
+    [InlineData("The operation's own file, `knowledge/ops/<op>.md`, carries the **specific** flip table. Read it.", "")]
+    [InlineData("That is `classify-mechanism` (provisional) confirmed by `prove-on-dacpac`.", "a skill by its v2 name")]
+    [InlineData("See `talk-to-local-sql` for the disposable database.", "a skill by its v2 name")]
+    [InlineData("For the disposable copy's posture, see prove-on-dacpac's posture split.", "a skill by its v2 name")]
+    [InlineData("For the disposable copy's posture, see `dbchange prove` and its proof of the change.", "")]
+    [InlineData("the reviewer reads the decompose step of the intake", "")]
+    [InlineData("That is the mechanism `knowledge/authoring.md` classifies, confirmed by `dbchange prove` and its `verdict`.", "")]
     [InlineData("`.claude/skills/*/SKILL.md` and `.github/skills/<op>/SKILL.md` are generated", "")]
     [InlineData("the module scripts in `proving-ground/Modules/*.sql`", "a v2 script or the golden project by its v2 path")]
     [InlineData("start the server with `scripts/warm-sql.sh start`", "a v2 script or the golden project by its v2 path")]

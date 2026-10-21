@@ -19,8 +19,9 @@ Updated 2026-10-20 by #705, after wave 6: WP 3.4 (`LocalServer`'s copy cache) an
 - WP 2.1's second slice: the statement kinds the plan's §4 shapes name, with the four refinements of spike S2's decision lines.
 - S4's laptop half, the SSDT repository's own schema on LocalDB 16.x, waits on S6; its CI half is a decision line.
 - WP 7.2 rewrites each moved skill's citations to the forms `Citations` accepts (no rewrite map is kept). Of v2's skills/ and agents/,
-  one block passes every rule and is rewritten by hand: the add-index operation's line 29, whose bare §19 is the handbook's anti-pattern
-  chapter. Every other bare §n sits in a block `Citations` refuses for another citation, and the refusal names the §n with it.
+  one passing block still cites v2 outside the words `Register.Prose` refuses: add-index's line 29, whose bare §19 is the handbook's
+  anti-pattern chapter. The words intake, decompose, adversary and reviewer name v2 agents and skills only by sense, so WP 7.2 reads
+  each plain use by hand; every other bare §n sits in a block `Citations` refuses, and the refusal names the §n with it.
 - Then WP 2.5, which reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`; WP 2.6, which
   moves the Facsimile's case catalog to `tests/Cases/` (not held yet: WP 2.6) and re-reads against `Io.Tests: SpikeReceiptTests`
   the cases S9 to S11 bear on: PLT-87, 88, 90, QST-55, 59, OP-toggle-trust-03 to 05, OP-add-default-04, OP-temporal-convert-04,
