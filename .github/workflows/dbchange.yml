@@ -62,7 +62,8 @@ jobs:
   sql-ubuntu:
     name: sql (ubuntu-latest, SQL Server 2022 Express)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 880 s in all on 28d6bd7, the fixture step about 12 minutes of it; on ae9db10 one run's fixture step had not finished at 18 minutes
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Start the clock
@@ -85,7 +86,7 @@ jobs:
         run: |
           program="$(bash ci/readside.sh)"
           echo "DBCHANGE_READSIDE=$program" >> "$GITHUB_ENV"
-      - run: dotnet test DbChange.sln --no-build --filter "Category=fixture&Spike!=S4"
+      - run: dotnet test DbChange.sln --no-build --filter "Category=fixture&Spike!=S4" --blame-hang-timeout 10m --blame-hang-dump-type none
       # Spike S4 (V3_MILESTONES.md §6): a copy of a 300-table schema created, published, backed up, restored and dropped, each step
       # timed. The test prints its "S4 |" line only under the detailed logger, and appends it to this job's summary.
       - name: Spike S4, the copy's timings
@@ -116,7 +117,7 @@ jobs:
       - name: LocalDB's MSSQLLocalDB
         shell: pwsh
         run: ./ci/sql.ps1 up
-      - run: dotnet test DbChange.sln --no-build --filter "Category=fixture&Spike!=S4"
+      - run: dotnet test DbChange.sln --no-build --filter "Category=fixture&Spike!=S4" --blame-hang-timeout 10m --blame-hang-dump-type none
       # Spike S4 (V3_MILESTONES.md §6): a copy of a 300-table schema created, published, backed up, restored and dropped, each step
       # timed. The test prints its "S4 |" line only under the detailed logger, and appends it to this job's summary.
       - name: Spike S4, the copy's timings
@@ -129,7 +130,7 @@ jobs:
   sql-offline:
     name: sql, outbound denied (ubuntu-latest)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Start the clock
@@ -170,7 +171,9 @@ jobs:
           fi
       - name: Fixture tests, outbound denied
         # S4's timings are the sql-ubuntu job's to take, on the same server
-        run: offline dotnet test DbChange.sln --no-build --filter "Category=fixture&Spike!=S4"
+        run: |
+          offline dotnet test DbChange.sln --no-build --filter "Category=fixture&Spike!=S4" \
+            --blame-hang-timeout 10m --blame-hang-dump-type none
       - if: always()
         run: bash ci/sql.sh down
       - name: Elapsed
