@@ -64,7 +64,23 @@ public static partial class SyntheticCopy
 
     /// <summary>synthetic-copy up: steps 1 to 8, the answer stamped with DacFx, the pin and, once the copy is reached, its SQL Server.
     /// </summary>
-    public static Stamped<Answer> Up(Checkout checkout, Request request, SqlServer.QueryLog log)
+    public static Stamped<Answer> Up(Checkout checkout, Request request, SqlServer.QueryLog log) => Prepare(checkout, request, log, Locked);
+
+    /// <summary>
+    /// What up and check read before the lock and hold under it: the repository's root, the local server and its name, the copy's name,
+    /// the base's fingerprint, the inputs its registry row records, the run's log and stamp, the base's package on disk, the inputs of
+    /// steps 2 to 8 on a copy, the ref, its commit and the change's commit.
+    /// </summary>
+    private sealed record Prepared(string Root, string Server, ServerName ServerName, CopyName Name, Fingerprint BaseFingerprint,
+        JsonObject Inputs, SqlServer.QueryLog Log, Stamp Stamp, string Dacpac, Func<SqlServer.Copy, Inputs> Planting, GitRef At,
+        string Commit, string? Head);
+
+    /// <summary>
+    /// The inputs up and check share, read before anything connects: the pin, the existing data, the local server, the profile, the base
+    /// built at the ref, the change built at HEAD where an existing data is given, and the declared witnesses; then
+    /// <paramref name="locked"/> run under .dbchange/synthetic-copy.lock, the packages still open.
+    /// </summary>
+    private static Stamped<T> Prepare<T>(Checkout checkout, Request request, SqlServer.QueryLog log, Func<Prepared, Stamped<T>> locked)
     {
         var standing = Standing.Of(checkout);
         if (standing.Result is Result<Pin>.Failed { Error: var refused })
@@ -130,7 +146,6 @@ public static partial class SyntheticCopy
                     ["at"] = request.At.ToString(), ["commit"] = @base.Commit, ["head"] = change?.Commit,
                     ["witnesses"] = witnesses is null ? null : Fingerprint.Of(witnesses).ToString(), ["version"] = checkout.Version,
                 };
-                var name = CopyName.Synthetic(baseFingerprint, existingFingerprint);
                 var state = new LocalState(root);
                 if (state.Made(state.Folder).Bind(_ => FileLock.Take(state.SyntheticLock, Wait)).Failed(out var held, out error))
                 {
@@ -139,9 +154,10 @@ public static partial class SyntheticCopy
 
                 using (held)
                 {
-                    return Locked(root, asked.server, asked.name, name, baseFingerprint, inputs, log, stamp, @base.Built.Path,
-                        copy => new Inputs(copy, log, basePackage, asked.profile, asked.existing, headPackage, blocks),
-                        request.At, @base.Commit, change?.Commit);
+                    return locked(new Prepared(root, asked.server, asked.name, CopyName.Synthetic(baseFingerprint, existingFingerprint),
+                        baseFingerprint, inputs, log, stamp, @base.Built.Path,
+                        copy => new Inputs(copy, log, basePackage, asked.profile, asked.existing, headPackage, blocks), request.At,
+                        @base.Commit, change?.Commit));
                 }
             }
         }
@@ -155,10 +171,9 @@ public static partial class SyntheticCopy
     /// row, planted, and set ready where it was built to its end, its schema the base's but for the checks written with IN that every plan
     /// drops and creates (<see cref="Usable"/>).
     /// </summary>
-    private static Stamped<Answer> Locked(string root, string server, ServerName serverName, CopyName name, Fingerprint baseFingerprint,
-        JsonObject inputs, SqlServer.QueryLog log, Stamp stamp, string dacpac, Func<SqlServer.Copy, Inputs> planting, GitRef at,
-        string commit, string? head)
+    private static Stamped<Answer> Locked(Prepared prepared)
     {
+        var (root, server, serverName, name, baseFingerprint, inputs, log, stamp, dacpac, planting, at, commit, head) = prepared;
         if (LocalServer.Standing(root, name, server, log).Failed(out var held, out var error))
         {
             return new(stamp, error);
@@ -183,7 +198,14 @@ public static partial class SyntheticCopy
 
         var reached = SqlServer.ServerOf(made.Copy, log).Match(s => stamp with { Server = s }, _ => stamp);
         return new(reached, Steps(planting(made.Copy), at, commit, head, made.Restored, made.Notes)
-            .Bind(answer => Usable(answer) ? LocalServer.Mark(made.Copy, new JsonObject { ["ready"] = true }).Map(_ => answer)
+            .Bind(answer => Usable(answer) ? LocalServer.Mark(made.Copy, new JsonObject
+                {
+                    ["ready"] = true,
+                    ["tables"] = new JsonArray([.. answer.Hashes.Select(h => new JsonObject
+                    {
+                        ["table"] = h.Table.ToString(), ["rows"] = h.Rows, ["hash"] = h.After.ToString(),
+                    })]),
+                }).Map(_ => answer)
                 : Result.Ok(answer)));
     }
 

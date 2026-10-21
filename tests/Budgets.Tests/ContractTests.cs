@@ -558,7 +558,7 @@ public sealed partial class ContractTests
     [Trait("Value", "S2")]
     [InlineData("predict")]
     [InlineData("check outsystems")]
-    [InlineData("synthetic-copy status")]
+    [InlineData("check cdc")]
     public void A_verb_this_build_does_not_have_answers_exit_6_with_verb_not_built_naming_the_verb(string verb)
     {
         var (exit, answer) = Answered([.. verb.Split(' '), "--json"],

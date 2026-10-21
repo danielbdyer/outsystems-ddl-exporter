@@ -33,14 +33,18 @@
         "blocked",
         "build-failed",
         "built",
+        "busy",
         "configuration-refused",
         "current",
         "degraded",
         "differs",
         "done",
+        "dropped",
         "in-sync",
         "interrupted",
+        "listed",
         "needs-input",
+        "passed",
         "ready",
         "refused-by-name",
         "unparsed-input",
@@ -308,6 +312,24 @@
       "if": {
         "properties": {
           "outcome": {
+            "const": "busy"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
             "const": "configuration-refused"
           }
         }
@@ -399,6 +421,24 @@
       "if": {
         "properties": {
           "outcome": {
+            "const": "dropped"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
             "const": "in-sync"
           }
         }
@@ -435,6 +475,24 @@
       "if": {
         "properties": {
           "outcome": {
+            "const": "listed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
             "const": "needs-input"
           }
         }
@@ -444,6 +502,24 @@
           "exit": {
             "enum": [
               8
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
             ]
           }
         }

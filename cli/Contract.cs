@@ -179,15 +179,29 @@ public static class Contract
         new("predict", "Whether a change blocks or applies on each environment the caller can read, and why."),
         new("profile", "What an environment's data looks like, as the evidence the synthetic copy is generated from."),
         new("synthetic-copy", "A copy on the local server, built from the repository at a ref and planted with rows that answer each"
-            + " precondition as an environment's existing data does; check, status and down arrive later."
-            + " dbchange synthetic-copy up [--at <ref>] [--existing-data <file>] [--profile <path>] [--project <path>]",
+            + " precondition as an environment's existing data does. up builds it; check reads it again and holds it to the rows up"
+            + " planted, its references, the existing data's answers and the base's schema; status lists this checkout's synthetic"
+            + " copies and verifies each name against its row; down drops this checkout's synthetic copies of this machine, with"
+            + " --if-idle only while no dbchange process holds the lock. Neither starts or stops a server: ci/sql.sh down or"
+            + " ci/sql.ps1 down does."
+            + " dbchange synthetic-copy up|check [--at <ref>] [--existing-data <file>] [--profile <path>] [--project <path>];"
+            + " dbchange synthetic-copy status; dbchange synthetic-copy down [--if-idle]",
             Cli.Verbs.SyntheticCopy, Cli.Verbs.SyntheticCopyContent,
             [
-                new("built", [0], "the copy is built: it answers each precondition as the existing data does, and the plan from the"
+                new("built", [0], "up built the copy: it answers each precondition as the existing data does, and the plan from the"
                     + " base to it is empty"),
-                new("current", [0], "the registry holds the copy of these inputs, built to its end; nothing was applied"),
-                new("differs", [5], "the plan from the base to the copy holds operations; a finding names each, and a check written with"
-                    + " IN is named with the OR form SQL Server stores"),
+                new("current", [0], "up found the registry holding the copy of these inputs, built to its end; nothing was applied"),
+                new("passed", [0], "check found the copy holding the rows up planted, each trusted reference resolving, an orphan only"
+                    + " where the existing data holds one, each precondition answered as the existing data does, and the plan from the"
+                    + " base to it empty"),
+                new("listed", [0], "status listed this checkout's synthetic copies, each name verified against its row"),
+                new("dropped", [0], "down dropped this checkout's synthetic copies of this machine on the local server, none where it"
+                    + " holds none"),
+                new("busy", [0], "down --if-idle met another dbchange process holding the lock and dropped nothing"),
+                new("differs", [5], "up or check found the plan from the base to the copy holding operations, a check written with IN"
+                    + " named with the OR form SQL Server stores; check found rows other than up planted, an orphan, or an answer"
+                    + " other than the existing data's; or status found a name carrying fingerprints its row does not record. A"
+                    + " finding names each"),
                 new("needs-input", [8], "a row only a person can write, a declared witness to correct, or an answer that differs from the"
                     + " existing data's; each finding names the next step"),
             ]),
