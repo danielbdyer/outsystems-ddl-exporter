@@ -93,10 +93,11 @@ public sealed class BlockOnPossibleDataLossReaderTests
 
         Assert.All(checks, c =>
         {
-            Assert.Equal("BlockOnPossibleDataLoss on " + c.Table, c.Query.Site);
+            var query = Value(c.Query);
+            Assert.Equal("BlockOnPossibleDataLoss on " + c.Table, query.Site);
             Assert.Equal("SELECT CASE WHEN EXISTS (SELECT TOP 1 1 FROM " + c.Table + ") THEN 1 ELSE 0 END",
-                System.Text.RegularExpressions.Regex.Replace(c.Query.Statement, @"\s+", " "));
-            Assert.Equal(c.Query.Statement, Value(SqlServer.AggregateQuery.Of(c.Query.Statement, c.Query.Site)).Statement);
+                System.Text.RegularExpressions.Regex.Replace(query.Statement, @"\s+", " "));
+            Assert.Equal(query.Statement, Value(SqlServer.AggregateQuery.Of(query.Statement, query.Site)).Statement);
         });
     }
 
@@ -113,11 +114,11 @@ public sealed class BlockOnPossibleDataLossReaderTests
             Script("IF EXISTS (select top 1 1 from [dbo].[Customer] where [Email] IS NULL)\r\n" + Raise + "GO\r\n"), Values)));
 
         Assert.Equal("SELECT CASE WHEN EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer] WHERE [Email] IS NULL) THEN 1 ELSE 0 END",
-            System.Text.RegularExpressions.Regex.Replace(check.Query.Statement, @"\s+", " "));
+            System.Text.RegularExpressions.Regex.Replace(Value(check.Query).Statement, @"\s+", " "));
     }
 
-    /// <summary>A predicate outside the allowlist, a table of another database or a rowset read from outside, refuses the site, by its
-    /// line in the plan's script.</summary>
+    /// <summary>A predicate outside the allowlist, a table of another database or a rowset read from outside, refuses the check's query,
+    /// by its line in the plan's script, and the check stands with its table, since a site is read whether or not its query runs.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("select top 1 1 from [Other].[dbo].[Customer]")]
@@ -125,9 +126,11 @@ public sealed class BlockOnPossibleDataLossReaderTests
     [InlineData("select top 1 1 from [dbo].[Customer] WITH (NOLOCK)")]
     public void A_check_whose_predicate_the_allowlist_refuses_is_refused_naming_its_line(string predicate)
     {
-        var error = Failed(BlockOnPossibleDataLoss.Read(Script("IF EXISTS (" + predicate + ")\r\n" + Raise + "GO\r\n"), Values),
-            "aggregate-query.refused");
+        var read = BlockOnPossibleDataLoss.Read(Script("IF EXISTS (" + predicate + ")\r\n" + Raise + "GO\r\n"), Values);
 
+        // a predicate that names its table refuses the check's query alone; one that reads a rowset names no site, and refuses the read
+        var error = read.Match(checks => Failed(Assert.Single(checks).Query, "aggregate-query.refused"),
+            _ => Failed(read, "aggregate-query.refused"));
         Assert.StartsWith("The BlockOnPossibleDataLoss check at line 35 of the plan's script ", error.Message, StringComparison.Ordinal);
     }
 
@@ -142,13 +145,16 @@ public sealed class BlockOnPossibleDataLossReaderTests
     public void A_SQLCMD_value_marked_sensitive_reaches_no_check_and_a_check_that_reads_one_is_refused_naming_only_its_variable()
     {
         var checks = Value(BlockOnPossibleDataLoss.Read(Script(Checks), Values));
-        var refused = Failed(BlockOnPossibleDataLoss.Read(
-            Script("IF EXISTS (select top 1 1 from [dbo].[Customer] where [Token] = N'$(ServiceToken)')\r\n" + Raise + "GO\r\n"), Values),
-            "sqlcmd.sensitive");
+        var reading = Assert.Single(Value(BlockOnPossibleDataLoss.Read(Script("/*\r\nThe token row, $(ServiceToken), is kept.\r\n*/\r\n"
+            + "IF EXISTS (select top 1 1 from [dbo].[Customer] where [Token] = N'$(ServiceToken)')\r\n" + Raise + "GO\r\n"), Values)));
+        var refused = Failed(reading.Query, "sqlcmd.sensitive");
 
-        Token.AbsentFrom(string.Join('\n', checks.Select(c => c + "\n" + c.Text + "\n" + c.Query + "\n" + string.Join('\n', c.Sites))));
+        Token.AbsentFrom(string.Join('\n', checks.Select(c => c + "\n" + c.Text + "\n" + Value(c.Query) + "\n" + string.Join('\n', c.Sites))));
         Assert.Contains("$(ServiceToken)", refused.Message, StringComparison.Ordinal);
         Token.AbsentFrom(refused);
+        Assert.Equal(("[dbo].[Customer]", "The token row, $(ServiceToken), is kept."),
+            (reading.Table.ToString(), Assert.Single(reading.Sites).Statement));
+        Assert.Contains("N'$(ServiceToken)'", reading.Text, StringComparison.Ordinal);
     }
 
     [Fact]

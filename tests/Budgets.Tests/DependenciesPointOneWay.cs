@@ -74,21 +74,23 @@ public sealed class DependenciesPointOneWay
 
     /// <summary>
     /// The io types cli may name, each of whose members it may call: the use cases and their answers, and the services Program and the
-    /// renderers use, among them the existing data's file form, in which synthetic-copy up renders the copy's answers.
+    /// renderers use, among them the existing data's file form, in which synthetic-copy up renders the copy's answers and predict its
+    /// existing data, predict's Markdown block, and the preconditions a prediction leaves unanswered, which predict's answer lists.
     /// </summary>
     private static readonly string[] Whole =
     [
         "Checkout", "Standing", "ModelRead", "ModelRead+Source", "ModelDiff", "ModelDiff+Answer", "DriftCheck", "DriftCheck+Request",
-            "DriftCheck+Answer", "SyntheticCopy", "ExistingDataFile",
+            "DriftCheck+Answer", "SyntheticCopy", "ExistingDataFile", "Predict", "PredictionBlock", "AggregateQueries+Unanswered",
         "Doctor+Readiness", "Doctor+Prerequisite", "Doctor+Item", "Ssdt+ModelElements", "SqlServer+QueryLog", "SqlServer+Reads",
         "Write", "Json", "SchemaText", "PrintedScript", "PasswordForm", "Telemetry", "ServerProbe", "Interruption", "Runner", "Ran",
     ];
 
     /// <summary>
     /// The members cli may call of the io types it may otherwise only name: the target grammar, the doctor's use case and the program
-    /// runner it is given.
+    /// runner it is given; and AggregateQueries, named as Unanswered's enclosing type alone.
     /// </summary>
-    private static readonly string[] Members = ["SqlServer", "SqlServer.Target", "Doctor", "Doctor.Run", "Command", "Command.Run", "Ssdt"];
+    private static readonly string[] Members =
+        ["SqlServer", "SqlServer.Target", "Doctor", "Doctor.Run", "Command", "Command.Run", "Ssdt", "AggregateQueries"];
 
     private static bool Admitted(string reference)
     {

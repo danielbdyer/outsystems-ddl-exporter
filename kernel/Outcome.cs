@@ -91,6 +91,15 @@ public abstract record Outcome
 }
 
 /// <summary>
+/// What a prediction carries from an environment to the pull request (V3_MILESTONES.md §3, WP 2.5): the environment; its existing data,
+/// the states of its plan's preconditions and its trust list; the counts the states came from, each precondition's rows and the rows
+/// that break it, which the privacy closure admits; and the claim's provenance. The machine block of predict's Markdown holds one per
+/// environment, and the gate (M5) proves at its existing data.
+/// </summary>
+public sealed record Prediction(EnvironmentName Environment, ExistingData ExistingData, SortedArray<PreconditionCount> Counts,
+    Provenance Provenance);
+
+/// <summary>
 /// How a change that blocks can ship: in two releases, when BlockOnPossibleDataLoss stops a tightening of a populated table; else as the
 /// operation's recognize: block names it (WP 2.4: drop column, drop table, table rebuild, add mandatory); else it is to be proved. The
 /// cases are closed.

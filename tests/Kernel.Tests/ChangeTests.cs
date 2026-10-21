@@ -25,6 +25,18 @@ public sealed class ChangeTests
         Changes.Sample(c => c.Change.Created.All(c.After.Contains) && c.Change.Dropped.All(c.Before.Contains)
             && c.Change.Altered.All(a => c.Before.Concat(c.After).Any(e => e.Key == a.Key)));
 
+    /// <summary>A prediction's claim records the change it was made for by its fingerprint (WP 2.5), so two changes between generated
+    /// models, renamed ones among them, fingerprint alike exactly when they are equal, and a change and its mirror differ.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Two_changes_fingerprint_alike_exactly_when_they_are_equal()
+    {
+        Gen.Select(Changes, Changes).Sample((a, b) => (Fingerprint.Of(a.Change) == Fingerprint.Of(b.Change)) == (a.Change == b.Change));
+        Renamings.Sample(r => Ok(Change.Between(r.Before, r.After, r.Renames)) is var change
+            && Fingerprint.Of(change) == Fingerprint.Of(Ok(Change.Between(r.Before, r.After, r.Renames)))
+            && (change.IsEmpty || Fingerprint.Of(change) != Fingerprint.Of(Mirror(change))), print: Print);
+    }
+
     [Fact]
     [Trait("Category", "fast")]
     public void The_change_between_equal_models_is_empty_whatever_the_refactorlog_holds() =>

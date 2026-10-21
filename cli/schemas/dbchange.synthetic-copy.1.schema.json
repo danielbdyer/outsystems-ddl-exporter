@@ -313,7 +313,14 @@
                           "Fits",
                           "ForeignKey",
                           "Unique",
-                          "Check"
+                          "Check",
+                          "KeyLength",
+                          "Rebuild",
+                          "Computed",
+                          "Temporal",
+                          "Scan",
+                          "Authored",
+                          "SeedDrift"
                         ]
                       },
                       "table": {

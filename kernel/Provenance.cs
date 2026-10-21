@@ -66,6 +66,15 @@ public sealed record Provenance
     public static Provenance Drift(Fingerprint targetSchema, Fingerprint deployReport, DacFxVersion dacFx, Server? server,
         Fingerprint publishProfile, Target target, DateTimeOffset at) =>
         new(deployReport, targetSchema, null, dacFx, server, publishProfile, target, at);
+
+    /// <summary>
+    /// A prediction's claim (WP 2.5): its change is the Change from base to head (<see cref="Fingerprint.Of(Kernel.Change)"/>), its schema
+    /// the environment's elements as read, and its existing data the states the environment's counts gave, so a gate that reads the claim
+    /// from a pull request finds a head it no longer builds, an environment it no longer plans against and an existing data edited by hand.
+    /// </summary>
+    public static Provenance Prediction(Fingerprint change, Fingerprint targetSchema, Fingerprint existingData, DacFxVersion dacFx,
+        Server? server, Fingerprint publishProfile, Target target, DateTimeOffset at) =>
+        new(change, targetSchema, existingData, dacFx, server, publishProfile, target, at);
 }
 
 /// <summary>

@@ -16,11 +16,16 @@ public static class Json
     /// <summary>The document as text, ready for <see cref="Write"/>.</summary>
     public static string Text(JsonNode node) => node.ToJsonString(Options) + "\n";
 
-    private static JsonSerializerOptions Canonical()
+    /// <summary>The document on one line, escaped alike, for a block that holds one document a line (predict's machine block).</summary>
+    public static string Line(JsonNode node) => node.ToJsonString(OneLine);
+
+    private static readonly JsonSerializerOptions OneLine = Canonical(indented: false);
+
+    private static JsonSerializerOptions Canonical(bool indented = true)
     {
         var options = new JsonSerializerOptions
         {
-            WriteIndented = true,
+            WriteIndented = indented,
             NewLine = "\n",
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         };

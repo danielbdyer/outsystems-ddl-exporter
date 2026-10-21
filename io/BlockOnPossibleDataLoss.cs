@@ -26,10 +26,13 @@ public static class BlockOnPossibleDataLoss
 
     /// <summary>
     /// One check: the table its EXISTS reads, the check as DacFx wrote it (LF line ends), its first line in the plan's script, the sites
-    /// its block comment names, and its predicate as the aggregate query that runs it. None of these holds a value marked sensitive.
+    /// its block comment names, and its predicate as the aggregate query that runs it, or why it does not run: a check that reads a value
+    /// a reference gave is sqlcmd.sensitive, and a predicate the allowlist refuses is aggregate-query.refused. A check is read alone, so
+    /// one predicate refused hides none of the plan's other checks, and its table and sites stand. None of these holds a value marked
+    /// sensitive.
     /// </summary>
     public sealed record Check(Name Table, string Text, int Line, SortedArray<BlockOnPossibleDataLossSite> Sites,
-        SqlServer.AggregateQuery Query)
+        Result<SqlServer.AggregateQuery> Query)
     {
         public override string ToString() =>
             "BlockOnPossibleDataLoss on " + Table + " at line " + Line.ToString(CultureInfo.InvariantCulture);
@@ -43,9 +46,10 @@ public static class BlockOnPossibleDataLoss
     /// <summary>
     /// The checks of <paramref name="script"/>, in script order. Its variables take the values of its :setvar lines, and over them
     /// <paramref name="values"/>; a variable with none is sqlcmd.undefined. A script TSql160Parser does not read is plan.unparsed, by line
-    /// and column; a check whose predicate reads no one table is plan.check-table; a check that reads a value a reference gave, which its
-    /// query would write to the run's queries.log, is sqlcmd.sensitive, naming the variable; and a predicate the allowlist refuses is
-    /// aggregate-query.refused, by the check's line. None of these errors quotes the script.
+    /// and column; a check whose predicate reads no one table is plan.check-table, since its site cannot be named. A check's query is
+    /// sqlcmd.sensitive, naming the variable, where the check reads a value a reference gave, which its query would write to the run's
+    /// queries.log; and aggregate-query.refused, by the check's line, where the allowlist refuses its predicate; the check itself stands.
+    /// None of these errors quotes the script.
     /// </summary>
     internal static Result<IReadOnlyList<Check>> Read(string script, IReadOnlyList<SqlCmdValue> values)
     {
@@ -85,10 +89,11 @@ public static class BlockOnPossibleDataLoss
 
     /// <summary>
     /// The check's predicate run against <paramref name="target"/> through SqlServer.Measure: 1 when its table holds a row and 0 when it
-    /// holds none. A failed query against a named environment reports its number and the check's site alone.
+    /// holds none; the check's own refusal where its query does not run. A failed query against a named environment reports its number and
+    /// the check's site alone.
     /// </summary>
     public static Result<SqlServer.Measurement> Measure(SqlServer.Database target, Check check, SqlServer.QueryLog log) =>
-        SqlServer.Measure(target, check.Query, log);
+        check.Query.Bind(query => SqlServer.Measure(target, query, log));
 
     private static Result<Check> Checked(IfStatement node, ExistsPredicate exists, IList<TSqlParserToken> tokens,
         SqlCmdSubstitution substituted, HashSet<SqlCmdName> sensitive)
@@ -96,43 +101,63 @@ public static class BlockOnPossibleDataLoss
         var comment = Comment(node, tokens);
         var (start, line) = (comment?.Offset ?? node.StartOffset, node.StartLine.ToString(CultureInfo.InvariantCulture));
         var at = "The BlockOnPossibleDataLoss check at line " + line + " of the plan's script";
-        if (substituted.Placed.FirstOrDefault(p => sensitive.Contains(p.Name)
-            && p.Overlaps(start, node.StartOffset + node.FragmentLength - start)) is { } placed)
+        var table = TSql.TableReferences(exists.Subquery) is [{ SchemaObject: var one }] ? one : null;
+        var query = substituted.Placed.FirstOrDefault(p => sensitive.Contains(p.Name)
+            && p.Overlaps(start, node.StartOffset + node.FragmentLength - start)) is { } placed
+            ? Result.Fail<SqlServer.AggregateQuery>(Sensitive(at, SqlCmdVariable.Placeholder(placed.Name.ToString())))
+            // written from the whole EXISTS: ScriptDom 180.102.0 writes the subquery's QuerySpecification alone without its WHERE clause
+            : SqlServer.AggregateQuery.Of("SELECT CASE WHEN " + TSql.Text(exists) + " THEN 1 ELSE 0 END", "BlockOnPossibleDataLoss "
+                    + (table is null ? "at line " + line : "on " + string.Join('.', table.Identifiers.Select(Quoted))))
+                .Match(Result.Ok, refused => new Error(refused.Code,
+                    at + " reads a predicate the allowlist refuses, so the site cannot be predicted read-only: " + refused.Message,
+                    refused.Remedy));
+        if (table is null)
         {
-            var variable = SqlCmdVariable.Placeholder(placed.Name.ToString());
-            return new Error("sqlcmd.sensitive",
-                at + " reads " + variable + ", a SQLCMD value a reference gives, which is marked sensitive; its query would write the "
-                + "value to the run's queries.log.",
-                "Give " + variable + " as a literal marked non-sensitive in the environment's sqlcmd in " + EnvironmentsFile.Json
-                    + ", or predict the change on a copy.");
+            // no site can be named: the read refuses, by the check's own refusal where its query has one
+            return query.Bind<Check>(_ => new Error("plan.check-table",
+                at + " reads other than one table, and a check reads the table whose rows stop the publish.",
+                "Report the DacFx release and the check's line to dbchange's maintainers."));
         }
 
-        var table = TSql.TableReferences(exists.Subquery) is [{ SchemaObject: var one }] ? one : null;
-        // written from the whole EXISTS: ScriptDom 180.102.0 writes the subquery's QuerySpecification alone without its WHERE clause
-        var predicate = "SELECT CASE WHEN " + TSql.Text(exists) + " THEN 1 ELSE 0 END";
-        return SqlServer.AggregateQuery.Of(predicate, "BlockOnPossibleDataLoss "
-                + (table is null ? "at line " + line : "on " + string.Join('.', table.Identifiers.Select(Quoted))))
-            .Match(Result.Ok, refused => new Error(refused.Code,
-                at + " reads a predicate the allowlist refuses, so the site cannot be predicted read-only: " + refused.Message,
-                refused.Remedy))
-            .Bind(query => table is null
-                ? new Error("plan.check-table",
-                    at + " reads other than one table, and a check reads the table whose rows stop the publish.",
-                    "Report the DacFx release and the check's line to dbchange's maintainers.")
-                : (table.SchemaIdentifier is { } schema ? Name.Of(schema.Value, table.BaseIdentifier.Value)
-                    : Name.Of(table.BaseIdentifier.Value))
-                .Map(name => new Check(name, substituted.Text.Substring(node.StartOffset, node.FragmentLength), node.StartLine,
-                    SortedArray.Of((comment?.Paragraphs ?? [""]).Select(p => new BlockOnPossibleDataLossSite(name, p))), query)));
+        var paragraphs = comment is { } c ? Paragraphs(Masked(substituted, sensitive, c.Offset, c.Length)) : [""];
+        return (table.SchemaIdentifier is { } schema ? Name.Of(schema.Value, table.BaseIdentifier.Value)
+                : Name.Of(table.BaseIdentifier.Value))
+            .Map(name => new Check(name, Masked(substituted, sensitive, node.StartOffset, node.FragmentLength), node.StartLine,
+                SortedArray.Of(paragraphs.Select(p => new BlockOnPossibleDataLossSite(name, p))), query));
     }
+
+    /// <summary>
+    /// The span of the substituted script from <paramref name="start"/>, each value a reference gave written back as its $(variable),
+    /// so that a check whose query is sqlcmd.sensitive, and the comment before it, hold no value marked sensitive.
+    /// </summary>
+    private static string Masked(SqlCmdSubstitution substituted, HashSet<SqlCmdName> sensitive, int start, int length)
+    {
+        var text = substituted.Text.Substring(start, length);
+        foreach (var placed in substituted.Placed.Where(p => sensitive.Contains(p.Name) && p.Overlaps(start, length))
+            .OrderByDescending(p => p.Start))
+        {
+            var (from, to) = (Math.Max(placed.Start, start) - start, Math.Min(placed.Start + placed.Length, start + length) - start);
+            text = text[..from] + SqlCmdVariable.Placeholder(placed.Name.ToString()) + text[to..];
+        }
+
+        return text;
+    }
+
+    /// <summary>A check that reads a SQLCMD value a reference gave, named by its variable alone.</summary>
+    private static Error Sensitive(string at, string variable) => new("sqlcmd.sensitive",
+        at + " reads " + variable + ", a SQLCMD value a reference gives, which is marked sensitive; its query would write the value to the "
+            + "run's queries.log.",
+        "Give " + variable + " as a literal marked non-sensitive in the environment's sqlcmd in " + EnvironmentsFile.Json
+            + ", or predict the change on a copy.");
 
     /// <summary>A name part as QUOTENAME writes it, as kernel/Name prints one.</summary>
     private static string Quoted(Identifier part) => "[" + part.Value.Replace("]", "]]", StringComparison.Ordinal) + "]";
 
     /// <summary>
-    /// The block comment just before a check, past white space alone: where it starts, and its paragraphs, each trimmed and its lines
-    /// joined by LF; null when the token before the check is anything else.
+    /// The block comment just before a check, past white space alone: where it starts and its length; null when the token before the
+    /// check is anything else.
     /// </summary>
-    private static (int Offset, string[] Paragraphs)? Comment(IfStatement node, IList<TSqlParserToken> tokens)
+    private static (int Offset, int Length)? Comment(IfStatement node, IList<TSqlParserToken> tokens)
     {
         var i = node.FirstTokenIndex - 1;
         while (i >= 0 && tokens[i].TokenType == TSqlTokenType.WhiteSpace)
@@ -140,15 +165,15 @@ public static class BlockOnPossibleDataLoss
             i--;
         }
 
-        if (i < 0 || tokens[i].TokenType != TSqlTokenType.MultilineComment)
-        {
-            return null;
-        }
+        return i < 0 || tokens[i].TokenType != TSqlTokenType.MultilineComment ? null : (tokens[i].Offset, tokens[i].Text.Length);
+    }
 
-        var text = tokens[i].Text;
-        var body = text.StartsWith("/*", StringComparison.Ordinal) && text.EndsWith("*/", StringComparison.Ordinal) ? text[2..^2] : text;
-        return (tokens[i].Offset, [.. body.Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(p => p.Length > 0)]);
+    /// <summary>A block comment's paragraphs, each trimmed and its lines joined by LF.</summary>
+    private static string[] Paragraphs(string comment)
+    {
+        var body = comment.StartsWith("/*", StringComparison.Ordinal) && comment.EndsWith("*/", StringComparison.Ordinal)
+            ? comment[2..^2] : comment;
+        return [.. body.Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(p => p.Length > 0)];
     }
 
     /// <summary>Each IF that is a BlockOnPossibleDataLoss check, in script order, wherever it stands in the tree.</summary>

@@ -441,6 +441,13 @@ internal static partial class ErrorPaths
         new("an existing data file holding a key its schema does not name", "existing-data.malformed", true, (scratch, planted) =>
             Failed(ExistingDataFile.Read(Written(scratch, "existing-data.json",
                 "{ \"schema\": \"dbchange.existing-data/1\", \"states\": [], " + Quoted(planted) + ": true }")))),
+        new("a machine block predict did not write", "prediction.malformed", true, (_, planted) =>
+            Failed(PredictionBlock.Read("```dbchange.prediction/1\n{ \"environment\": " + Quoted(planted) + " }\n```\n"))),
+        new("a change whose branch left no branch predict can name", "ref.no-base", false, (scratch, _) => InRepository(scratch, root =>
+        {
+            Arrange(root, "branch", "-q", "-m", "trunk");
+            return Io.Predict.BaseOf(root, "HEAD", null);
+        })),
         new("a declared witness whose header names no table", "witness.header", false, (_, _) =>
             Failed(Witnesses.Parse("-- plants: [a].[b].[c]\nINSERT INTO dbo.T (C) VALUES (1);", EmptyModel))),
         new("a declared witness's statement before any header", "witness.outside-block", false, (_, _) =>
@@ -607,9 +614,9 @@ internal static partial class ErrorPaths
         new("a BlockOnPossibleDataLoss check that reads no table", "plan.check-table", true, (_, planted) =>
             Failed(BlockOnPossibleDataLoss.Read("IF EXISTS (SELECT TOP 1 1)\n    RAISERROR (N'" + planted + "', 16, 127) WITH NOWAIT\n", []))),
         new("a BlockOnPossibleDataLoss check that reads a SQLCMD value marked sensitive", "sqlcmd.sensitive", true, (_, planted) =>
-            Failed(BlockOnPossibleDataLoss.Read("IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer] WHERE [Token] = N'$(ServiceToken)')\n"
+            Failed(Made(BlockOnPossibleDataLoss.Read("IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer] WHERE [Token] = N'$(ServiceToken)')\n"
                 + "    RAISERROR (N'Rows were detected.', 16, 127) WITH NOWAIT\n",
-                [new(Made(SqlCmdName.Of("test", "ServiceToken")), planted, true)]))),
+                [new(Made(SqlCmdName.Of("test", "ServiceToken")), planted, true)])).Single().Query)),
         new("a SQLCMD reference that does not resolve", "sqlcmd.unresolved", false, (scratch, _) =>
         {
             var root = Initialized(
@@ -645,7 +652,7 @@ internal static partial class ErrorPaths
         new("a word that names no verb", "arguments.unknown-verb", false, (scratch, _) =>
             Answered(["frobnicate"], new Checkout(scratch, scratch, null, Cli.Contract.Version))),
         new("a verb this build has no body for", "verb.not-built", false, (scratch, _) =>
-            Answered(["predict"], new Checkout(scratch, scratch, null, Cli.Contract.Version))),
+            Answered(["prove"], new Checkout(scratch, scratch, null, Cli.Contract.Version))),
         new("an aggregate query answered with a type the allowlist never yields", "internal.answer-type", true, (_, planted) =>
             Failed(SqlServer.Integer(planted))),
         new("a working directory that no longer exists", "file.no-working-directory", false, (_, _) =>

@@ -176,7 +176,18 @@ public static class Contract
                 new("differs", [0, 5], "the two schemas differ; exit 5 only with --fail-on-change"),
             ]),
         new("classify", "Which operation a change is, provisionally, from the committed evidence."),
-        new("predict", "Whether a change blocks or applies on each environment the caller can read, and why."),
+        new("predict", "Whether a change blocks or applies on each environment the caller can read, and why, read-only: the head planned"
+            + " against each environment, its BlockOnPossibleDataLoss checks and preconditions counted, and a block to paste into the pull"
+            + " request, its machine block last. dbchange predict [--env <e>[,<e>]] [--at <ref>] [--base <ref>] [--project <path>]",
+            Cli.Verbs.Predict, Cli.Verbs.PredictContent,
+            [
+                new("applies", [0], "every environment read applies: no table a BlockOnPossibleDataLoss check reads holds a row, and no"
+                    + " row breaks a rule the change asserts"),
+                new("blocks", [3], "an environment blocks: a table a BlockOnPossibleDataLoss check reads holds rows, or rows break a rule"
+                    + " the change asserts; the block names each, with its count and how the change ships"),
+                new("unpredicted", [0], "no environment blocks, and one is not predicted whole: a precondition no read-only query counts,"
+                    + " one a person declares, or a statement no vocabulary row classifies, which a proof on a copy decides"),
+            ]),
         new("profile", "What an environment's data looks like, as the evidence the synthetic copy is generated from."),
         new("synthetic-copy", "A copy on the local server, built from the repository at a ref and planted with rows that answer each"
             + " precondition as an environment's existing data does; check, status and down arrive later."
@@ -248,7 +259,8 @@ public static class Contract
     /// (name.blank, sdk.missing, build.failed), and this switch alone says how dbchange exits for it: one arm per member of the kernel's
     /// closed ErrorCategory and no discard arm, so a member added there without an arm here fails the build. A name, an element or a
     /// fingerprint the kernel rejects while reading a package or a database is input that could not be parsed (exit 2), as is a package, a
-    /// refactorlog, a model two of whose elements share a key, whether io finds it or the kernel, or the copy registry. The environments
+    /// refactorlog, a model two of whose elements share a key, whether io finds it or the kernel, the copy registry, an existing data's
+    /// file, or a machine block of predict's that is not as predict wrote it. The environments
     /// file, a profile, a reference, a connection, a SQLCMD value and the toolchain ledger are configuration (exit 6), whether io or the
     /// kernel finds the error, and so are a failure DacFx reports with no SQL Server error inside it, such as a package whose target
     /// platform the server is not, a verb this build lacks, and a defect in dbchange itself. A target of no known form is a bad argument,
@@ -272,6 +284,7 @@ public static class Contract
         ErrorCategory.Model => 2,
         ErrorCategory.Registry => 2,
         ErrorCategory.ExistingData => 2,
+        ErrorCategory.Prediction => 2,
         ErrorCategory.Origin => 4,
         ErrorCategory.Server => 4,
         ErrorCategory.LocalServer => 4,

@@ -75,7 +75,7 @@ public sealed class ValuesResolve(ITestOutputHelper output)
     [InlineData("L7", "`BannedSymbolsTests`; `Directory.Build.props`", true)]
     [InlineData("L4", "the dependency laws in `Budgets.Tests`", false)]
     [InlineData("L4", "`dbchange doctor`", true)]
-    [InlineData("L4", "`dbchange predict`", false)]
+    [InlineData("L4", "`dbchange prove`", false)]
     [InlineData("A6", "`AGENTS.md`", true)]
     [InlineData("O10", "the sql-offline job of `.github/workflows/dbchange.yml`", true)]
     [InlineData("O10", "the sql-elsewhere job of `.github/workflows/dbchange.yml`", false)]

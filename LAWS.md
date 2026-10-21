@@ -136,6 +136,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | P2 | Generated variants are admitted exactly when no forbidden form is planted | `DbChange.Io.Tests.AllowlistTests.Generated_variants_are_admitted_exactly_when_no_forbidden_form_is_planted` |
 | P2 | The allowlist admits each allowed form of its corpus and refuses each forbidden one | `DbChange.Io.Tests.AllowlistTests.The_allowlist_admits_each_allowed_form_of_its_corpus_and_refuses_each_forbidden_one` |
 | P2 | The corpus plants every form the work package names | `DbChange.Io.Tests.AllowlistTests.The_corpus_plants_every_form_the_work_package_names` |
+| P2 | A planted value a check and a retype fail to convert is in no output log or block and failed queries report numbers | `DbChange.Io.Tests.PredictTests.A_planted_value_a_check_and_a_retype_fail_to_convert_is_in_no_output_log_or_block_and_failed_queries_report_numbers` |
 | P2 | Counts that give the same states plant the same rows | `DbChange.Kernel.Tests.WitnessProperties.Counts_that_give_the_same_states_plant_the_same_rows` |
 | P3 | A planted literal comes from no environment | `DbChange.Kernel.Tests.WitnessProperties.A_planted_literal_comes_from_no_environment` |
 | R1 | The committed DacFx is the release Directory Packages props pins | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_is_the_release_Directory_Packages_props_pins` |
@@ -169,6 +170,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | S7 | No verb writes to a named environment | `DbChange.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
 | S7 | Nothing but LocalServer makes a Copy | `DbChange.Io.Tests.CapabilityTests.Nothing_but_LocalServer_makes_a_Copy` |
 | S7 | The read only principal sends no DML no DDL and no EXEC through check drift and read | `DbChange.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read` |
+| S7 | The read only principal sends no DML no DDL and no EXEC through predict and its query log holds the allowlist's shapes | `DbChange.Io.Tests.PredictTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_predict_and_its_query_log_holds_the_allowlist_s_shapes` |
 | S7 | A copy the registry does not hold is refused | `DbChange.Io.Tests.TargetTests.A_copy_the_registry_does_not_hold_is_refused` |
 | S7 | A copy the registry does not hold or one on a named environment's host is exit 9 | `DbChange.Io.Tests.VerbExitTests.A_copy_the_registry_does_not_hold_or_one_on_a_named_environment_s_host_is_exit_9` |
 | X1 | Inline credential refused | `DbChange.Io.Tests.PublishProfilesTests.Inline_credential_refused` |
@@ -193,6 +195,8 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X2 | A branch that exists or git does not take is refused and an origin that does not answer is unreachable with no credential printed and no branch left | `DbChange.Io.Tests.GitTests.A_branch_that_exists_or_git_does_not_take_is_refused_and_an_origin_that_does_not_answer_is_unreachable_with_no_credential_printed_and_no_branch_left` |
 | X2 | A secret planted in every property that holds one reaches no element property | `DbChange.Io.Tests.ModelElementsTests.A_secret_planted_in_every_property_that_holds_one_reaches_no_element_property` |
 | X2 | Every text property DacFx declares is a listed secret or reviewed as not a secret | `DbChange.Io.Tests.ModelElementsTests.Every_text_property_DacFx_declares_is_a_listed_secret_or_reviewed_as_not_a_secret` |
+| X2 | A check reading a SQLCMD value a file reference gives is sqlcmd sensitive and hides none of the plan's other checks | `DbChange.Io.Tests.PredictTests.A_check_reading_a_SQLCMD_value_a_file_reference_gives_is_sqlcmd_sensitive_and_hides_none_of_the_plan_s_other_checks` |
+| X2 | A planted value a check and a retype fail to convert is in no output log or block and failed queries report numbers | `DbChange.Io.Tests.PredictTests.A_planted_value_a_check_and_a_retype_fail_to_convert_is_in_no_output_log_or_block_and_failed_queries_report_numbers` |
 | X2 | No output contains Password | `DbChange.Io.Tests.PublishProfilesTests.No_output_contains_Password` |
 | X2 | Nothing read from the environments file or a profile prints a literal or what a reference names | `DbChange.Io.Tests.PublishProfilesTests.Nothing_read_from_the_environments_file_or_a_profile_prints_a_literal_or_what_a_reference_names` |
 | X2 | A diff of two procedures differing in a password literal alone alters the Definition and prints both values left out | `DbChange.Io.Tests.SchemaTextTests.A_diff_of_two_procedures_differing_in_a_password_literal_alone_alters_the_Definition_and_prints_both_values_left_out` |
@@ -257,6 +261,10 @@ One row per test that runs an exit of `V3_MILESTONES.md`, from its `[Trait("Exit
 | M1.7 | A named environment's error is withheld and a copy's is kept | `DbChange.Io.Tests.TargetTests.A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept` |
 | M1.7 | A literal connection string as a target is exit 6 and printed nowhere | `DbChange.Io.Tests.VerbExitTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
 | M1.8 | The read only principal sends no DML no DDL and no EXEC through check drift and read | `DbChange.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read` |
+| M2.1 | On a branch that makes a populated column NOT NULL predict says Dev blocks and on an empty table applies | `DbChange.Io.Tests.PredictTests.On_a_branch_that_makes_a_populated_column_NOT_NULL_predict_says_Dev_blocks_and_on_an_empty_table_applies` |
+| M2.2 | A lead's predict for QA and UAT prints the pasteable block and a developer's against UAT says a lead's will appear | `DbChange.Io.Tests.PredictTests.A_lead_s_predict_for_QA_and_UAT_prints_the_pasteable_block_and_a_developer_s_against_UAT_says_a_lead_s_will_appear` |
+| M2.3 | The read only principal sends no DML no DDL and no EXEC through predict and its query log holds the allowlist's shapes | `DbChange.Io.Tests.PredictTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_predict_and_its_query_log_holds_the_allowlist_s_shapes` |
+| M2.4 | A planted value a check and a retype fail to convert is in no output log or block and failed queries report numbers | `DbChange.Io.Tests.PredictTests.A_planted_value_a_check_and_a_retype_fail_to_convert_is_in_no_output_log_or_block_and_failed_queries_report_numbers` |
 | M3.3 | A copy planted at an environment holding each of R6's sites answers every precondition as the environment does | `DbChange.Io.Tests.SyntheticCopyTests.A_copy_planted_at_an_environment_holding_each_of_R6_s_sites_answers_every_precondition_as_the_environment_does` |
 
-Exits no test declares, which a person or a CI job runs: M0.2, M1.1, M2.1, M2.2, M2.3, M2.4, M2.5, M3.1, M3.2, M3.4, M3.5, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, M4.8, M4.9, M5.1, M5.2, M5.3, M5.4, M5.5, M5.6, M6.1, M6.2, M6.3, M6.4, M6.5, M7.1.
+Exits no test declares, which a person or a CI job runs: M0.2, M1.1, M2.5, M3.1, M3.2, M3.4, M3.5, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, M4.8, M4.9, M5.1, M5.2, M5.3, M5.4, M5.5, M5.6, M6.1, M6.2, M6.3, M6.4, M6.5, M7.1.

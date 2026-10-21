@@ -97,7 +97,7 @@ public sealed class SyntheticCopyInputTests
         "$.states[0] answers a precondition violating on a table that holds no row.")]
     [InlineData("{ \"schema\": \"dbchange.existing-data/1\", \"states\": [ { \"precondition\": { \"kind\": \"NotNull\", \"table\": "
         + "\"[dbo].[T]\", \"columns\": [\"[C]\"] }, \"populated\": true, \"violating\": true, \"classes\": [\"exact\"] } ] }",
-        "$.states[0].classes[0] is no class io/AggregateQueries.cs counts for the precondition's kind.")]
+        "$.states[0].classes[0] is no class a state of the precondition's kind holds.")]
     [InlineData("{ \"schema\": \"dbchange.existing-data/1\", \"states\": [], \"trust\": [ { \"constraint\": \"[dbo].[FK_T]\", "
         + "\"type\": \"ForeignKeyConstraint\", \"disabled\": true, \"untrusted\": false } ] }",
         "$.trust[0] reads a disabled constraint as trusted, which SQL Server never holds.")]

@@ -110,6 +110,61 @@ public readonly record struct Fingerprint
         return Of(to.WrittenSpan);
     }
 
+    /// <summary>
+    /// The fingerprint of a change: what it creates and drops, as a model's elements are written; its renames and its case-only pairs, each
+    /// by both keys; and each alteration by its key, each property by its name and its two values (a value the element does not carry
+    /// tagged apart from every value), and each relationship by its name and its two lists of targets; every list led by its count. So two
+    /// changes fingerprint alike exactly when they are equal, which a prediction's claim records as the change it was made for.
+    /// </summary>
+    public static Fingerprint Of(Change change)
+    {
+        var to = new ArrayBufferWriter<byte>();
+        foreach (var elements in new[] { change.Created, change.Dropped })
+        {
+            Write(to, Of(elements).ToString());
+        }
+
+        foreach (var renames in new[] { change.Renamed, change.CaseOnlyRenamed })
+        {
+            Write(to, renames.Count);
+            foreach (var rename in renames)
+            {
+                Write(to, rename.Before);
+                Write(to, rename.After);
+            }
+        }
+
+        Write(to, change.Altered.Count);
+        foreach (var alteration in change.Altered)
+        {
+            Write(to, alteration.Key);
+            Write(to, alteration.Properties.Count);
+            foreach (var property in alteration.Properties)
+            {
+                Write(to, property.Name);
+                Write(to, property.Before);
+                Write(to, property.After);
+            }
+
+            Write(to, alteration.Relationships.Count);
+            foreach (var relationship in alteration.Relationships)
+            {
+                Write(to, relationship.Name);
+                foreach (var targets in new[] { relationship.Before, relationship.After })
+                {
+                    Write(to, targets.Count);
+                    foreach (var target in targets)
+                    {
+                        Write(to, target.Position);
+                        Write(to, target.Key);
+                    }
+                }
+            }
+        }
+
+        return Of(to.WrittenSpan);
+    }
+
     /// <summary>A fingerprint from the 64 lowercase hex digits <see cref="ToString"/> renders, and from nothing else.</summary>
     public static Result<Fingerprint> Parse(string hex) =>
         hex is { Length: 64 } && hex.All(c => char.IsAsciiDigit(c) || c is >= 'a' and <= 'f')
@@ -152,6 +207,17 @@ public readonly record struct Fingerprint
         to.Advance(sizeof(int) + (text.Length * sizeof(char)));
         return sizeof(int) + (text.Length * sizeof(char));
     }
+
+    /// <summary>A value as a model's elements write one, behind its tag; a value an element does not carry, behind a tag of its
+    /// own.</summary>
+    private static int Write(ArrayBufferWriter<byte> to, Value? value) => value is null ? Write(to, 7)
+        : value.Match(
+            b => Write(to, b ? 2 : 1),
+            n => Write(to, 3) + Write(to, n),
+            s => Write(to, 4) + Write(to, s),
+            (type, member) => Write(to, 5) + Write(to, type) + Write(to, member),
+            s => Write(to, 6) + Write(to, s),
+            () => Write(to, 0));
 
     private static int Write(ArrayBufferWriter<byte> to, ElementKey key) =>
         (key.Parent is { } parent ? Write(to, 1) + Write(to, parent) : Write(to, 0))

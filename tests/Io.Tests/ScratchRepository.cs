@@ -87,6 +87,16 @@ public sealed class ScratchRepository : IDisposable
         return scratch.Git("status", "--porcelain").Length == 0 ? scratch.Git("rev-parse", "HEAD") : scratch.Commit(change.Name);
     }
 
+    /// <summary>
+    /// The checkout as a developer's stands before the change merges: the make-mandatory change on a branch of its own, change, checked
+    /// out at Head, and main moved back to Base, the commit the branch left; again and again alike.
+    /// </summary>
+    internal void Branched()
+    {
+        scratch.Git("checkout", "-q", "-B", "change", Head);
+        scratch.Git("branch", "-f", "main", Base);
+    }
+
     /// <summary>A clone of the repository beside it, a second checkout of the same commits; its root.</summary>
     internal string Clone() => scratch.Clone(Root);
 
@@ -114,8 +124,8 @@ public sealed class ScratchRepository : IDisposable
     }
 
     /// <summary>
-    /// A repository root beside this repository's own, under it, whose environments file names environments: each a reference to a
-    /// connection file, under the golden profile; its registry, its runs and its builds are its own.
+    /// A repository root beside this repository's own, under it, whose environments file names environments: each classified real, a
+    /// reference to a connection file, under the golden profile; its registry, its runs and its builds are its own.
     /// </summary>
     public string Named(params (string Name, string Connection)[] environments)
     {
@@ -126,8 +136,8 @@ public sealed class ScratchRepository : IDisposable
         var environmentsFile = new JsonObject();
         foreach (var (name, connection) in environments)
         {
-            environmentsFile[name] = new JsonObject { ["host"] = "localhost", ["connection"] = "file:" + connection.Replace('\\', '/'),
-                ["profile"] = "profiles/pipeline.publish.xml" };
+            environmentsFile[name] = new JsonObject { ["host"] = "localhost", ["classification"] = "real",
+                ["connection"] = "file:" + connection.Replace('\\', '/'), ["profile"] = "profiles/pipeline.publish.xml" };
         }
 
         File.WriteAllText(Path.Combine(root, "dbchange", "environments.json"),

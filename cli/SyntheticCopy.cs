@@ -31,20 +31,7 @@ public static partial class Verbs
                 ["table"] = Render.Text(), ["rowsBefore"] = Count(), ["before"] = Render.Nullable(Render.Fingerprint()), ["rows"] = Count(),
                 ["hash"] = Render.Fingerprint(),
             })),
-            ["answers"] = Render.Long(Render.Record(new()
-            {
-                ["precondition"] = new JsonObject
-                {
-                    ["type"] = "object", ["required"] = new JsonArray("kind", "table", "columns"),
-                    ["properties"] = new JsonObject
-                    {
-                        ["kind"] = Render.Enum(["TableEmpty", "NotNull", "Fits", "ForeignKey", "Unique", "Check"]),
-                        ["table"] = Render.Text(), ["columns"] = Render.List(Render.Text()),
-                    },
-                },
-                ["populated"] = new JsonObject { ["type"] = "boolean" }, ["violating"] = new JsonObject { ["type"] = "boolean" },
-                ["classes"] = Render.List(Render.Text()),
-            })),
+            ["answers"] = Render.Long(StateSchema()),
         }),
     };
 

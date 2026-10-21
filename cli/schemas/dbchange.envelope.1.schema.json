@@ -29,8 +29,10 @@
     },
     "outcome": {
       "enum": [
+        "applies",
         "bad-arguments",
         "blocked",
+        "blocks",
         "build-failed",
         "built",
         "configuration-refused",
@@ -44,6 +46,7 @@
         "ready",
         "refused-by-name",
         "unparsed-input",
+        "unpredicted",
         "unreachable"
       ]
     },
@@ -236,6 +239,24 @@
       "if": {
         "properties": {
           "outcome": {
+            "const": "applies"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
             "const": "bad-arguments"
           }
         }
@@ -255,6 +276,24 @@
         "properties": {
           "outcome": {
             "const": "blocked"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              3
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "blocks"
           }
         }
       },
@@ -498,6 +537,24 @@
           "exit": {
             "enum": [
               2
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "unpredicted"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
             ]
           }
         }

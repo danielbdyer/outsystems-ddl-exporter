@@ -62,7 +62,7 @@ public sealed class ParityResolves(ITestOutputHelper output)
     [InlineData("the corpus, prose with no test", false)]
     [InlineData("`dbchange check` and exit M1.3", true)]
     [InlineData("`dbchange check` alone; exit M1.3", false)]
-    [InlineData("`dbchange predict` and law 2′", false)]
+    [InlineData("`dbchange prove` and law 2′", false)]
     [InlineData("`.github/workflows/dbchange.yml` alone", false)]
     [InlineData("`kernel/Witness.cs` — not held yet: WP 3.8", true)]
     [InlineData("the planter — not held yet: WP 3.9", false)]

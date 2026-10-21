@@ -538,7 +538,7 @@ pull request. Nothing is written, and no value leaves an environment.
    developer's run against UAT fails at the login and says in one sentence that a lead's
    prediction will appear on the pull request (R16).
 3. The query log of both runs holds only the allowlist's shapes, and the extended-events session on
-   the read-only principal records no DML, DDL or `EXEC` but M1 exit 8's one during a full `predict` (R14).
+   the read-only principal records no DML, no DDL and no `EXEC` during a full `predict`, as M1 exit 8 records none (R14).
 4. The planted-value scan (R7), first half: a fixture environment classified `real`, with a planted
    value, a check expression that fails to convert it, and a retype whose conversion fails on it,
    run through `predict` and `classify`. The value appears in no output, log or block, and the

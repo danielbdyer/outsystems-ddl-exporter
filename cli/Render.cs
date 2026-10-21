@@ -85,14 +85,7 @@ public static class Render
             ["dacfx"] = answer.Stamp?.DacFx.ToString(),
             ["pin"] = answer.Stamp?.Pin?.ToString(),
             ["server"] = Json(answer.Stamp?.Server),
-            ["provenance"] = answer.Provenance is { } p ? new JsonObject
-            {
-                ["change"] = Digest(p.Change), ["schema"] = Digest(p.Schema),
-                ["existingData"] = p.ExistingData is { } data ? Digest(data) : null, ["dacfx"] = p.DacFx.ToString(),
-                ["server"] = Json(p.Server), ["publishProfile"] = Digest(p.PublishProfile), ["target"] = p.Target.ToString(),
-                ["at"] = p.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
-                ["lacking"] = Array(p.Lacking.Select(i => (JsonNode?)Input(i))),
-            } : null,
+            ["provenance"] = answer.Provenance is { } p ? Json(p) : null,
             ["truncated"] = answer.Truncated,
             ["full"] = answer.Full,
             ["log"] = answer.Log,
@@ -408,6 +401,20 @@ public static class Render
         rule["else"] = Where(Input(input), new JsonObject { ["not"] = new JsonObject { ["type"] = "null" } });
         return rule;
     }
+
+    /// <summary>A claim's provenance as the envelope writes it, its schema's $defs' provenance: each input, the target and the time, and
+    /// the inputs it lacks.</summary>
+    internal static JsonObject Json(Provenance p) => new()
+    {
+        ["change"] = Digest(p.Change), ["schema"] = Digest(p.Schema),
+        ["existingData"] = p.ExistingData is { } data ? Digest(data) : null, ["dacfx"] = p.DacFx.ToString(),
+        ["server"] = Json(p.Server), ["publishProfile"] = Digest(p.PublishProfile), ["target"] = p.Target.ToString(),
+        ["at"] = p.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
+        ["lacking"] = Array(p.Lacking.Select(i => (JsonNode?)Input(i))),
+    };
+
+    /// <summary>A reference to one of the envelope schema's $defs, for a verb's content that holds a provenance.</summary>
+    internal static JsonObject Defined(string definition) => Ref(definition);
 
     /// <summary>A server as the envelope writes it, or null.</summary>
     private static JsonObject? Json(Server? server) => server is null ? null : new JsonObject

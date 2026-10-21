@@ -27,7 +27,7 @@ public sealed partial class ContractTests
 
     /// <summary>
     /// The help as the built dbchange prints it validates against its schema and says which verbs this build has: the four of M1,
-    /// synthetic-copy and --version.
+    /// predict, synthetic-copy and --version.
     /// </summary>
     [Fact]
     [Trait("Category", "build")]
@@ -39,7 +39,7 @@ public sealed partial class ContractTests
         Assert.DoesNotContain('\r', output);
         var help = JsonNode.Parse(output)!;
         VerbAnswer.Valid("dbchange.help.1.schema.json", help);
-        Assert.Equal(["doctor", "read", "diff", "synthetic-copy", "check", "--version"],
+        Assert.Equal(["doctor", "read", "diff", "predict", "synthetic-copy", "check", "--version"],
             help["verbs"]!.AsArray().Where(v => (bool)v!["built"]!).Select(v => (string)v!["name"]!));
         help["exits"]![0]!["code"] = 10;
         Assert.False(VerbAnswer.Evaluate("dbchange.help.1.schema.json", help).IsValid,
@@ -556,7 +556,7 @@ public sealed partial class ContractTests
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Value", "S2")]
-    [InlineData("predict")]
+    [InlineData("prove")]
     [InlineData("check outsystems")]
     [InlineData("synthetic-copy status")]
     public void A_verb_this_build_does_not_have_answers_exit_6_with_verb_not_built_naming_the_verb(string verb)

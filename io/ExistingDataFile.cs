@@ -12,24 +12,35 @@ namespace DbChange.Io;
 
 /// <summary>
 /// An environment's existing data as a file (V3_MILESTONES.md §3.1), dbchange.existing-data/1, which synthetic-copy up reads with
-/// --existing-data and predict writes from M2: JSON holding each precondition's state, the precondition written whole (its kind, its table
-/// and columns as QUOTENAME writes them, and what its kind holds: a Fits's two types with their five facets, a ForeignKey's parent and
-/// pairs, a Unique's filter and the columns the filter reads, a Check's expression), whether its table holds a row, whether a row breaks
-/// it, and the classes of a Fits or a Unique by the words io/AggregateQueries.cs writes; and each constraint the environment holds
-/// disabled or untrusted (kernel TrustState). It holds names and booleans, and no value of any row. The schema is closed: a key it does
-/// not name, a value of another form, a state or a constraint given twice, and a state no table can hold (a TableEmpty whose violation
-/// differs from its rows, a violating precondition on a table that holds no row, a class of another kind, a disabled constraint read as
-/// trusted) are each existing-data.malformed, naming the JSON path and quoting no value. <see cref="Text"/> writes the canonical form,
-/// which <see cref="FingerprintOf"/> hashes, so one existing data has one fingerprint however its file was written.
+/// --existing-data and predict writes: JSON holding each precondition's state, the precondition written whole (its kind, its table and
+/// columns as QUOTENAME writes them, and what its kind holds: a Fits's two types with their five facets, a ForeignKey's parent and pairs,
+/// a Unique's filter and the columns the filter reads, a Check's or a Computed's expression, a KeyLength's index and whether it is
+/// clustered, a Temporal's period columns and the table whose history it is, an Authored's or a SeedDrift's script and line, and a
+/// SeedDrift's code), whether its table holds a row, whether a row breaks it, and its classes: a Fits's or a Unique's by the words
+/// io/AggregateQueries.cs writes, a Rebuild's gapped; and each constraint the environment holds disabled or untrusted (kernel
+/// TrustState). It holds names and booleans, and no value of any row. The schema is closed: a key it does not name, a value of another
+/// form, a state or a constraint given twice, and a state no table can hold (a TableEmpty whose violation differs from its rows, a
+/// violating precondition on a table that holds no row, a Scan or a Rebuild violating, a class of another kind, a disabled constraint
+/// read as trusted) are each existing-data.malformed, naming the JSON path and quoting no value. <see cref="Text"/> writes the
+/// canonical form, which <see cref="FingerprintOf"/> hashes, so one existing data has one fingerprint however its file was written.
 /// </summary>
 public static class ExistingDataFile
 {
     public const string Schema = "dbchange.existing-data/1";
 
-    /// <summary>The classes of Fits, then of Unique, as io/AggregateQueries.cs names and orders them, each with its RowClasses
-    /// flag.</summary>
-    private static readonly (string Word, RowClasses Flag, bool Fits)[] Classes = [.. Enum.GetValues<AggregateQueries.Class>()
-        .Select(c => (AggregateQueries.Word(c), Flag(c), c <= AggregateQueries.Class.LossyRoundTrip))];
+    /// <summary>The classes of Fits, then of Unique, as io/AggregateQueries.cs names and orders them, then Rebuild's gapped, which no
+    /// query counts; each with its RowClasses flag and the kind whose state holds it.</summary>
+    private static readonly (string Word, RowClasses Flag, Func<PreconditionKind, bool> Holds)[] Classes =
+    [
+        .. Enum.GetValues<AggregateQueries.Class>().Select(c => (AggregateQueries.Word(c), Flag(c),
+            c <= AggregateQueries.Class.LossyRoundTrip
+                ? (Func<PreconditionKind, bool>)(k => k is PreconditionKind.Fits) : k => k is PreconditionKind.Unique)),
+        ("gapped", RowClasses.Gapped, k => k is PreconditionKind.Rebuild),
+    ];
+
+    /// <summary>A deploy script's part as the file writes it.</summary>
+    private static readonly (ScriptPart Part, string Word)[] Parts =
+        [(ScriptPart.PreDeploy, "pre-deploy"), (ScriptPart.Plan, "plan"), (ScriptPart.PostDeploy, "post-deploy")];
 
     /// <summary>The RowClasses flag of a class io/AggregateQueries.cs counts: the two enumerations name the classes in one order.</summary>
     internal static RowClasses Flag(AggregateQueries.Class @class) => (RowClasses)(1 << (int)@class);
@@ -108,6 +119,39 @@ public static class ExistingDataFile
     /// <summary>The fingerprint of an existing data: of its canonical form.</summary>
     public static Fingerprint FingerprintOf(ExistingData existing) => Fingerprint.Of(Text(existing));
 
+    /// <summary>A count as predict's machine block writes it: the precondition as this file writes one, its table's rows and the rows
+    /// that break it.</summary>
+    public static JsonObject CountJson(PreconditionCount count) => new()
+    {
+        ["precondition"] = PreconditionJson(count.Precondition), ["rows"] = count.Rows, ["violating"] = count.Violating,
+    };
+
+    /// <summary>
+    /// The counts a JSON array holds, each as <see cref="CountJson"/> writes it and each precondition once, read at <paramref name="at"/>
+    /// of what <paramref name="source"/> names; existing-data.malformed, naming the place, where one breaks the form.
+    /// </summary>
+    internal static Result<SortedArray<PreconditionCount>> Counts(JsonNode? node, string source, string at)
+    {
+        try
+        {
+            var counts = (node as JsonArray ?? throw new Malformed(at, "is no JSON array")).Select((item, i) =>
+            {
+                var count = Object(item, Place(at, i));
+                Keys(count, Place(at, i), ["precondition", "rows", "violating"], ["precondition", "rows", "violating"]);
+                return new PreconditionCount(PreconditionOf(count["precondition"], Place(at, i) + ".precondition"),
+                    Count(count, Place(at, i), "rows"), Count(count, Place(at, i), "violating"));
+            }).ToList();
+            Once(counts.Select(c => c.Precondition), at, "a count of one precondition");
+            return SortedArray.Of(counts);
+        }
+        catch (Malformed m)
+        {
+            return new Error("existing-data.malformed",
+                source + " holds no counts of the form predict writes: " + m.Path + " " + m.What + ".",
+                "Correct it at " + m.Path + ", or predict the environment again.");
+        }
+    }
+
     /// <summary>A precondition as the file writes it: its kind, its table and its columns, and what its kind holds.</summary>
     public static JsonObject PreconditionJson(Precondition p)
     {
@@ -135,10 +179,29 @@ public static class ExistingDataFile
             case PreconditionKind.Check check:
                 json["expression"] = check.Expression;
                 break;
+            case PreconditionKind.Computed computed:
+                json["expression"] = computed.Expression;
+                break;
+            case PreconditionKind.KeyLength length:
+                (json["index"], json["clustered"]) = (length.Index?.ToString(), length.Clustered);
+                break;
+            case PreconditionKind.Temporal temporal:
+                (json["start"], json["end"]) = (temporal.Start.ToString(), temporal.End.ToString());
+                json["current"] = temporal.Current?.ToString();
+                break;
+            case PreconditionKind.Authored authored:
+                (json["script"], json["line"]) = (Word(authored.Script), authored.Line);
+                break;
+            case PreconditionKind.SeedDrift seed:
+                json["code"] = new JsonArray([.. seed.Code.Select(c => (JsonNode?)c.ToString())]);
+                (json["script"], json["line"]) = (Word(seed.Script), seed.Line);
+                break;
         }
 
         return json;
     }
+
+    private static string Word(ScriptPart part) => Parts.Single(p => p.Part == part).Word;
 
     private static JsonObject TypeJson(ColumnType type) => new()
     {
@@ -156,16 +219,17 @@ public static class ExistingDataFile
         foreach (var (item, i) in (state["classes"] is null ? [] : Items(state, at, "classes")).Select((c, i) => (c, i)))
         {
             var word = Value(item, Place(at + ".classes", i));
-            var known = Classes.Where(c => c.Word == word
-                && (c.Fits ? precondition.Kind is PreconditionKind.Fits : precondition.Kind is PreconditionKind.Unique)).ToList();
+            var known = Classes.Where(c => c.Word == word && c.Holds(precondition.Kind)).ToList();
             classes |= known is [var (_, flag, _)] ? flag
-                : throw new Malformed(Place(at + ".classes", i), "is no class io/AggregateQueries.cs counts for the precondition's kind");
+                : throw new Malformed(Place(at + ".classes", i), "is no class a state of the precondition's kind holds");
         }
 
         return precondition.Kind is PreconditionKind.TableEmpty && populated != violating
                 ? throw new Malformed(at,
                     "answers a TableEmpty violating otherwise than populated, which BlockOnPossibleDataLoss reads as one")
             : violating && !populated ? throw new Malformed(at, "answers a precondition violating on a table that holds no row")
+            : violating && !precondition.Kind.Breakable
+                ? throw new Malformed(at, "answers a " + precondition.Kind.Word + " violating, which no row's value fails")
             : new PreconditionState(precondition, populated, violating) { Classes = classes };
     }
 
@@ -176,12 +240,17 @@ public static class ExistingDataFile
         string[] common = ["kind", "table", "columns"];
         var (keys, required) = kind switch
         {
-            "TableEmpty" or "NotNull" => (common, new[] { "kind", "table" }),
+            "TableEmpty" or "NotNull" or "Rebuild" or "Scan" => (common, new[] { "kind", "table" }),
             "Fits" => ([.. common, "before", "after"], ["kind", "table", "columns", "before", "after"]),
             "ForeignKey" => ([.. common, "parent", "pairs"], ["kind", "table", "columns", "parent", "pairs"]),
             "Unique" => ([.. common, "filter", "filterColumns"], ["kind", "table", "columns"]),
-            "Check" => ([.. common, "expression"], ["kind", "table", "expression"]),
-            _ => throw new Malformed(at + ".kind", "is none of TableEmpty, NotNull, Fits, ForeignKey, Unique and Check"),
+            "Check" or "Computed" => ([.. common, "expression"], ["kind", "table", "expression"]),
+            "KeyLength" => ([.. common, "index", "clustered"], ["kind", "table", "clustered"]),
+            "Temporal" => ([.. common, "start", "end", "current"], ["kind", "table", "start", "end"]),
+            "Authored" => ([.. common, "script", "line"], ["kind", "table", "script", "line"]),
+            "SeedDrift" => ([.. common, "code", "script", "line"], ["kind", "table", "script", "line"]),
+            _ => throw new Malformed(at + ".kind", "is none of TableEmpty, NotNull, Fits, ForeignKey, Unique, Check, KeyLength, Rebuild, "
+                + "Computed, Temporal, Scan, Authored and SeedDrift"),
         };
         Keys(json, at, keys, required);
         PreconditionKind made = kind switch
@@ -193,10 +262,26 @@ public static class ExistingDataFile
                 SortedArray.Of(Items(json, at, "pairs").Select((p, i) => Pair(p, Place(at + ".pairs", i))))),
             "Unique" => new PreconditionKind.Unique(json["filter"] is null ? null : Nullable(json["filter"], at + ".filter"),
                 json["filterColumns"] is null ? [] : Names(json, at, "filterColumns")),
-            _ => new PreconditionKind.Check(Text(json, at, "expression")),
+            "Check" => new PreconditionKind.Check(Text(json, at, "expression")),
+            "Computed" => new PreconditionKind.Computed(Text(json, at, "expression")),
+            "KeyLength" => new PreconditionKind.KeyLength(json["index"] is null ? null : NameOf(json["index"], at + ".index"),
+                Boolean(json, at, "clustered")),
+            "Rebuild" => new PreconditionKind.Rebuild(),
+            "Temporal" => new PreconditionKind.Temporal(NameOf(json["start"], at + ".start"), NameOf(json["end"], at + ".end"),
+                json["current"] is null ? null : NameOf(json["current"], at + ".current")),
+            "Scan" => new PreconditionKind.Scan(),
+            "Authored" => new PreconditionKind.Authored(PartOf(json, at), Line(json, at)),
+            _ => new PreconditionKind.SeedDrift(json["code"] is null ? [] : Names(json, at, "code"), PartOf(json, at), Line(json, at)),
         };
         return new Precondition(NameOf(json["table"], at + ".table"), json["columns"] is null ? [] : Names(json, at, "columns"), made);
     }
+
+    private static ScriptPart PartOf(JsonObject json, string at) => Text(json, at, "script") is var word
+        && Parts.Any(p => p.Word == word) ? Parts.Single(p => p.Word == word).Part
+        : throw new Malformed(at + ".script", "is none of pre-deploy, plan and post-deploy");
+
+    private static int Line(JsonObject json, string at) => Count(json, at, "line") is var line and >= 1 and <= int.MaxValue ? (int)line
+        : throw new Malformed(at + ".line", "is no line number from 1");
 
     private static PreconditionKind.ForeignKey.Pair Pair(JsonNode? node, string at)
     {
