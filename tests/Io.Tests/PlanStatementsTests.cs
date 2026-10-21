@@ -96,5 +96,29 @@ public sealed class PlanStatementsTests
             .Plan.Count(s => s.Part != ScriptPart.Plan));
     }
 
+    /// <summary>
+    /// What classify reads of a pre-deploy script: each INSERT, UPDATE, DELETE, MERGE and TRUNCATE TABLE by its target and verb, one inside
+    /// an IF included, a temporary table's and DacFx's refactorlog table's left out, a table named through a SQLCMD variable read under
+    /// the value the script's :setvar gives it, or under the variable's name where none does; a script with none, or no script, modifies
+    /// no row.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_rows_a_pre_deploy_script_modifies_are_each_statement_s_target_and_verb_temporary_tables_left_out()
+    {
+        const string script = ":setvar Schema dbo\nIF EXISTS (SELECT 1 FROM dbo.Customer WHERE Email IS NULL)\n"
+            + "    UPDATE dbo.Customer SET Email = N'x' WHERE Email IS NULL;\nGO\nTRUNCATE TABLE [$(Schema)].[Staging];\n"
+            + "INSERT INTO #seen (Id) SELECT Id FROM dbo.Customer;\nDELETE FROM dbo.[__RefactorLog] WHERE 1 = 0;\n"
+            + "MERGE dbo.Region AS r USING (VALUES (1)) AS v(Id) ON r.Id = v.Id WHEN NOT MATCHED THEN INSERT (Id) VALUES (v.Id);\n"
+            + "DELETE FROM [$(Other)].[Archive] WHERE 1 = 0;\nPRINT N'done';\n";
+
+        var rows = Expect.Value(PlanStatements.RowsModified(script));
+
+        Assert.Equal(["[Other].[Archive] DELETE", "[dbo].[Customer] UPDATE", "[dbo].[Region] MERGE", "[dbo].[Staging] TRUNCATE TABLE"],
+            rows.OfType<ScriptStatement.ModifiesRows>().Select(m => m.Table + " " + m.Verb).Order(System.StringComparer.Ordinal));
+        Assert.Empty(Expect.Value(PlanStatements.RowsModified("PRINT N'Pre-deploy: no backfill active.';\nGO\n")));
+        Assert.Empty(Expect.Value(PlanStatements.RowsModified(null)));
+    }
+
     private static string Words(PlanStatement s) => s.Words.Count == 0 ? "" : " " + string.Join("|", s.Words);
 }

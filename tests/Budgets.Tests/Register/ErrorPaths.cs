@@ -160,6 +160,15 @@ internal static partial class ErrorPaths
         new("an operation's file this identity cannot read", "pattern.unreadable", false, (scratch, _) =>
             Denied(Written(scratch, "patterns/add-optional.md", "# add-optional\n"),
                 () => Failed(Patterns.Read(Path.Combine(scratch, "patterns"))))),
+        new("a row of the CDC ledger whose table is named in one part", "file.ledger-row", true, (_, planted) =>
+            Failed(CdcLedger.Parse("| dev | " + planted + " | 2026-10-21 |\n"))),
+        new("a CDC ledger this identity cannot read", "file.unreadable", false, (scratch, _) =>
+            Denied(Written(scratch, CdcLedger.File, "| Environment | Table | Measured |\n"), () => Failed(CdcLedger.Read(scratch)))),
+        new("an aggregate query of check cdc SQL Server refused, its message planted", "cdc.unread", true, (_, planted) =>
+        {
+            var asked = Expect.Value(CdcCheck.Queries([Table.Name])).Single();
+            return Failed(CdcCheck.Tracked(asked, new SqlServer.Measurement.Raised(asked.Query.Site, 229, planted)));
+        }),
 
         new("DBCHANGE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) =>
             Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),

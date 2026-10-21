@@ -45,6 +45,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 
 | Value | The test, in English | The test |
 |---|---|---|
+| A1 | Classify prints the word provisional first then each operation and its answer validates against dbchange classify 1 | `DbChange.Io.Tests.ClassifyVerbTests.Classify_prints_the_word_provisional_first_then_each_operation_and_its_answer_validates_against_dbchange_classify_1` |
 | A2 | Doctor on a bare machine prints DEGRADED with a remedy per missing item | `DbChange.Budgets.Tests.ContractTests.Doctor_on_a_bare_machine_prints_DEGRADED_with_a_remedy_per_missing_item` |
 | A2 | A bare machine gets a remedy for each item missing | `DbChange.Io.Tests.DoctorTests.A_bare_machine_gets_a_remedy_for_each_item_missing` |
 | A2 | The published doctor finds its tool folder and names its DacFx release | `DbChange.Io.Tests.ToolFolderTests.The_published_doctor_finds_its_tool_folder_and_names_its_DacFx_release` |
@@ -136,6 +137,9 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | P2 | Generated variants are admitted exactly when no forbidden form is planted | `DbChange.Io.Tests.AllowlistTests.Generated_variants_are_admitted_exactly_when_no_forbidden_form_is_planted` |
 | P2 | The allowlist admits each allowed form of its corpus and refuses each forbidden one | `DbChange.Io.Tests.AllowlistTests.The_allowlist_admits_each_allowed_form_of_its_corpus_and_refuses_each_forbidden_one` |
 | P2 | The corpus plants every form the work package names | `DbChange.Io.Tests.AllowlistTests.The_corpus_plants_every_form_the_work_package_names` |
+| P2 | A catalog read of CDC that returns a name an id or a value read past the catalog is refused | `DbChange.Io.Tests.CdcCheckTests.A_catalog_read_of_CDC_that_returns_a_name_an_id_or_a_value_read_past_the_catalog_is_refused` |
+| P2 | Check cdc's aggregate query passes the allowlist one item per table at most 500 items a query | `DbChange.Io.Tests.CdcCheckTests.Check_cdc_s_aggregate_query_passes_the_allowlist_one_item_per_table_at_most_500_items_a_query` |
+| P2 | Check cdc as the read only principal on SQL Server Express lists no tracked table and logs only admitted aggregate queries | `DbChange.Io.Tests.ClassifyVerbTests.Check_cdc_as_the_read_only_principal_on_SQL_Server_Express_lists_no_tracked_table_and_logs_only_admitted_aggregate_queries` |
 | P2 | Counts that give the same states plant the same rows | `DbChange.Kernel.Tests.WitnessProperties.Counts_that_give_the_same_states_plant_the_same_rows` |
 | P3 | A planted literal comes from no environment | `DbChange.Kernel.Tests.WitnessProperties.A_planted_literal_comes_from_no_environment` |
 | R1 | The committed DacFx is the release Directory Packages props pins | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_is_the_release_Directory_Packages_props_pins` |
@@ -166,11 +170,19 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | S2 | Every error code the kernel io and the cli construct has a driver here | `DbChange.Budgets.Tests.Register.Errors.Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here` |
 | S2 | A check drift whose extract is refused answers the refusal and no column lines | `DbChange.Io.Tests.DriftTests.A_check_drift_whose_extract_is_refused_answers_the_refusal_and_no_column_lines` |
 | S2 | Check drift names every differing column of every table the plan alters and nothing else | `DbChange.Kernel.Tests.PlanTests.Check_drift_names_every_differing_column_of_every_table_the_plan_alters_and_nothing_else` |
+| S4 | Classify on each rename made by typing refuses at exit 9 and names the remedy dbchange diff refactorlog | `DbChange.Io.Tests.ClassifyVerbTests.Classify_on_each_rename_made_by_typing_refuses_at_exit_9_and_names_the_remedy_dbchange_diff_refactorlog` |
 | S7 | No verb writes to a named environment | `DbChange.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
 | S7 | Nothing but LocalServer makes a Copy | `DbChange.Io.Tests.CapabilityTests.Nothing_but_LocalServer_makes_a_Copy` |
 | S7 | The read only principal sends no DML no DDL and no EXEC through check drift and read | `DbChange.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read` |
 | S7 | A copy the registry does not hold is refused | `DbChange.Io.Tests.TargetTests.A_copy_the_registry_does_not_hold_is_refused` |
 | S7 | A copy the registry does not hold or one on a named environment's host is exit 9 | `DbChange.Io.Tests.VerbExitTests.A_copy_the_registry_does_not_hold_or_one_on_a_named_environment_s_host_is_exit_9` |
+| S8 | An environment that tracks no table prints one sentence and no row | `DbChange.Io.Tests.CdcCheckTests.An_environment_that_tracks_no_table_prints_one_sentence_and_no_row` |
+| S8 | Check cdc commit pushes the ledger on a new branch to a local bare origin and leaves the working tree as it was | `DbChange.Io.Tests.CdcCheckTests.Check_cdc_commit_pushes_the_ledger_on_a_new_branch_to_a_local_bare_origin_and_leaves_the_working_tree_as_it_was` |
+| S8 | Check cdc's aggregate query passes the allowlist one item per table at most 500 items a query | `DbChange.Io.Tests.CdcCheckTests.Check_cdc_s_aggregate_query_passes_the_allowlist_one_item_per_table_at_most_500_items_a_query` |
+| S8 | The ledger replaces the rows of the environment read keeps the others and reads back as written | `DbChange.Io.Tests.CdcCheckTests.The_ledger_replaces_the_rows_of_the_environment_read_keeps_the_others_and_reads_back_as_written` |
+| S8 | The printer writes one ledger row per table the environment tracks and its answer validates against dbchange check 1 | `DbChange.Io.Tests.CdcCheckTests.The_printer_writes_one_ledger_row_per_table_the_environment_tracks_and_its_answer_validates_against_dbchange_check_1` |
+| S8 | A column added to a table the cdc ledger names is refused at exit 9 naming the capture instance step | `DbChange.Io.Tests.ClassifyVerbTests.A_column_added_to_a_table_the_cdc_ledger_names_is_refused_at_exit_9_naming_the_capture_instance_step` |
+| S8 | Check cdc as the read only principal on SQL Server Express lists no tracked table and logs only admitted aggregate queries | `DbChange.Io.Tests.ClassifyVerbTests.Check_cdc_as_the_read_only_principal_on_SQL_Server_Express_lists_no_tracked_table_and_logs_only_admitted_aggregate_queries` |
 | X1 | Inline credential refused | `DbChange.Io.Tests.PublishProfilesTests.Inline_credential_refused` |
 | X1 | A connection file git tracks is refused under each spelling that opens it though gitignore lists it | `DbChange.Io.Tests.TargetTests.A_connection_file_git_tracks_is_refused_under_each_spelling_that_opens_it_though_gitignore_lists_it` |
 | X1 | A connection file git tracks or does not ignore is refused and one git ignores resolves | `DbChange.Io.Tests.TargetTests.A_connection_file_git_tracks_or_does_not_ignore_is_refused_and_one_git_ignores_resolves` |
@@ -188,6 +200,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X2 | A refusal names the form and its place and quotes no literal | `DbChange.Io.Tests.AllowlistTests.A_refusal_names_the_form_and_its_place_and_quotes_no_literal` |
 | X2 | A data loss check whose query fails against a real environment reports only its number and its site | `DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.A_data_loss_check_whose_query_fails_against_a_real_environment_reports_only_its_number_and_its_site` |
 | X2 | A SQLCMD value marked sensitive reaches no check and a check that reads one is refused naming only its variable | `DbChange.Io.Tests.BlockOnPossibleDataLossReaderTests.A_SQLCMD_value_marked_sensitive_reaches_no_check_and_a_check_that_reads_one_is_refused_naming_only_its_variable` |
+| X2 | Classify against an environment classified real holding a planted value prints answers and logs no value | `DbChange.Io.Tests.ClassifyVerbTests.Classify_against_an_environment_classified_real_holding_a_planted_value_prints_answers_and_logs_no_value` |
 | X2 | DbChange read of a database holding a SQL login prints no password | `DbChange.Io.Tests.DiffTests.DbChange_read_of_a_database_holding_a_SQL_login_prints_no_password` |
 | X2 | A denied login prints one sentence naming the environment and a lead's prediction | `DbChange.Io.Tests.DriftTests.A_denied_login_prints_one_sentence_naming_the_environment_and_a_lead_s_prediction` |
 | X2 | A branch that exists or git does not take is refused and an origin that does not answer is unreachable with no credential printed and no branch left | `DbChange.Io.Tests.GitTests.A_branch_that_exists_or_git_does_not_take_is_refused_and_an_origin_that_does_not_answer_is_unreachable_with_no_credential_printed_and_no_branch_left` |
@@ -209,7 +222,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X5 | Git runs with LC ALL C and without the caller's LANGUAGE and LC MESSAGES | `DbChange.Io.Tests.GitTests.Git_runs_with_LC_ALL_C_and_without_the_caller_s_LANGUAGE_and_LC_MESSAGES` |
 | X5 | Loading io opts out of telemetry before DacFx loads | `DbChange.Io.Tests.TelemetryTests.Loading_io_opts_out_of_telemetry_before_DacFx_loads` |
 
-Rows of `VALUES.md` no test declares: A1, A3, A5, A6, A7, A9, D1, D4, D5, D7, E1, E2, E3, E4, E5, E6, E7, E8, E9, G1, G2, G3, G4, G5, G7, G8, G9, L5, L10, L11, L12, O1, O8, O9, O10, R2, R4, S3, S4, S5, S6, S8, X4, X6.
+Rows of `VALUES.md` no test declares: A3, A5, A6, A7, A9, D1, D4, D5, D7, E1, E2, E3, E4, E5, E6, E7, E8, E9, G1, G2, G3, G4, G5, G7, G8, G9, L5, L10, L11, L12, O1, O8, O9, O10, R2, R4, S3, S5, S6, X4, X6.
 
 ## Milestone exits
 
@@ -257,6 +270,8 @@ One row per test that runs an exit of `V3_MILESTONES.md`, from its `[Trait("Exit
 | M1.7 | A named environment's error is withheld and a copy's is kept | `DbChange.Io.Tests.TargetTests.A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept` |
 | M1.7 | A literal connection string as a target is exit 6 and printed nowhere | `DbChange.Io.Tests.VerbExitTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
 | M1.8 | The read only principal sends no DML no DDL and no EXEC through check drift and read | `DbChange.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read` |
+| M2.4 | Classify against an environment classified real holding a planted value prints answers and logs no value | `DbChange.Io.Tests.ClassifyVerbTests.Classify_against_an_environment_classified_real_holding_a_planted_value_prints_answers_and_logs_no_value` |
+| M2.5 | Classify on each rename made by typing refuses at exit 9 and names the remedy dbchange diff refactorlog | `DbChange.Io.Tests.ClassifyVerbTests.Classify_on_each_rename_made_by_typing_refuses_at_exit_9_and_names_the_remedy_dbchange_diff_refactorlog` |
 | M3.3 | A copy planted at an environment holding each of R6's sites answers every precondition as the environment does | `DbChange.Io.Tests.SyntheticCopyTests.A_copy_planted_at_an_environment_holding_each_of_R6_s_sites_answers_every_precondition_as_the_environment_does` |
 
-Exits no test declares, which a person or a CI job runs: M0.2, M1.1, M2.1, M2.2, M2.3, M2.4, M2.5, M3.1, M3.2, M3.4, M3.5, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, M4.8, M4.9, M5.1, M5.2, M5.3, M5.4, M5.5, M5.6, M6.1, M6.2, M6.3, M6.4, M6.5, M7.1.
+Exits no test declares, which a person or a CI job runs: M0.2, M1.1, M2.1, M2.2, M2.3, M3.1, M3.2, M3.4, M3.5, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, M4.8, M4.9, M5.1, M5.2, M5.3, M5.4, M5.5, M5.6, M6.1, M6.2, M6.3, M6.4, M6.5, M7.1.

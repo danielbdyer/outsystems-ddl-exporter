@@ -29,6 +29,9 @@ public static partial class PlanStatements
 
     private static readonly Regex Space = new(@"\s+", RegexOptions.CultureInvariant);
 
+    /// <summary>A SQLCMD variable as a script uses it: $(name).</summary>
+    private static readonly Regex Variable = new(@"\$\((?<name>[A-Za-z_][A-Za-z0-9_]*)\)", RegexOptions.CultureInvariant);
+
     /// <summary>The statements of a plan against <paramref name="target"/>, its script substituted with the target's own SQLCMD
     /// values.</summary>
     public static Result<Listing> Read(Plan plan, SqlServer.Database target, Scripts after, Scripts before) =>
@@ -56,6 +59,35 @@ public static partial class PlanStatements
             .Bind(plan => Alone(before.PreDeploy, ScriptPart.PreDeploy, given, 0).Bind(pre =>
                 Alone(before.PostDeploy, ScriptPart.PostDeploy, given, pre.Count)
                     .Map(post => new Listing(SortedArray.Of(plan), SortedArray.Of(pre.Concat(post))))));
+    }
+
+    /// <summary>
+    /// The statements of a model's pre-deploy script that modify rows, as Classify reads them: each INSERT, UPDATE, DELETE, MERGE and
+    /// TRUNCATE TABLE it holds, at any depth Listed reads, by its target and verb, a temporary table's and the catalog's left out; none for
+    /// a model with no such script. Classify reads no environment's SQLCMD values, so a variable the script's own :setvar lines do not
+    /// give is put in as its own name, which parses wherever the value would, and a table named through it is read under that name.
+    /// </summary>
+    public static Result<SortedArray<ScriptStatement>> RowsModified(string? preDeploy)
+    {
+        var named = new Dictionary<string, string>(SqlCmdVariable.SetIn(LineEndings.Lf(preDeploy ?? "")), StringComparer.OrdinalIgnoreCase);
+        foreach (Match used in Variable.Matches(preDeploy ?? ""))
+        {
+            named.TryAdd(used.Groups["name"].Value, used.Groups["name"].Value);
+        }
+
+        return Alone(preDeploy, ScriptPart.PreDeploy, named, 0).Map(listed => SortedArray.Of(listed
+            .Where(s => s.Target is { OutsideTheRows: false })
+            .Select(s => (Statement: s, Verb: s.Type switch
+            {
+                nameof(InsertStatement) => "INSERT",
+                nameof(UpdateStatement) => "UPDATE",
+                nameof(DeleteStatement) => "DELETE",
+                nameof(MergeStatement) => "MERGE",
+                nameof(TruncateTableStatement) => "TRUNCATE TABLE",
+                _ => null,
+            }))
+            .Where(m => m.Verb is not null)
+            .Select(m => (ScriptStatement)new ScriptStatement.ModifiesRows(m.Statement.Target!.Name, m.Verb!))));
     }
 
     /// <summary>Where a deploy script stands in the plan's script: its part, its first and last line there, and the lines of white space

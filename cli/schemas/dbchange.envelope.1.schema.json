@@ -33,6 +33,7 @@
         "blocked",
         "build-failed",
         "built",
+        "classified",
         "configuration-refused",
         "current",
         "degraded",
@@ -40,8 +41,11 @@
         "done",
         "in-sync",
         "interrupted",
+        "listed",
         "needs-input",
+        "proposed",
         "ready",
+        "refused",
         "refused-by-name",
         "unparsed-input",
         "unreachable"
@@ -308,6 +312,24 @@
       "if": {
         "properties": {
           "outcome": {
+            "const": "classified"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
             "const": "configuration-refused"
           }
         }
@@ -435,6 +457,24 @@
       "if": {
         "properties": {
           "outcome": {
+            "const": "listed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
             "const": "needs-input"
           }
         }
@@ -453,6 +493,24 @@
       "if": {
         "properties": {
           "outcome": {
+            "const": "proposed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
             "const": "ready"
           }
         }
@@ -462,6 +520,24 @@
           "exit": {
             "enum": [
               0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "refused"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              9
             ]
           }
         }

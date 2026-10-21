@@ -10,14 +10,15 @@ namespace DbChange.Cli;
 
 public static partial class Verbs
 {
-    /// <summary>The checks the verb table names beyond drift, which this build does not have.</summary>
+    /// <summary>The checks the verb table names beyond drift and cdc, which this build does not have.</summary>
     private static readonly HashSet<string> Later =
-        new(StringComparer.Ordinal) { "cdc", "evidence", "inflight", "outsystems", "environments" };
+        new(StringComparer.Ordinal) { "evidence", "inflight", "outsystems", "environments" };
 
     /// <summary>
     /// What check adds to the envelope: the kind of check, the target, the ref and its commit, the counts, each operation of the deploy
     /// plan (its word, DacFx's name where dbchange's list lacks it, the element and the data issues it raises), and the columns that
-    /// differ, as diff writes a change; the two lists can be long.
+    /// differ, as diff writes a change; the two lists can be long. check cdc writes cdc in its place (CdcContent), and each answer leaves
+    /// the other null.
     /// </summary>
     public static JsonObject CheckContent => new()
     {
@@ -34,20 +35,22 @@ public static partial class Verbs
             })),
             ["columns"] = ChangeSchema(),
         }),
+        ["cdc"] = CdcContent(),
     };
 
     /// <summary>
-    /// dbchange check drift --target &lt;target&gt; --at &lt;ref&gt; [--profile &lt;path&gt;] [--project &lt;path&gt;]; the other checks
-    /// arrive later.
+    /// dbchange check drift --target &lt;target&gt; --at &lt;ref&gt; [--profile &lt;path&gt;] [--project &lt;path&gt;], and dbchange
+    /// check cdc --env &lt;environment&gt; [--project &lt;path&gt;] [--commit]; the other checks arrive later.
     /// </summary>
     public static Envelope Check(Checkout here, SqlServer.QueryLog log, IReadOnlyList<string> words) => words switch
     {
         ["drift", ..] => Drift(here, log, [.. words.Skip(1)]),
+        ["cdc", ..] => Cdc(here, log, [.. words.Skip(1)]),
         [var kind, ..] when Later.Contains(kind) =>
             Contract.NotBuilt(Of("check") with { Name = "check " + kind }) with { Schema = Of("check").Output },
         _ => Contract.Failed(Of("check"), new Error(
             "arguments.unknown-check",
-            "dbchange check needs the check to run; this build runs check drift.",
+            "dbchange check needs the check to run; this build runs check drift and check cdc.",
             "Run dbchange check drift --target <target> --at <ref>.")),
     };
 

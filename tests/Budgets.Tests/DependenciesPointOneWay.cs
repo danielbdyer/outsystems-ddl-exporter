@@ -74,21 +74,23 @@ public sealed class DependenciesPointOneWay
 
     /// <summary>
     /// The io types cli may name, each of whose members it may call: the use cases and their answers, and the services Program and the
-    /// renderers use, among them the existing data's file form, in which synthetic-copy up renders the copy's answers.
+    /// renderers use, among them the existing data's file form, in which synthetic-copy up renders the copy's answers, and the CDC
+    /// ledger's, whose rows check cdc prints, with the branch its --commit pushed.
     /// </summary>
     private static readonly string[] Whole =
     [
         "Checkout", "Standing", "ModelRead", "ModelRead+Source", "ModelDiff", "ModelDiff+Answer", "DriftCheck", "DriftCheck+Request",
-            "DriftCheck+Answer", "SyntheticCopy", "ExistingDataFile",
+            "DriftCheck+Answer", "SyntheticCopy", "ExistingDataFile", "Classifier", "CdcCheck", "CdcLedger", "Git+Pushed",
         "Doctor+Readiness", "Doctor+Prerequisite", "Doctor+Item", "Ssdt+ModelElements", "SqlServer+QueryLog", "SqlServer+Reads",
         "Write", "Json", "SchemaText", "PrintedScript", "PasswordForm", "Telemetry", "ServerProbe", "Interruption", "Runner", "Ran",
     ];
 
     /// <summary>
-    /// The members cli may call of the io types it may otherwise only name: the target grammar, the doctor's use case and the program
-    /// runner it is given.
+    /// The members cli may call of the io types it may otherwise only name: the target grammar, the doctor's use case, the program
+    /// runner it is given, and Git, which encloses the branch check cdc --commit answers with.
     /// </summary>
-    private static readonly string[] Members = ["SqlServer", "SqlServer.Target", "Doctor", "Doctor.Run", "Command", "Command.Run", "Ssdt"];
+    private static readonly string[] Members =
+        ["SqlServer", "SqlServer.Target", "Doctor", "Doctor.Run", "Command", "Command.Run", "Ssdt", "Git"];
 
     private static bool Admitted(string reference)
     {

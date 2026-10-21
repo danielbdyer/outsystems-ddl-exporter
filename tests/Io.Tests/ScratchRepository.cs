@@ -87,6 +87,22 @@ public sealed class ScratchRepository : IDisposable
         return scratch.Git("status", "--porcelain").Length == 0 ? scratch.Git("rev-parse", "HEAD") : scratch.Commit(change.Name);
     }
 
+    /// <summary>
+    /// The working tree's project set to Base's with the sample change's edits applied, and nothing committed: the change classify reads
+    /// from a ref to the working tree.
+    /// </summary>
+    internal void Applied(SampleChange change)
+    {
+        scratch.Git("checkout", Base, "--", "project");
+        foreach (var edit in change.Edits)
+        {
+            edit.ApplyTo(Path.Combine(Root, "project"));
+        }
+    }
+
+    /// <summary>The working tree's project and the index set back to the last commit's.</summary>
+    internal void Restored() => scratch.Git("checkout", "HEAD", "--", "project");
+
     /// <summary>A clone of the repository beside it, a second checkout of the same commits; its root.</summary>
     internal string Clone() => scratch.Clone(Root);
 

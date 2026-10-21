@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "dbchange.check/1",
-  "description": "What dbchange check --json writes: the envelope, and check.",
+  "description": "What dbchange check --json writes: the envelope, and check and cdc.",
   "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
   "type": "object",
   "additionalProperties": false,
@@ -21,7 +21,8 @@
     "full",
     "log",
     "elapsedMs",
-    "check"
+    "check",
+    "cdc"
   ],
   "properties": {
     "schema": {
@@ -36,7 +37,9 @@
         "differs",
         "in-sync",
         "interrupted",
+        "listed",
         "needs-input",
+        "proposed",
         "refused-by-name",
         "unparsed-input",
         "unreachable"
@@ -424,6 +427,88 @@
           }
         }
       ]
+    },
+    "cdc": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "environment",
+            "commit",
+            "measured",
+            "counts",
+            "tracked",
+            "branch",
+            "pushed"
+          ],
+          "properties": {
+            "environment": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40,64}$"
+            },
+            "measured": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+            },
+            "counts": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "declared",
+                "tracked"
+              ],
+              "properties": {
+                "declared": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "tracked": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "tracked": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+            },
+            "branch": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string",
+                  "minLength": 1
+                }
+              ]
+            },
+            "pushed": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40,64}$"
+                }
+              ]
+            }
+          }
+        }
+      ]
     }
   },
   "allOf": [
@@ -613,6 +698,24 @@
       "if": {
         "properties": {
           "outcome": {
+            "const": "listed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
             "const": "needs-input"
           }
         }
@@ -622,6 +725,24 @@
           "exit": {
             "enum": [
               8
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "proposed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
             ]
           }
         }

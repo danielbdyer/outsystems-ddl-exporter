@@ -20,6 +20,13 @@
     <InternalsVisibleTo Include="DbChange.Io.Tests" />
   </ItemGroup>
   <!--
+    The operations' recognize: blocks classify reads, beside dbchange in patterns/, until M7 moves each block into its operation's file
+    under knowledge/ops/ (WP 7.2); a project that references cli, such as Io.Tests, receives them in its own output too.
+  -->
+  <ItemGroup>
+    <None Include="../tests/Golden/patterns/*.md" Link="patterns/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!--
     The reference assemblies a classic .sqlproj build needs (mscorlib.dll and FrameworkList.xml), and the SQL Server 2022 (160)
     master.dacpac and msdb.dacpac a project's ArtifactReference names through $(DacPacRootPath), downloaded by restore and never
     referenced; ci/publish copies them into dist/dbchange/refasm/ and dist/dbchange/Extensions/Microsoft/SQLDB/Extensions/SqlServer/160/

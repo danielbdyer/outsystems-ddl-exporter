@@ -97,6 +97,10 @@ public static partial class Git
             })));
     }
 
+    /// <summary>The top level of the working tree that holds <paramref name="directory"/>, as rev-parse --show-toplevel names
+    /// it.</summary>
+    public static Result<string> TopLevel(string directory) => Root(Command.Run, directory, CancellationToken.None);
+
     /// <summary>
     /// The holds this process keeps on worktrees anywhere under <paramref name="folder"/> (a repository root, or a folder holding several),
     /// released: a sweep may then remove them. dbchange's own process ends without calling it; a host that outlives its runs (a test

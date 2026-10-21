@@ -27,7 +27,7 @@ public sealed partial class ContractTests
 
     /// <summary>
     /// The help as the built dbchange prints it validates against its schema and says which verbs this build has: the four of M1,
-    /// synthetic-copy and --version.
+    /// classify, synthetic-copy and --version.
     /// </summary>
     [Fact]
     [Trait("Category", "build")]
@@ -39,7 +39,7 @@ public sealed partial class ContractTests
         Assert.DoesNotContain('\r', output);
         var help = JsonNode.Parse(output)!;
         VerbAnswer.Valid("dbchange.help.1.schema.json", help);
-        Assert.Equal(["doctor", "read", "diff", "synthetic-copy", "check", "--version"],
+        Assert.Equal(["doctor", "read", "diff", "classify", "synthetic-copy", "check", "--version"],
             help["verbs"]!.AsArray().Where(v => (bool)v!["built"]!).Select(v => (string)v!["name"]!));
         help["exits"]![0]!["code"] = 10;
         Assert.False(VerbAnswer.Evaluate("dbchange.help.1.schema.json", help).IsValid,

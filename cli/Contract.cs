@@ -175,7 +175,16 @@ public static class Contract
                 new("in-sync", [0], "the two schemas hold the same elements"),
                 new("differs", [0, 5], "the two schemas differ; exit 5 only with --fail-on-change"),
             ]),
-        new("classify", "Which operation a change is, provisionally, from the committed evidence."),
+        new("classify", "Which operation a change is, provisionally: the change from a ref to the working tree, matched against each"
+            + " operation's recognize: block; a rename made by typing, and a column-list change or a rebuild of a table Change Data Capture"
+            + " tracks, refused with the remedy. dbchange classify --at <ref> [--env <environment>] [--project <path>]",
+            Cli.Verbs.Classify, Cli.Verbs.ClassifyContent,
+            [
+                new("classified", [0], "the summary's first word is provisional; classify names each operation, pre-deploy step and"
+                    + " unclassified entry, and no finding refuses the change"),
+                new("refused", [9], "a rename made by typing, or a column-list change or a rebuild of a table"
+                    + " dbchange/ledgers/cdc-tracked.md names; each refusal names its remedy"),
+            ]),
         new("predict", "Whether a change blocks or applies on each environment the caller can read, and why."),
         new("profile", "What an environment's data looks like, as the evidence the synthetic copy is generated from."),
         new("synthetic-copy", "A copy on the local server, built from the repository at a ref and planted with rows that answer each"
@@ -194,13 +203,17 @@ public static class Contract
         new("prove", "What DacFx and SQL Server do with a change on a fresh copy, with its provenance."),
         new("describe", "The pull request description, rendered from each proof's provenance."),
         new("gate", "The pull request's proof, reproduced from the clone."),
-        new("check", "Whether a database has drifted from the repository at a ref; the platform, the evidence and the locks arrive later."
-            + " dbchange check drift --target <target> --at <ref> "
-            + "[--profile <path>] [--project <path>]", Cli.Verbs.Check, Cli.Verbs.CheckContent,
+        new("check", "Whether a database has drifted from the repository at a ref, and which tables an environment's Change Data Capture"
+            + " tracks; the platform, the evidence and the locks arrive later. dbchange check drift --target <target> --at <ref> "
+            + "[--profile <path>] [--project <path>]; dbchange check cdc --env <environment> [--project <path>] [--commit]",
+            Cli.Verbs.Check, Cli.Verbs.CheckContent,
             [
                 new("in-sync", [0], "the deploy plan against the target is empty"),
                 new("differs", [5], "the deploy plan holds operations; a finding names each object, and a check the plan drops and "
                     + "creates because the repository writes it with IN is named with the OR form SQL Server stores"),
+                new("listed", [0], "check cdc read sys.tables.is_tracked_by_cdc for each table the project declares at HEAD; cdc names"
+                    + " each table tracked, and the lines are its rows for dbchange/ledgers/cdc-tracked.md"),
+                new("proposed", [0], "check cdc --commit committed those rows on a new branch and pushed it, for review"),
             ]),
         new("knowledge", "The knowledge tree, packaged for each agent and vendored to the SSDT repository."),
         new("--version", "The tool's version.",
