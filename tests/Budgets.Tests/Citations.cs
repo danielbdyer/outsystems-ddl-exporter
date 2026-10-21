@@ -30,9 +30,11 @@ namespace DbChange.Budgets.Tests;
 /// Each document also cites in v3's forms, so a file WP 7.2 moves from v2's skills passes only once its citations are rewritten
 /// (<see cref="Forms"/>): a finding by its identifier, never by v2's file, FINDINGS_AND_CHANGES.md, or FINDINGS with a part or an
 /// identifier; a part of that file by what replaced it (value S1 for Part 1, DECISIONS.md for Part 5), never as Part n; an operation
-/// by knowledge/ops/ and a shared file by knowledge/shared/, never by v2's op/, _index/ or operations/ (the family overviews v3 deletes);
-/// a skill's content by the v3 file it folds into or the verb that does its step, never by the v2 skill's or agent's name in backticks
-/// (<c>`prove-on-dacpac`</c>), or by a hyphenated name in plain text, which English never holds (<c>see prove-on-dacpac's</c>);
+/// by knowledge/ops/ and a shared file by knowledge/shared/, never by v2's op/, _index/, or operations/, whose family overviews v3
+/// deletes; a skill's content by the v3 file it folds into or the verb that does its step, never by the v2 skill's or agent's name in
+/// backticks (<c>`prove-on-dacpac`</c>), or by a hyphenated name in plain text, which English never holds (<c>see prove-on-dacpac's</c>),
+/// save <c>`verdict`</c>, which stays because prove's JSON keeps the field, and <c>_index</c> and <c>change-author</c>, which
+/// Register.Prose refuses instead;
 /// a step by its verb and the golden project by tests/Golden/project/, never by v2's scripts/, a .mjs name or proving-ground/; a
 /// sample by its shape under knowledge/samples/, never by v2's sample-prs/; a handbook chapter by its title, never by its number, its
 /// file name, its file stem with a section number (<c>Operation-Reference 16.8</c>) or a pattern's number (<c>playbook Pattern
@@ -116,9 +118,9 @@ public sealed class Citations
             + @"`(?:decompose|adversary|intake|reviewer)`", RegexOptions.CultureInvariant),
             "a skill by its v2 name", "cite the v3 file it folds into: knowledge/authoring.md for intake, confirm-intent, "
             + "classify-mechanism, decompose and ask-the-developer; knowledge/reviewing.md for reviewer, author-review, adversary, "
-            + "dependency-scope and review-change; knowledge/description.md for author-pr; knowledge/shared/<name>.md for os-vocabulary "
-            + "and deploy-scripts; or the verb that does the step, `dbchange prove` for prove-on-dacpac and `dbchange synthetic-copy` "
-            + "for talk-to-local-sql"),
+            + "dependency-scope and review-change; knowledge/description.md for author-pr; knowledge/shared/vocabulary.md for "
+            + "os-vocabulary, knowledge/shared/deploy-scripts.md for deploy-scripts; or the verb that does the step, `dbchange prove` "
+            + "for prove-on-dacpac and `dbchange synthetic-copy` for talk-to-local-sql"),
         (new(@"(?<![\w/.-])(?:\.\./)*(?:ssdt-agent/)?(?:scripts/|proving-ground\b)|\b[\w.-]+\.mjs\b", RegexOptions.CultureInvariant),
             "a v2 script or the golden project by its v2 path",
             "cite the dbchange verb that does the step (scripts/prove.mjs is `dbchange prove`), "
@@ -205,6 +207,7 @@ public sealed class Citations
     [InlineData("For the disposable copy's posture, see `dbchange prove` and its proof of the change.", "")]
     [InlineData("the reviewer reads the decompose step of the intake", "")]
     [InlineData("That is the mechanism `knowledge/authoring.md` classifies, confirmed by `dbchange prove` and its `verdict`.", "")]
+    [InlineData("Where a script goes and when it retires: `knowledge/shared/deploy-scripts.md`.", "")]
     [InlineData("`.claude/skills/*/SKILL.md` and `.github/skills/<op>/SKILL.md` are generated", "")]
     [InlineData("the module scripts in `proving-ground/Modules/*.sql`", "a v2 script or the golden project by its v2 path")]
     [InlineData("start the server with `scripts/warm-sql.sh start`", "a v2 script or the golden project by its v2 path")]
