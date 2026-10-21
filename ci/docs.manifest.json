@@ -164,6 +164,46 @@
       "ancestor": ["archive/v2/ssdt-agent/skills/author-pr/SKILL.md", "archive/v2/ssdt-agent/pr-template/schema-change.md"]
     },
     {
+      "path": "knowledge/README.md",
+      "kind": "hand",
+      "owner": "vendored",
+      "reader": ["a developer", "a reviewer", "an agent"],
+      "moment": ["first day", "the router's one hop"],
+      "budget": 150,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/README.md"]
+    },
+    {
+      "path": "knowledge/authoring.md",
+      "kind": "hand",
+      "owner": "vendored",
+      "reader": ["an authoring session"],
+      "moment": ["a change"],
+      "budget": 150,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/THE_DECISION_TREE.md", "archive/v2/ssdt-agent/agents/intake.md", "archive/v2/ssdt-agent/agents/change-author.md", "archive/v2/ssdt-agent/skills/confirm-intent/SKILL.md", "archive/v2/ssdt-agent/skills/classify-mechanism/SKILL.md", "archive/v2/ssdt-agent/skills/decompose/SKILL.md", "archive/v2/ssdt-agent/skills/ask-the-developer/SKILL.md"]
+    },
+    {
+      "path": "knowledge/reviewing.md",
+      "kind": "hand",
+      "owner": "vendored",
+      "reader": ["a reviewer", "a reviewing session"],
+      "moment": ["a review"],
+      "budget": 100,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/agents/reviewer.md", "archive/v2/ssdt-agent/skills/review/review-change/SKILL.md", "archive/v2/ssdt-agent/skills/review/dependency-scope/SKILL.md", "archive/v2/ssdt-agent/skills/review/adversary/SKILL.md", "archive/v2/ssdt-agent/skills/review/verdict/SKILL.md", "archive/v2/ssdt-agent/skills/author-review/SKILL.md"]
+    },
+    {
+      "path": "knowledge/description.md",
+      "kind": "hand",
+      "owner": "vendored",
+      "reader": ["everyone who writes a pull request description", "a reviewer", "a review bot"],
+      "moment": ["a change", "a review"],
+      "budget": 120,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/THE_RECORD.md", "archive/v2/ssdt-agent/THE_RECORD_FORMS.md", "archive/v2/ssdt-agent/skills/author-pr/SKILL.md"]
+    },
+    {
       "path": "ci/docs.manifest.json",
       "kind": "hand",
       "owner": "tool",

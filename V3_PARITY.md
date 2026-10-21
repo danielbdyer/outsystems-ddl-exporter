@@ -51,7 +51,7 @@ finding against one of them, and a publish decides it (§7).
 
 **The tally.** `dotnet test tests/Budgets.Tests/Budgets.Tests.csproj --filter
 "FullyQualifiedName~ParityResolves"` prints how many rows are held, partly held, not held yet,
-waiting on the cutover tools, and retired. On 2026-10-21, after wave 7 of the build (WP 2.1b, 2.6, 3.5 and 7.1d): 28 held, 52 partly held, 38 not held yet, 3 waiting on the cutover tools, 6 retired.
+waiting on the cutover tools, and retired. On 2026-10-21, after wave 7 of the build (WP 2.1b, 2.6, 3.5 and 7.1d) and WP 7.2's first slice: 28 held, 54 partly held, 36 not held yet, 3 waiting on the cutover tools, 6 retired.
 
 ---
 
@@ -157,7 +157,7 @@ its clauses hold and others wait.
 | ID | What v2 does | Where v2 proves it | How v3 does it | Where v3 holds it |
 |---|---|---|---|---|
 | PAR-041 | Holds a change that touches a table in an open two-release window (`inflight-check.mjs`; the revert F17 found) | `archive/v2/ssdt-agent/scripts/inflight-check.mjs:126` | `check inflight` and `Locks` over `dbchange/ledgers/in-flight.md` | the lock — not held yet: WP 5.2 |
-| PAR-042 | Writes the pull request record in its register, each claim with its evidence (`author-pr`; law 5) | `archive/v2/ssdt-agent/skills/author-pr/SKILL.md` | `describe` from the provenance records; law 5′ | law 5′ — not held yet: WP 5.1 |
+| PAR-042 | Writes the pull request record in its register, each claim with its evidence (`author-pr`; law 5) | `archive/v2/ssdt-agent/skills/author-pr/SKILL.md` | `describe` from the provenance records; law 5′ | the register and the ten sections, `knowledge/description.md`: `Budgets.Tests: "The description template holds the title and the ten sections in order between its markers"`; law 5′ — not held yet: WP 5.1 |
 | PAR-043 | Validates a pull request in a pipeline, which proved into a new, empty database where every populated tightening passes | `archive/v2/ssdt-agent/pipelines/ssdt-agent-pr-validation.yml` | `gate`, on copies planted at each environment's existing data; the template is never instantiated | the gate — not held yet: WP 5.2 |
 
 ### 2.8 Knowledge, packaging and the documents' gates
@@ -264,7 +264,7 @@ built on them. v3's committed DacFx is 170.5.96, so a finding v3 holds was measu
 | PAR-203 | **F3**: a pre-deploy `ALTER` with the model unchanged lands, and the next publish restores the model | `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:51` | the plan re-asserts the model, and `check drift` names the difference | a column altered on a copy is drift: law 2′; the restore — not held yet: WP 4.4 |
 | PAR-204 | **F4**: two releases land a populated tightening and stay stable on re-publish | `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:56` | the shape `two releases`; a program proved release by release on one copy | the program — not held yet: WP 4.4 |
 | PAR-205 | **F5**, overturned 2026-08-21: a manual trust step after a foreign key | `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:63` | none: F9 overturned it, and §1 fact 11 measured the automatic trust again | retired: v2 overturned it, `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md` |
-| PAR-206 | **F6**: work a pre-deploy committed is not rolled back when the main script fails | `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:75` | the record by phase; knowledge says a remedy must be safe to re-run | the record — not held yet: WP 4.1 |
+| PAR-206 | **F6**: work a pre-deploy committed is not rolled back when the main script fails | `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:75` | the record by phase; knowledge says a remedy must be safe to re-run | `knowledge/authoring.md` says a deploy script's work is not rolled back and the script runs again safely: `Budgets.Tests: "The authoring path states each rule a remedy and a deploy script obey"`; the record — not held yet: WP 4.1 |
 | PAR-207 | **F7**: make-mandatory behaves as narrowing, and two releases land it | `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:80` | the sample change `make-mandatory` | `Io.Tests: "A publish the data loss check stops is server failed by Msg 50000 quoting DacFx s errors and not its informational messages"`; the two releases — not held yet: WP 4.4 |
 | PAR-208 | **F8**: a clean foreign key lands trusted in one release, through `WITH NOCHECK ADD` and `WITH CHECK CHECK` | `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:87` | §1 fact 11 | `Io.Tests: "Fact 11 a clean foreign key on a populated child lands trusted by default and untrusted with validation off"` |
 | PAR-209 | **F9**: a foreign key over an orphan fails at Msg 547 and stays untrusted; a delete-rule change is a drop and a re-add; cascade reaches one level | `archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:96` | sample changes; `ForeignKey` | the verdicts — not held yet: WP 4.4 |

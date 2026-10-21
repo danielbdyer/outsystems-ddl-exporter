@@ -107,6 +107,13 @@
       "exclude": [],
       "ceiling": 21000,
       "planned": null
+    },
+    "knowledge": {
+      "about": "the knowledge tree's hand-written markdown, which a developer's Copilot session and a reviewer read in the SSDT repository: 11,000 lines in all, the ceiling WP 7.2's row of V3_MILESTONES.md sets (DECISIONS.md, 2026-10-21), against the 9,500 V3_INSTRUCTION_ARCHITECTURE.md section 5.2 plans. The generated files, knowledge/INDEX.md and knowledge/copilot/, are not counted; each file also holds its row's budget in ci/docs.manifest.json.",
+      "include": ["knowledge/**/*.md"],
+      "exclude": ["knowledge/INDEX.md", "knowledge/copilot/**"],
+      "ceiling": 11000,
+      "planned": 9500
     }
   }
 }

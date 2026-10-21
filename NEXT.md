@@ -1,5 +1,5 @@
 # Next — rewritten by the session that finishes something; never appended
-Updated 2026-10-21 by #705, in wave 7: WP 2.1's second slice, WP 2.6's corpus, WP 3.5's `synthetic-copy up` and WP 7.1's citations.
+Updated 2026-10-21 by #705, in wave 8: WP 7.2's first slice, knowledge/'s budget and the authoring and reviewing paths.
 
 ## The operator's actions
 - The laptop check against Dev (M1 exit 1, spikes S1 and S3) waits until the operator brings the branch to a laptop:
@@ -21,9 +21,9 @@ Updated 2026-10-21 by #705, in wave 7: WP 2.1's second slice, WP 2.6's corpus, W
   `up` reads with its trust list, and predicts as `Io.Tests: SampleChangePredictionTests` does for the corpus, whose INSERT scripts
   the planter's copies replace in M3. Then WP 3.6's `synthetic-copy check`, `status`, `down` and O8's scale test; WP 3.7's `profile`.
 - S4's laptop half, the SSDT repository's own schema on LocalDB 16.x, waits on S6; its CI half is a decision line.
-- WP 7.2 rewrites each moved skill's citations to the forms `Citations` accepts (no rewrite map is kept). Of v2's skills/ and agents/,
-  one passing block still cites v2 outside the words `Register.Prose` refuses, add-index's line 29, by a bare §19 (the handbook's
-  anti-pattern chapter); WP 7.2 reads by hand each plain use of intake, decompose, adversary and reviewer, v2's names only by sense.
+- WP 7.2 left: the operations with their `recognize:` blocks, shared/, `knowledge/findings.md`, the samples, the ledger templates with
+  `knowledge/ledgers/cdc-tracked.md`, the handbook chapters and `Vocabulary`. Passing blocks citing v2 by sense: add-index's line 29 (a
+  bare §19) and tightening-class's line 116 (an op's own SKILL); each plain intake, decompose, adversary and reviewer is read by hand.
 - The `verify` cases of `tests/Cases/` that S9 to S11 settle still cite no test: PLT-87, 88, 90, QST-55, 59, OP-toggle-trust-03 to 05,
   OP-add-default-04, OP-temporal-convert-04, INV-H6-01, CLS-14, REC-19; each to cite `Io.Tests: SpikeReceiptTests`; then M2's exit checks.
 - Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the vendoring verb's two names, R18's exit,

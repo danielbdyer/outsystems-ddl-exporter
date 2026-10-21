@@ -82,6 +82,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | L3 | Each file of a group holds the group's line ceiling | `DbChange.Budgets.Tests.Budgets.Each_file_of_a_group_holds_the_group_s_line_ceiling` |
 | L3 | Every line of a file of a group holds the width ceiling | `DbChange.Budgets.Tests.Budgets.Every_line_of_a_file_of_a_group_holds_the_width_ceiling` |
 | L3 | The code together holds its ceiling | `DbChange.Budgets.Tests.Budgets.The_code_together_holds_its_ceiling` |
+| L3 | The knowledge budget counts every hand written file under knowledge and no generated one within the plan's ceiling | `DbChange.Budgets.Tests.Knowledge.The_knowledge_budget_counts_every_hand_written_file_under_knowledge_and_no_generated_one_within_the_plan_s_ceiling` |
 | L3 | Every hand written file holds its budget | `DbChange.Budgets.Tests.Manifest.Every_hand_written_file_holds_its_budget` |
 | L4 | Every markdown file outside the archive and every ci file is a row | `DbChange.Budgets.Tests.Manifest.Every_markdown_file_outside_the_archive_and_every_ci_file_is_a_row` |
 | L4 | Every row names a file that exists and says who reads it and when | `DbChange.Budgets.Tests.Manifest.Every_row_names_a_file_that_exists_and_says_who_reads_it_and_when` |
