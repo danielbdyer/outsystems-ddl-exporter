@@ -1,0 +1,543 @@
+<title>Measured Beside</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="The second of the v3 essays: what the waves of 19 and 20 October built for prediction, why each part stands beside the thing it claims about, and what it costs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the series' reading column on ledger paper, a red double margin rule down its left edge;
+   each idea closes with a framed ledger entry; the two charts share the page's tokens. */
+:root {
+  --paper: #edf1ea;
+  --well: #e1e8dd;
+  --ink: #1a2420;
+  --ink-soft: #4a5952;
+  --rule: #c5d0c1;
+  --margin: #b23f37;
+  --accent: #1d4c82;
+  --held: #2f6a4c;
+  --partly: #82ab90;
+  --waiting: #c2cbbd;
+  --cutover: #a07f3a;
+  --retired: #7a8893;
+  --built: #2b4457;
+  --planned: #7f97a9;
+  --grown: #5b86ad;
+  --font-text: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-label: "IBM Plex Sans Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --step--1: 0.875rem;
+  --step-0: 1.1875rem;
+  --step-1: 1.5rem;
+  --step-2: 1.9rem;
+  --step-3: clamp(2.8rem, 9vw, 5rem);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111816;
+    --well: #1b2522;
+    --ink: #dbe4dd;
+    --ink-soft: #9aaaa1;
+    --rule: #2d3b36;
+    --margin: #d9675e;
+    --accent: #93b8ee;
+    --held: #6fb48d;
+    --partly: #3f6e55;
+    --waiting: #3b4944;
+    --cutover: #c9a55a;
+    --retired: #71818c;
+    --built: #a3bdd2;
+    --planned: #587083;
+    --grown: #5f8fbd;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111816;
+  --well: #1b2522;
+  --ink: #dbe4dd;
+  --ink-soft: #9aaaa1;
+  --rule: #2d3b36;
+  --margin: #d9675e;
+  --accent: #93b8ee;
+  --held: #6fb48d;
+  --partly: #3f6e55;
+  --waiting: #3b4944;
+  --cutover: #c9a55a;
+  --retired: #71818c;
+  --built: #a3bdd2;
+  --planned: #587083;
+  --grown: #5f8fbd;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: var(--step-0);
+  line-height: 1.6;
+  font-optical-sizing: auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: clamp(2rem, 6vw, 4.5rem);
+  -webkit-text-size-adjust: 100%;
+}
+.sheet {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 47rem;
+  margin-inline: auto;
+  border-left: 3px double var(--margin);
+  padding-left: clamp(14px, 4vw, 44px);
+  display: grid;
+  gap: 3.25rem;
+}
+.prose { max-width: 38rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.05rem; min-width: 0; }
+.prose p { margin: 0; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+header { display: grid; gap: 1.1rem; }
+.eyebrow {
+  font-family: var(--font-label);
+  font-weight: 500;
+  font-size: var(--step--1);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+h1 {
+  font-family: var(--font-text);
+  font-style: italic;
+  font-weight: 400;
+  font-size: var(--step-3);
+  line-height: 1;
+  letter-spacing: -0.015em;
+  margin: 0;
+  text-wrap: balance;
+}
+.dek { font-size: var(--step-1); line-height: 1.35; color: var(--ink-soft); margin: 0; max-width: 34rem; text-wrap: balance; }
+.at {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.figures li {
+  flex: 1 1 8rem;
+  padding: 0.7rem 0.9rem 0.75rem 0;
+  display: grid;
+  gap: 0.1rem;
+}
+.figures b {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.figures span { font-family: var(--font-label); font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+.figures span i { font-style: normal; font-family: var(--font-mono); letter-spacing: 0; text-transform: none; color: var(--grown); }
+
+section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.2rem; min-width: 0; }
+h2 {
+  font-family: var(--font-text);
+  font-weight: 600;
+  font-size: var(--step-2);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+.lede-head { display: grid; gap: 0.35rem; }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--well);
+  padding: 0.05em 0.3em;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+pre {
+  margin: 0;
+  min-width: 0;
+  background: var(--well);
+  border-left: 2px solid var(--accent);
+  padding: 0.8rem 1rem;
+  overflow-x: auto;
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  tab-size: 4;
+}
+pre code { background: none; padding: 0; font-size: 1em; overflow-wrap: normal; white-space: pre; }
+
+.entry {
+  margin: 0;
+  border: 1px solid var(--rule);
+  background: var(--well);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.entry > div {
+  display: grid;
+  grid-template-columns: 6.6rem minmax(0, 1fr);
+  gap: 0.9rem;
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid var(--rule);
+}
+.entry > div:first-child { border-top: 0; }
+.entry dt {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding-top: 0.2rem;
+}
+.entry dd { margin: 0; font-size: 1rem; line-height: 1.5; min-width: 0; }
+.entry dd code { background: transparent; padding: 0; font-size: 0.8em; }
+.entry dt.cost { color: var(--margin); }
+
+/* charts */
+.chart { display: grid; gap: 0.9rem; margin: 0; min-width: 0; }
+.chart figcaption { font-size: 1rem; color: var(--ink-soft); line-height: 1.45; }
+.bars { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); column-gap: 0.8rem; row-gap: 0.35rem; align-items: center; }
+.bars .name { font-family: var(--font-mono); font-size: 0.85rem; }
+.track { position: relative; height: 1.25rem; background: transparent; border-bottom: 1px solid var(--rule); }
+.then, .reflow, .grown { position: absolute; top: 0.15rem; bottom: 0.15rem; }
+.then { background: var(--built); }
+.grown { background: var(--grown); }
+.reflow {
+  background: repeating-linear-gradient(135deg, var(--planned) 0 3px, transparent 3px 7px);
+  border: 1px solid var(--planned);
+}
+.ceiling { position: absolute; top: -0.3rem; bottom: -0.3rem; width: 2px; background: var(--margin); transform: translateX(-1px); }
+.was { position: absolute; top: -0.3rem; bottom: -0.3rem; width: 0; border-left: 2px dashed var(--ink-soft); transform: translateX(-1px); }
+.note {
+  grid-column: 2;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.55rem;
+}
+.axis { grid-column: 2; position: relative; height: 1.1rem; font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.axis span:first-child { transform: none; }
+.axis span:last-child { transform: translateX(-100%); }
+.key { display: flex; flex-wrap: wrap; gap: 0.5rem 1.2rem; margin: 0; padding: 0; list-style: none; font-family: var(--font-label); font-size: 0.85rem; color: var(--ink-soft); }
+.key li { display: inline-flex; align-items: center; gap: 0.45rem; }
+.swatch { display: inline-block; width: 1.1rem; height: 0.7rem; }
+.swatch.then, .swatch.grown, .swatch.reflow { position: static; }
+.swatch.ceiling { position: static; width: 2px; height: 1rem; transform: none; }
+.swatch.was { position: static; width: 0; height: 1rem; transform: none; }
+
+.tallies { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr); column-gap: 0.8rem; row-gap: 0.5rem; align-items: center; }
+.tallies .name { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink-soft); }
+.tally { display: flex; height: 1.6rem; width: 100%; border: 1px solid var(--rule); }
+.tally span { display: block; height: 100%; }
+.t-held { background: var(--held); }
+.t-partly { background: var(--partly); }
+.t-waiting { background: var(--waiting); }
+.t-cutover { background: var(--cutover); }
+.t-retired { background: repeating-linear-gradient(90deg, var(--retired) 0 2px, transparent 2px 4px); }
+.tally-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 0.45rem 1rem; margin: 0; padding: 0; list-style: none; }
+.tally-key li { display: grid; grid-template-columns: 0.9rem auto 1fr; align-items: baseline; gap: 0.45rem; font-family: var(--font-label); font-size: 0.88rem; color: var(--ink-soft); }
+.tally-key i { display: block; width: 0.9rem; height: 0.7rem; align-self: center; }
+.tally-key b { font-family: var(--font-mono); font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+ul.waves { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.55rem; }
+ul.waves li::marker { color: var(--margin); }
+
+.closing p { font-style: italic; }
+footer { font-family: var(--font-label); font-size: 0.82rem; letter-spacing: 0.04em; color: var(--ink-soft); border-top: 1px solid var(--rule); padding-top: 0.9rem; }
+
+@media (max-width: 560px) {
+  body { font-size: 1.0625rem; }
+  .entry > div { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+  .bars { grid-template-columns: 3.1rem minmax(0, 1fr); column-gap: 0.55rem; }
+  .bars .name { font-size: 0.8rem; }
+  .tallies { grid-template-columns: minmax(0, 1fr); row-gap: 0.25rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<main class="sheet">
+  <header>
+    <p class="eyebrow">dbchange v3 · essay two · 19 and 20 October</p>
+    <h1>Measured Beside</h1>
+    <p class="dek">What two days of work built for prediction, why each part stands next to the thing it claims about, and what that costs.</p>
+    <p class="at">read at 77544d6 on claude/v3-architecture-design-sl95mx, from c1ce443 · 20 October 2026</p>
+    <ul class="figures" aria-label="Lines of C# at 77544d6, with the growth since c1ce443">
+      <li><b>4,557</b><span>kernel/ <i>+2,192</i></span></li>
+      <li><b>8,453</b><span>io/ <i>+3,250</i></span></li>
+      <li><b>1,635</b><span>cli/ <i>+346</i></span></li>
+      <li><b>22,519</b><span>tests/ <i>+7,417</i></span></li>
+    </ul>
+  </header>
+
+  <section class="prose" aria-label="Opening">
+    <p>The first essay left v3 able to read an environment and say nothing it should not. In the 63 commits from c1ce443 to 77544d6, on 19 and 20 October, it began to predict. The kernel learned what a change asks of the rows an environment already holds, where those rows are, and whether the change blocks. io learned to count the rows that would break each rule, in queries that cannot quote one. A classifier names the operation from patterns kept as data. The code took a shape a reader can hold, the local server left Docker, and M2 started on the operator's go.</p>
+    <p>One habit runs through all of it: each claim is made beside the thing it is about. The Fits count runs beside the <code>ALTER COLUMN</code> it predicts. DacFx 170.5.96 plans beside 162.5.57. v3's schema is read beside v2's own read side. And the read-only trace now watches dbchange run as its own process, which found a promise the tests had kept by accident.</p>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">ci · tests · io</p>
+      <h2>A file one reading holds</h2>
+    </div>
+    <div class="prose">
+      <p>On 19 October the operator ruled that a package's ceiling may rise and a file's may not. A C# file of <code>kernel/</code>, <code>io/</code> or <code>cli/</code> holds 500 lines and 140 characters a line; a test file holds 800 lines. <code>Budgets</code> names each file and line over, and pins how it counts: a tab is one character, a surrogate pair two, a trailing carriage return none.</p>
+      <p>The reflow turned width into height. io grew from 5,203 to 6,221 lines with no change of meaning, and <code>io/SqlServer.cs</code> reached 1,196. It became a partial class whose members moved whole into files named for their concepts: <code>SqlServer.Measure</code>, <code>.Query</code>, <code>.Reference</code>, <code>.Allowlist</code>. One move was declined. C# orders static initializers within a file and promises nothing across the files of a partial class, and one timeout reads the other:</p>
+    </div>
+    <pre><code>internal static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(30);
+internal static readonly TimeSpan AggregateQueryTimeout = CommandTimeout;</code></pre>
+    <div class="prose">
+      <p>So both stay in <code>SqlServer.Query.cs</code>, and the split's review compared io's IL before and after to show that every static constructor kept its assignments. A package budget alone says how much code there is, and nothing about whether one file can be read at a sitting.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>ci/budgets.json:4-21</code> · <code>tests/Budgets.Tests/Budgets.cs:67-132</code> · <code>io/SqlServer.Query.cs:14-26</code> · e709686</dd></div>
+      <div><dt>Closes</dt><dd>A file past what one reading holds; a line a side-by-side review must scroll; a split that reorders initialization. Value L3.</dd></div>
+      <div><dt>v2</dt><dd>54 of v2's 339 F# source files pass 500 lines, two of them past 3,400, and 1,429 lines pass 140 characters (<code>archive/v2/src/</code>, measured 20 October).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>The reflow added 2,630 lines across code and tests, and cli grew by a quarter from it alone. Tests keep no width: the 54 lines of <code>Io.Tests</code> left past 140 at the reflow are 113 two days later, and <code>AggregateQueriesTests.cs</code> stands at 793 of its 800.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">ci · io</p>
+      <h2>A server nobody starts for you</h2>
+    </div>
+    <div class="prose">
+      <p>The team's laptops run LocalDB 16.x and the environments' network has no Docker (<code>DECISIONS.md:103</code>), and a copy proven in a container proves something about a machine nobody on the team has. On Linux, <code>ci/sql.sh up</code> now installs SQL Server 2022 Express from packages.microsoft.com and runs <code>sqlservr</code> as the mssql user on 127.0.0.1; on Windows, <code>ci/sql.ps1 up</code> starts LocalDB.</p>
+      <p>Each edge takes a line or two. Microsoft packages SQL Server 2022 for Ubuntu 22.04 alone, so on 24.04 the missing <code>libldap-2.5</code> comes from Launchpad's librarian, pinned by SHA-256. Microsoft's key is trusted only under its release-signing fingerprint. <code>sqlservr</code> starts with the caller's environment emptied but for its own settings, <code>PATH</code> and <code>HOME</code>, so a daemon that outlives the session holds none of its tokens. <code>ci/sql.sh conn</code> prints a command that reads the password when evaluated, so no captured output holds it.</p>
+      <p>Its one failure was silent. On a runner that had never seen mssql-server, <code>dpkg-query</code> exited 1, pipefail carried the status into an assignment, and errexit ended the script before the install began: both Ubuntu SQL jobs of f66521f died in 40 ms. The cloud session never met it, because mssql-server was installed there before the function existed. The fix keeps its reason on the line above:</p>
+    </div>
+    <pre><code># dpkg-query exits 1 for a package it does not know, which pipefail would carry into `had="$(installed)"` and errexit end silently.
+installed() { { dpkg-query -W -f '${Status} ${Version}' mssql-server 2&gt;/dev/null || true; } | sed -n 's/^install ok installed //p'; }</code></pre>
+    <div class="prose">
+      <p>io starts nothing. <code>LocalServer.Choice</code> takes <code>DBCHANGE_SQL</code>, then the server <code>sql.env</code> names, then LocalDB; a missing one is exit 4 whose remedy names the script. The choice is a closed record whose <code>ToString</code> prints its kind and never its connection, and the doctor asks the same function the copies do.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>ci/sql.sh:13-20, :34, :69-77, :97-117, :162-169</code> · <code>io/LocalServer.cs:87-154</code> · d19daab</dd></div>
+      <div><dt>Closes</dt><dd>A proof on a server unlike the laptops'; an unverified key or library; a session's token inside a daemon; a password in a log; a read that starts a server. Values X1 and S7.</dd></div>
+      <div><dt>v2</dt><dd>v2's own CLAUDE.md lists four ways its warm Docker container failed, each remedied by <code>scripts/warm-sql.sh restart</code>, and a root cause of 209 databases left on it after one session (<code>archive/v2/CLAUDE.md:112-126</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>sudo wherever <code>up</code> runs, a library from another Ubuntu release, and no SQL Server Agent anywhere, so CDC is never proven here: law 8's CDC half is a principal's check on a full SQL Server.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">kernel</p>
+      <h2>Data-blind, as a property</h2>
+    </div>
+    <div class="prose">
+      <p>v2's central finding is a sentence about DacFx: the BlockOnPossibleDataLoss check fires on "the table merely having a row" and "never inspects the column at all". v3 states it as a property. A <code>Precondition</code> names a table, the columns a rule reads and one of six closed kinds: TableEmpty, NotNull, Fits, ForeignKey, Unique, Check. <code>ExistingData</code> holds two booleans for each, derived from counts, so no row's value reaches the kernel. <code>Outcome.Predict</code> reads TableEmpty by presence alone:</p>
+    </div>
+    <pre><code>var because = SortedArray.Of(states.Where(s =&gt; s.Precondition.Kind is PreconditionKind.TableEmpty ? s.Populated : s.Violating));</code></pre>
+    <div class="prose">
+      <p>Law 9's test samples sites, preconditions and states, then hands <code>Predict</code> existing data no count could produce, a populated table recorded clean, and asserts that the change blocks all the same. The property is tested against the input most likely to fool it. A change stopped where that check meets a NotNull or Fits on a populated table ships in two releases, v2's finding F4.</p>
+      <p>Two rules beneath carry measured facts. <code>Coordinates</code> answers a table the change creates with no rows, counts a renamed object under the name the environment holds, and refuses an object the environment lacks, which is "never counted as empty". A column the change adds holds NULL in every existing row when it allows NULL, whatever its default, because DacFx 170.5.96 adds it with no <code>WITH VALUES</code>. And <code>ColumnType</code> holds a type with its five facets and no ordering between types. The kernel never calls a retype a widening; it hands both types to io, which asks the server.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>kernel/Preconditions.cs:16-106, :142-148</code> · <code>kernel/Coordinates.cs:36-126</code> · <code>kernel/Outcome.cs:38-67</code> · <code>kernel/ColumnType.cs:15-41</code> · <code>tests/Kernel.Tests/OutcomeTests.cs:55-68</code></dd></div>
+      <div><dt>Closes</dt><dd>Applies predicted on a populated table under BlockOnPossibleDataLoss; a missing object read as zero rows; a precondition never counted taken as clean (<code>plan.uncounted</code>). Law 9; PAR-016, now held.</dd></div>
+      <div><dt>v2</dt><dd>F1 and F7 (<code>archive/v2/ssdt-agent/skills/_index/tightening-class/SKILL.md:51-53</code>; PAR-020); law 2 of v2's synthetic copy, every coordinate resolved or refused by name (<code>archive/v2/THE_TWIN.md:52</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>The seven kinds only a plan's statements show, KeyLength to SeedDrift, wait for WP 2.1's second slice, and PAR-215's seed drift with them.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">io</p>
+      <h2>Asking in a form that cannot answer with a value</h2>
+    </div>
+    <div class="prose">
+      <p>WP 2.3 turns a table's preconditions into the items of one <code>SELECT</code>, built as a ScriptDom tree and checked by the allowlist the first essay admired. Its summary states the rule: ask SQL Server how many rows break the rule "rather than re-deriving SQL Server's answer". For Fits, a row violates when its value is not null and its <code>TRY_CONVERT</code> to the new type is:</p>
+    </div>
+    <pre><code>All([Is(Value(), isNull: false), Is(new TryConvertCall { DataType = target, Parameter = Value() }, isNull: true)]);</code></pre>
+    <div class="prose">
+      <p>No builder writes <code>CONVERT</code>, <code>CAST</code> or <code>PARSE</code>, so no failed conversion can write a row's value into an error, and a check's implicit conversion is written in the TRY_ form SQL Server would plan.</p>
+      <p>The care is in the measuring. One fixture test plants, in each of eighteen columns, a value too long and one that fits or a NULL, counts them, then runs each <code>ALTER COLUMN</code> beside the count. int into nvarchar(2) fails with Msg 8115; int into varchar(2) succeeds and writes <code>'*'</code>. A table of type widths would get one of the two wrong. varbinary into a shorter type drops trailing <code>0x00</code> bytes and refuses any others, which no admitted query can tell apart, so that retype reads <em>not predictable read-only</em>, with its reason. The code says when it cannot count.</p>
+      <p>Unique groups duplicates in three steps, by the bytes, by a binary collation, then by the index's own, because SQL Server refuses an aggregate over an aggregate (Msg 130); the steps sort duplicates into exact, trailing space, case and accent. The plan had said each table is scanned once, and a decision line corrected the plan to the code: one statement per table, in which each key's grouping reads the table again. The text ScriptDom writes back is checked a second time, because the generator writes a <code>COLLATE</code> name unquoted. Every count carries <code>session.unverified</code> until spike S7 reports the Octopus login's language and date order.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>io/AggregateQueries.cs:13-31</code> · <code>io/AggregateQueries.Fits.cs:160-168</code> · <code>io/AggregateQueries.Keys.cs:12-26, :210-215</code> · <code>io/SqlServer.Measure.cs:39-49</code> · <code>tests/Io.Tests/AggregateQueriesCountTests.cs:412-470</code></dd></div>
+      <div><dt>Closes</dt><dd>An error quoting a row (Msg 245, 248, 6522, 506, 220, 232); a count that disagrees with <code>ALTER COLUMN</code>; a guess where no count is possible; run text that differs from the checked tree. Value P2; PAR-021, partly held.</dd></div>
+      <div><dt>v2</dt><dd>v2's query for a primary key returned the duplicate keys themselves: <code>SELECT key, COUNT(*) FROM t GROUP BY key HAVING COUNT(*) &gt; 1</code> (<code>archive/v2/ssdt-agent/skills/_index/constraint-is-a-claim/SKILL.md:31-33</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>1,946 lines in six files, where 690 were planned for these and three other parts together; three rounds of verification; decision lines of 1,948, 1,776 and 2,310 characters holding measurements a pull request body should. <code>ISNULL([Amount],(0))</code> over a decimal still reads not predictable, though converting a literal reads no row.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">kernel · tests</p>
+      <h2>Names, held provisionally</h2>
+    </div>
+    <div class="prose">
+      <p>v3 keeps its naming rules as data: 21 operation files under <code>tests/Golden/patterns/</code>, each with a block a person can read.</p>
+    </div>
+    <pre><code>recognize:
+  match: altered Column Nullable:true→false
+  ships: two releases on a populated table; one release, in place, on an empty one</code></pre>
+    <div class="prose">
+      <p><code>Classify.Of</code> groups a change into entries, a column in its table's, a created history table in the entry of the table it versions, and asks every block of every entry. One rule keeps the matcher honest: a clause recognizes an alteration only when its conditions account for every property the alteration changes. A column taken from nvarchar(40) NULL to nvarchar(80) NOT NULL is no widen and no make-mandatory; it is "unclassified change: prove it". A matcher that checked only a clause's own conditions would name it both, with two shipping shapes that contradict each other: in place, and two releases.</p>
+      <p>Every summary begins with <em>provisional</em>, which only a proof may drop; v2 wrote that rule as advice to an agent, and here a test reads it. The refusals are where Classify earns its place. A rename made by typing, with no refactorlog entry, publishes clean: v2's tests watched a renamed table come up empty beside the old one, still full, and a proof would report <em>applies</em>. So Classify reads the shape, a dropped and a created column of one type at one ordinal, a table dropped and created with the same columns, a name moved between schemas, and refuses each with the remedy that writes the entry.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>tests/Golden/patterns/</code> · <code>kernel/Pattern.cs:66-77</code> · <code>kernel/Classify.cs:62-72, :156-254</code> · <code>tests/Kernel.Tests/ClassifyTests.cs:128-142, :275</code></dd></div>
+      <div><dt>Closes</dt><dd>A compound alteration named by one of its parts; a provisional name read as proven; a rename by typing that strands its rows. PAR-119 and PAR-132, now held; PAR-023, partly.</dd></div>
+      <div><dt>v2</dt><dd>"Never deliver a provisional finding to the developer as if it were proven" (<code>archive/v2/ssdt-agent/skills/classify-mechanism/SKILL.md:26-27</code>); the phantom rename (<code>archive/v2/tests/Twin.Tests.Integration/SamplePrRenameTests.fs:250-254</code>); <code>deltaSignals</code>, the plan read by regular expression (<code>archive/v2/ssdt-agent/scripts/prove.mjs:283-291</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>The remedy names <code>dbchange diff --refactorlog</code>, which WP 4.3 builds, and the <code>classify</code> verb waits for WP 2.5. A real drop and add of one type at one position reads as a rename too, and nothing yet lets its author say otherwise.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">tests · DacFx</p>
+      <h2>One sentence on two releases</h2>
+    </div>
+    <div class="prose">
+      <p>Spike S2 asked whether DacFx 162.5.57, the pipeline's presumed release, writes the BlockOnPossibleDataLoss check as the committed 170.5.96 does. <code>tests/DacFx162/</code> answers from inside the build: the one project that overrides a central package version, referenced by none, a console the fixture tests start as a child process with its connection string in an environment variable, never an argument. The answer is one sentence, byte for byte in both releases:</p>
+    </div>
+    <pre><code>IF EXISTS (select top 1 1 from [dbo].[Customer])
+    RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.', 16, 127) WITH NOWAIT</code></pre>
+    <div class="prose">
+      <p><code>tests/Golden/data-loss-checks/</code> holds the extracted checks for 11 of the 40 sample changes, never a whole script, and a change with no file is the claim that its plan writes none. Finding the sentence takes a parse. A table rebuild's copy step opens with the same <code>IF EXISTS</code>; a constraint added <code>WITH NOCHECK</code> is verified by a <code>RAISERROR</code> at state 127 with another message; and the golden pre-deploy script quotes the check in its account of v2's disproven backfill, so v2's finding rides into every plan as a comment. The test reads none of the three as a check. The releases differ in one block, Query Store's: unset, it is OFF to 162.5.57 and READ_WRITE to 170.5.96. The test pins that block and compares the rest.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>tests/DacFx162/DacFx162.csproj:2-18</code> · <code>tests/Io.Tests/BlockOnPossibleDataLossCheckTests.cs:26-36, :71-90</code> · <code>tests/Io.Tests/BlockOnPossibleDataLossChecks.cs:18-23</code> · <code>tests/Golden/project/Script.PreDeployment.sql:26-32</code></dd></div>
+      <div><dt>Closes</dt><dd>A reader tuned to one release; a lookalike taken for the check; a Query Store statement taken for drift. Spike S2; PAR-019's second release.</dd></div>
+      <div><dt>v2</dt><dd>v2 proved in two releases on two paths, in-process 162.5.57 and an external sqlpackage 170.x (<code>archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:298</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>Every CI job builds a second DacFx and its graph, and the 162 half measures a presumption until spike S7 names the pipeline's release.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">kernel · ci</p>
+      <h2>v2 as the oracle</h2>
+    </div>
+    <div class="prose">
+      <p>WP 3.1 gives the planter its typed <code>Schema</code> and <code>Order</code>, the order it inserts in, and proves them by the strongest kind of proof the parity ledger knows: a differential against an independent oracle, here v2. v2's CLI writes no read-side catalog, so <code>ci/readside.sh</code> writes a short F# program that calls <code>ReadSide.readSchema</code> and <code>CatalogCodec.serialize</code>, and builds it from the archive with v2's pinned .NET 9.0.314 SDK, outside the repository, every <code>bin/</code> and <code>obj/</code> under <code>.dbchange/readside/</code>. The Ubuntu lane runs it on every push and holds the committed facts equal to v2's; the other lanes compare v3 with those facts, which cannot go stale while that lane is green. The facts file opens with what it leaves out and why, from foreign-key names, which v2 makes up, to trust, which DacFx's model does not hold.</p>
+      <p><code>Order</code> runs Tarjan's components over every reference, defers each optional reference inside a cycle, finds the mandatory cycles and places the rest by Kahn's algorithm, smallest name first. The golden copy's one mandatory cycle is Egg and Hen. The doc comment names the price of the simple rule: it can defer a reference the planter did not need deferred, "and changing that changes WP 3.8's planted rows". A minimal set would need a feedback-set solver. This one a reader can check by hand.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>kernel/Schema.cs:6-15</code> · <code>kernel/Order.cs:7-53</code> · <code>ci/readside.sh</code> · <code>tests/Io.Tests/ReadSideTests.cs:15-69</code> · <code>tests/Io.Tests/ReadSideFacts.cs:27-43</code></dd></div>
+      <div><dt>Closes</dt><dd>A schema reading that disagrees with v2's on any fact both read; committed facts gone stale; a mandatory cycle found by a failed <code>INSERT</code>. PAR-002's differential.</dd></div>
+      <div><dt>v2</dt><dd><code>archive/v2/src/Projection.Adapters.Sql/ReadSide.fs</code> (PAR-002); outside cycles, <code>Order</code> keeps v2's <code>PartialTopological</code> (<code>archive/v2/src/Projection.Core/TopologicalOrder.fs</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>The differential proves the intersection alone; where v2 is blind, v3 is unchecked. The lane needs nuget.org and a second SDK.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">io · tests</p>
+      <h2>A promise kept by refusal</h2>
+    </div>
+    <div class="prose">
+      <p>M1 closed on a promise and a test that watched it: the read-only principal sends no DML, no DDL and no <code>EXEC</code> (R14), and an Extended Events session on its login records what it sends. On 19 October a reviewer of WP 2.4 saw the fixture lane go 54 of 55, that test failing on <code>exec xp_msver @optname=N'Platform'</code>. It passed alone and on a rerun, and the note called it intermittent.</p>
+      <p>The next wave measured it. DacFx 170.5.96 asks <code>xp_msver</code> for the host's platform, processors and memory on any connection whose data source and database its per-process cache does not hold, for telemetry dbchange turns off; the login is not in the key. The test ran dbchange inside the test process, where the admin's publish had already filled the entry, and whether the call appeared depended on what the process had touched before. The published dbchange starts cold and sends it twice for every read and every check drift. The test had kept the promise by accident.</p>
+      <p>The operator kept the promise as written (<code>DECISIONS.md:143</code>). <code>io/ServerProbe</code> watches SqlClient's <code>WriteCommandBefore</code> event and throws for exactly a call of <code>xp_msver</code>, as a stored procedure or a one-statement batch, reading no parameter and logging nothing. DacFx catches it and goes on without the figures; a release that stopped catching it would fail the read as <code>dacfx.failed</code>. Only cli's <code>Main</code> installs it, since only in dbchange's own process is every connection dbchange's, and the trace now runs the published dbchange as its own process. Against an observer that refuses nothing, it failed with six <code>xp_msver</code> calls.</p>
+      <p>Twice in two days a warm machine hid a failure: a session with mssql-server already installed, a process with DacFx's cache already full. A cold path found each.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>io/ServerProbe.cs:12-59, :88-97</code> · <code>cli/Program.cs:15-25</code> · <code>tests/Io.Tests/DriftTests.cs:307-354</code></dd></div>
+      <div><dt>Closes</dt><dd>An <code>EXEC</code> from the read-only principal; a test that passes because of what ran before it. Exit M1.8; value S7.</dd></div>
+      <div><dt>v2</dt><dd><code>EvidenceImport</code> ran its <code>SELECT</code>s under whatever login it was given (PAR-012); soft-skipped Docker tests "are indistinguishable from passes at summary level" (<code>archive/v2/CLAUDE.md:153</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>An observer on every command the process sends. SQL Server masks DacFx's catalog call, so the test admits it by form alone. Two review findings stand: the refusal carries <code>dacfx.failed</code>'s remedy, which no change to the project clears, and a DacFx that wrapped it in a <code>DacServicesException</code> would drop the text naming the call.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">the budget · the ledger</p>
+      <h2>Where the weight sits</h2>
+    </div>
+    <figure class="chart">
+      <div class="bars" role="img" aria-label="Lines per package. kernel: 2,365 at c1ce443, 149 from the reflow, 2,043 new, ceiling raised from 6,800 to 9,700. io: 5,203 at c1ce443, 1,018 from the reflow, 2,232 new, ceiling raised from 6,400 to 13,500. cli: 1,289 at c1ce443, 337 from the reflow, 9 new, ceiling raised from 1,700 to 3,400.">
+        <span class="name">kernel</span>
+        <div class="track"><span class="then" style="left:0;width:16.893%"></span><span class="reflow" style="left:16.893%;width:1.064%"></span><span class="grown" style="left:17.957%;width:14.593%"></span><span class="was" style="left:48.571%"></span><span class="ceiling" style="left:69.286%"></span></div>
+        <span class="note">2,365 · +149 reflow · +2,043 new · ceiling 6,800 → 9,700</span>
+        <span class="name">io</span>
+        <div class="track"><span class="then" style="left:0;width:37.164%"></span><span class="reflow" style="left:37.164%;width:7.271%"></span><span class="grown" style="left:44.436%;width:15.943%"></span><span class="was" style="left:45.714%"></span><span class="ceiling" style="left:96.429%"></span></div>
+        <span class="note">5,203 · +1,018 reflow · +2,232 new · ceiling 6,400 → 13,500</span>
+        <span class="name">cli</span>
+        <div class="track"><span class="then" style="left:0;width:9.207%"></span><span class="reflow" style="left:9.207%;width:2.407%"></span><span class="grown" style="left:11.614%;width:0.064%"></span><span class="was" style="left:12.143%"></span><span class="ceiling" style="left:24.286%"></span></div>
+        <span class="note">1,289 · +337 reflow · +9 new · ceiling 1,700 → 3,400</span>
+        <div class="axis" aria-hidden="true"><span style="left:0">0</span><span style="left:25%">3,500</span><span style="left:50%">7,000</span><span style="left:75%">10,500</span><span style="left:100%">14,000 lines</span></div>
+      </div>
+      <ul class="key">
+        <li><span class="swatch then"></span>at c1ce443</li>
+        <li><span class="swatch reflow"></span>the reflow to 140 characters</li>
+        <li><span class="swatch grown"></span>new code</li>
+        <li><span class="swatch was"></span>ceiling before</li>
+        <li><span class="swatch ceiling" style="background:var(--margin)"></span>ceiling now</li>
+      </ul>
+      <figcaption>Under its old ceiling io would be red. cli grew almost wholly by reflow.</figcaption>
+    </figure>
+    <div class="prose">
+      <p>The ceilings rose by one rule, a package's lines on 19 October plus twice what Appendix F still plans, so the per-file ceiling does the constraining now. Appendix F plans 3,630 more lines of io, which fit under 13,500 only if they run at 1.39 times their plan or less. M1 ran at 2.8, and the aggregate queries came to 2.8 times the 690 lines once planned for them and three other parts together. Appendix F now carries their measured 1,946, which keeps the plan true and turns that row into a record. The kernel, at 4,557, already passes the 4,440 the plan gives it for all of v3.</p>
+    </div>
+    <figure class="chart">
+      <div class="tallies" role="img" aria-label="Parity ledger, 127 rows. At c1ce443: 21 held, 22 partly held, 75 not held yet, 3 on the cutover tools, 6 retired. At 77544d6: 24 held, 22 partly held, 72 not held yet, 3 on the cutover tools, 6 retired.">
+        <span class="name">c1ce443</span>
+        <div class="tally"><span class="t-held" style="width:16.535%"></span><span class="t-partly" style="width:17.323%"></span><span class="t-waiting" style="width:59.055%"></span><span class="t-cutover" style="width:2.362%"></span><span class="t-retired" style="width:4.724%"></span></div>
+        <span class="name">77544d6</span>
+        <div class="tally"><span class="t-held" style="width:18.898%"></span><span class="t-partly" style="width:17.323%"></span><span class="t-waiting" style="width:56.693%"></span><span class="t-cutover" style="width:2.362%"></span><span class="t-retired" style="width:4.724%"></span></div>
+      </div>
+      <ul class="tally-key">
+        <li><i class="t-held"></i><b>24</b>held</li>
+        <li><i class="t-partly"></i><b>22</b>partly held</li>
+        <li><i class="t-waiting"></i><b>72</b>not held yet</li>
+        <li><i class="t-cutover"></i><b>3</b>the cutover tools</li>
+        <li><i class="t-retired"></i><b>6</b>retired</li>
+      </ul>
+      <figcaption>The parity ledger's 127 rows, then and now, as <code>ParityResolves</code> classifies them; the counts are today's.</figcaption>
+    </figure>
+    <div class="prose">
+      <p>Three rows moved to held: the coordinates, and the two renames by typing. Of the 94 clauses still waiting, 72 name a work package of M4, and 52 rows wait on M4 alone. Most of what v2 does is a publish observed, and v3 holds it only when M4 publishes.</p>
+      <p>Review is a large share of the work. Three review rounds left 31, 29 and 9 findings; one work package, H3, existed to apply the first set, and the key's fingerprint check came from it. WP 2.3 merged on its third revision, and the <code>xp_msver</code> story began as one line in a list of nits. <code>NEXT.md</code>, dated 19 October, still lists WP 2.3 under Next: the lag the first essay found, which no test reads.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">the next waves</p>
+      <h2>What the next waves add</h2>
+    </div>
+    <div class="prose">
+      <p>Running now:</p>
+      <ul class="waves">
+        <li>WP 2.2, the BlockOnPossibleDataLoss reader in <code>io/SqlServer.Plan</code>, held to the same eleven files: SQLCMD lines dropped, <code>$(var)</code> substituted in memory, the check's predicate run through <code>Measure</code>;</li>
+        <li>WP 3.8, kernel <code>Witness</code>, the planter's plan: one valid row where the environment has rows, one violating row per class a count found, literals with no <code>Random</code>, no clock and no seed;</li>
+        <li>spikes S9 to S11, as verbs of <code>tests/DacFx162/</code>: whether a schema read keeps an untrusted constraint as it is, whether validation follows the post-deploy script on 162.5.57, whether system-named <code>DF__</code> constraints keep their names through a publish.</li>
+      </ul>
+      <p>Then the statement kinds of WP 2.1's second slice, matched by the vocabulary S2 measured on both releases; WP 3.4's remainder, the sweep of stale copies among it, with spike S4, which times a copy's CREATE, RESTORE and DROP and so sets the base cache's design; WP 2.5, where <code>predict</code> meets a developer's terminal and M2's first exit runs; WP 2.6, the corpus, which brings the Facsimile's case catalog of about 19,500 lines into <code>tests/Cases/</code>; and WP 3.5, the copy build, whose trust step must keep an environment's untrusted constraints untrusted, where v2's synthetic copy forced them trusted and turned a block into a wrong clean.</p>
+    </div>
+  </section>
+
+  <section class="prose closing" aria-label="Closing">
+    <p>These two days turned looking into asking. The kernel says what a change asks of the rows already there; io asks SQL Server in forms that cannot answer with a value; the classifier names what it sees and says provisional first. Each answer was made beside the thing it answers to: the <code>ALTER COLUMN</code>, the other DacFx, v2's own reader, a process started cold. Where the code cannot count, it says so. The question the first essay closed on is sharper now: the 3,630 lines still planned for io must land within 1.39 times their plan, where M1 and the aggregate queries each ran at 2.8, or the ceiling moves again.</p>
+  </section>
+
+  <footer>Read from the code at 77544d6; every figure was measured on 20 October 2026. The next essay follows WP 2.2, WP 3.8 and spikes S9 to S11.</footer>
+</main>

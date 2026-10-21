@@ -1,0 +1,12 @@
+The fixture lane's cost, measured from sql-windows (LocalDB 17.0) on ec82637, whose fixture step logs each test's duration
+(scratchpad/ci-logs/windows-ec82637.txt): 374 fixture tests, 3,291 s of test time, the job 32 minutes (its timeout is 60; the
+Ubuntu jobs took about 24 minutes against 45). By class: SyntheticCopyTests 16 tests 1,088 s (65 to 156 s each); SpikeReceiptTests
+13 tests 695 s (the DacFx 162 halves 77 to 93 s each); CopyTests 9 tests 283 s; DriftTests 10 tests 272 s; SampleChangePredictionTests
+59 tests 246 s; ModelElementsTests 8 tests 201 s; CopyCacheTests 4 tests 133 s.
+A package for wave 9: read why each SyntheticCopyTests test costs a minute or more (each appears to build the golden project and
+publish its base in a fresh checkout, where spike S4 measured a restore from the cached base at under a second), and share what can be
+shared: one built package and one cached base per class fixture, each test restoring its copy, without weakening what a test proves
+(two concurrent ups, a killed run, a sweep, the cache's own tests keep their own state). The same for SpikeReceiptTests' DacFx 162
+child processes where one process can serve several tests. Done when the fixture lane on Linux is measured before and after with the
+same counts, every test still fails without the behaviour it pins, and the sql jobs' timeouts in .github/workflows/dbchange.yml come
+back down with a decision line.

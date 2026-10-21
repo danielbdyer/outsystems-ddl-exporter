@@ -1,0 +1,531 @@
+<title>Only Looking</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="The first of the v3 essays: what M0 and M1 built in kernel/, io/, cli/ and tests/, why each part is shaped as it is, and what it costs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column on ledger paper, a red double margin rule down its left edge;
+   each idea closes with a framed ledger entry; the two charts share the page's tokens. */
+:root {
+  --paper: #edf1ea;
+  --well: #e1e8dd;
+  --ink: #1a2420;
+  --ink-soft: #4a5952;
+  --rule: #c5d0c1;
+  --margin: #b23f37;
+  --accent: #1d4c82;
+  --held: #2f6a4c;
+  --partly: #82ab90;
+  --waiting: #c2cbbd;
+  --cutover: #a07f3a;
+  --retired: #7a8893;
+  --built: #2b4457;
+  --planned: #7f97a9;
+  --font-text: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-label: "IBM Plex Sans Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --step--1: 0.875rem;
+  --step-0: 1.1875rem;
+  --step-1: 1.5rem;
+  --step-2: 1.9rem;
+  --step-3: clamp(2.8rem, 9vw, 5rem);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111816;
+    --well: #1b2522;
+    --ink: #dbe4dd;
+    --ink-soft: #9aaaa1;
+    --rule: #2d3b36;
+    --margin: #d9675e;
+    --accent: #93b8ee;
+    --held: #6fb48d;
+    --partly: #3f6e55;
+    --waiting: #3b4944;
+    --cutover: #c9a55a;
+    --retired: #71818c;
+    --built: #a3bdd2;
+    --planned: #587083;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111816;
+  --well: #1b2522;
+  --ink: #dbe4dd;
+  --ink-soft: #9aaaa1;
+  --rule: #2d3b36;
+  --margin: #d9675e;
+  --accent: #93b8ee;
+  --held: #6fb48d;
+  --partly: #3f6e55;
+  --waiting: #3b4944;
+  --cutover: #c9a55a;
+  --retired: #71818c;
+  --built: #a3bdd2;
+  --planned: #587083;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: var(--step-0);
+  line-height: 1.6;
+  font-optical-sizing: auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: clamp(2rem, 6vw, 4.5rem);
+  -webkit-text-size-adjust: 100%;
+}
+.sheet {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 47rem;
+  margin-inline: auto;
+  border-left: 3px double var(--margin);
+  padding-left: clamp(14px, 4vw, 44px);
+  display: grid;
+  gap: 3.25rem;
+}
+.prose { max-width: 38rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.05rem; min-width: 0; }
+.prose p { margin: 0; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+header { display: grid; gap: 1.1rem; }
+.eyebrow {
+  font-family: var(--font-label);
+  font-weight: 500;
+  font-size: var(--step--1);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+h1 {
+  font-family: var(--font-text);
+  font-style: italic;
+  font-weight: 400;
+  font-size: var(--step-3);
+  line-height: 1;
+  letter-spacing: -0.015em;
+  margin: 0;
+  text-wrap: balance;
+}
+.dek { font-size: var(--step-1); line-height: 1.35; color: var(--ink-soft); margin: 0; max-width: 34rem; text-wrap: balance; }
+.at {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.figures li {
+  flex: 1 1 8rem;
+  padding: 0.7rem 0.9rem 0.75rem 0;
+  display: grid;
+  gap: 0.1rem;
+}
+.figures b {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.figures span { font-family: var(--font-label); font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+
+section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.2rem; min-width: 0; }
+h2 {
+  font-family: var(--font-text);
+  font-weight: 600;
+  font-size: var(--step-2);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+.lede-head { display: grid; gap: 0.35rem; }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--well);
+  padding: 0.05em 0.3em;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+pre {
+  margin: 0;
+  min-width: 0;
+  background: var(--well);
+  border-left: 2px solid var(--accent);
+  padding: 0.8rem 1rem;
+  overflow-x: auto;
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  tab-size: 4;
+}
+pre code { background: none; padding: 0; font-size: 1em; overflow-wrap: normal; white-space: pre; }
+
+.entry {
+  margin: 0;
+  border: 1px solid var(--rule);
+  background: var(--well);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.entry > div {
+  display: grid;
+  grid-template-columns: 6.6rem minmax(0, 1fr);
+  gap: 0.9rem;
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid var(--rule);
+}
+.entry > div:first-child { border-top: 0; }
+.entry dt {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding-top: 0.2rem;
+}
+.entry dd { margin: 0; font-size: 1rem; line-height: 1.5; min-width: 0; }
+.entry dd code { background: transparent; padding: 0; font-size: 0.8em; }
+.entry dt.cost { color: var(--margin); }
+
+/* charts */
+.chart { display: grid; gap: 0.9rem; margin: 0; min-width: 0; }
+.chart figcaption { font-size: 1rem; color: var(--ink-soft); line-height: 1.45; }
+.bars { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); column-gap: 0.8rem; row-gap: 0.35rem; align-items: center; }
+.bars .name { font-family: var(--font-mono); font-size: 0.85rem; }
+.track { position: relative; height: 1.25rem; background: transparent; border-bottom: 1px solid var(--rule); }
+.built, .planned { position: absolute; top: 0.15rem; bottom: 0.15rem; }
+.built { background: var(--built); }
+.planned {
+  background: repeating-linear-gradient(135deg, var(--planned) 0 3px, transparent 3px 7px);
+  border: 1px solid var(--planned);
+}
+.ceiling { position: absolute; top: -0.3rem; bottom: -0.3rem; width: 2px; background: var(--margin); transform: translateX(-1px); }
+.note {
+  grid-column: 2;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.55rem;
+}
+.axis { grid-column: 2; position: relative; height: 1.1rem; font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.axis span:first-child { transform: none; }
+.axis span:last-child { transform: translateX(-100%); }
+.key { display: flex; flex-wrap: wrap; gap: 0.5rem 1.2rem; margin: 0; padding: 0; list-style: none; font-family: var(--font-label); font-size: 0.85rem; color: var(--ink-soft); }
+.key li { display: inline-flex; align-items: center; gap: 0.45rem; }
+.swatch { display: inline-block; width: 1.1rem; height: 0.7rem; }
+.swatch.built { position: static; background: var(--built); }
+.swatch.planned { position: static; }
+.swatch.ceiling { position: static; width: 2px; height: 1rem; transform: none; }
+
+.tally { display: flex; height: 1.6rem; width: 100%; border: 1px solid var(--rule); }
+.tally span { display: block; height: 100%; }
+.t-held { background: var(--held); }
+.t-partly { background: var(--partly); }
+.t-waiting { background: var(--waiting); }
+.t-cutover { background: var(--cutover); }
+.t-retired { background: repeating-linear-gradient(90deg, var(--retired) 0 2px, transparent 2px 4px); }
+.tally-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 0.45rem 1rem; margin: 0; padding: 0; list-style: none; }
+.tally-key li { display: grid; grid-template-columns: 0.9rem auto 1fr; align-items: baseline; gap: 0.45rem; font-family: var(--font-label); font-size: 0.88rem; color: var(--ink-soft); }
+.tally-key i { display: block; width: 0.9rem; height: 0.7rem; align-self: center; }
+.tally-key b { font-family: var(--font-mono); font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+ul.waves { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.55rem; }
+ul.waves li::marker { color: var(--margin); }
+
+.closing p { font-style: italic; }
+footer { font-family: var(--font-label); font-size: 0.82rem; letter-spacing: 0.04em; color: var(--ink-soft); border-top: 1px solid var(--rule); padding-top: 0.9rem; }
+
+@media (max-width: 560px) {
+  body { font-size: 1.0625rem; }
+  .entry > div { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+  .bars { grid-template-columns: 3.1rem minmax(0, 1fr); column-gap: 0.55rem; }
+  .bars .name { font-size: 0.8rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<main class="sheet">
+  <header>
+    <p class="eyebrow">dbchange v3 · essay one · M0 and M1</p>
+    <h1>Only Looking</h1>
+    <p class="dek">What the first two milestones built, why each part has the shape it has, and what the shape costs.</p>
+    <p class="at">read at c1ce443 on claude/v3-architecture-design-sl95mx · 19 October 2026</p>
+    <ul class="figures" aria-label="Lines of C# at c1ce443">
+      <li><b>2,365</b><span>kernel/</span></li>
+      <li><b>5,203</b><span>io/</span></li>
+      <li><b>1,289</b><span>cli/</span></li>
+      <li><b>15,102</b><span>tests/</span></li>
+    </ul>
+  </header>
+
+  <section class="prose" aria-label="Opening">
+    <p>In its first two milestones, v3 learned to look at an environment's database without being able to touch it. M0 and M1 are 8,857 lines of C# and 15,102 lines of tests that answer two questions, read-only, as the caller's own identity. Does an environment match the repository at a tag? What does a branch change, property by property, the deploy scripts and the refactorlog included? Tests hold M1's exits 2 to 8. Exit 1, the laptop check against Dev, waits on a person.</p>
+    <p>Everything after stands on these two. v2 knew how much rests on reading well, and wrote laws, analyzers, ledgers and a register of banned words. Still its proving script published to whatever server a config file named, its profiler streamed row values, and its law tests carried 38 skipped stubs beside 82 facts. Its disciplines were real, and most of them were kept by hand.</p>
+    <p>M0 and M1 move those disciplines into the material. Each idea below closes with an entry in the parity ledger's manner: where it lives, what it closes, which v2 lesson it answers, and what it costs.</p>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">io · tests</p>
+      <h2>A hand that cannot close</h2>
+    </div>
+    <div class="prose">
+      <p>Capabilities are types, the plan says (<code>V3_MILESTONES.md</code> §2.1). In <code>io/SqlServer.cs</code> the rule is two sealed classes over one base. <code>EnvironmentDatabase</code>, a database <code>dbchange/environments.json</code> names, has a private constructor and no <code>Publish</code>. <code>Copy</code>, a database <code>LocalServer</code> made and registered, has an internal constructor and alone carries <code>Publish</code> and <code>Permissive</code>. The Permissive profile's constructor is private and its <code>Of</code> internal, with <code>Copy.Permissive</code> the one caller. Strict is the pipeline's own profile as DacFx loads it, its target stripped and any password refused, and the type itself sets the flag that matters:</p>
+    </div>
+    <pre><code>var options = DacProfile.Load(new MemoryStream(_profile, writable: false)).DeployOptions;
+options.BlockOnPossibleDataLoss = this is Strict;</code></pre>
+    <div class="prose">
+      <p>The code then proves its own shape. <code>CapabilityTests</code> builds a small project against the io assembly with seven forbidden uses, one to a line, and asserts the compiler's exact refusal on each:</p>
+    </div>
+    <pre><code>("_ = named.Publish(dacpac, strict);", "CS1061"),
+("_ = PublishProfile.Permissive.Of(strict);", "CS0117"),
+("_ = DacFx.Publish(named, null!, strict);", "CS1503"),</code></pre>
+    <div class="prose">
+      <p>Without those lines the same file must build, so the legal path is proven too. Two more tests scan the IL of every method io compiles for the tokens of <code>Copy</code>'s constructor and of <code>Permissive.Of</code>, after a <code>call</code>, <code>newobj</code> or <code>ldftn</code>, and fail on any caller outside <code>LocalServer</code> and <code>Copy</code>. A type cannot see where a connection string points, so R15 stands beside it: <code>LocalServer</code> refuses a copy on any host an environment names, by spelling and by DNS, and fails closed when it cannot tell.</p>
+      <p>The simpler design is a guard that throws for a named target. A guard protects the paths someone remembered. A method that does not exist cannot be called from any path.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>io/SqlServer.cs:156-201</code> · <code>io/PublishProfiles.cs:49-90, :137-142, :162-170</code> · <code>io/LocalServer.cs:254-270</code> · <code>tests/Io.Tests/CapabilityTests.cs:32-41, :157-164</code></dd></div>
+      <div><dt>Closes</dt><dd>A publish or a Permissive profile reaching a named environment; a copy made on an environment's server. Exit M1.5; values S1 and S7.</dd></div>
+      <div><dt>v2</dt><dd><code>prove.mjs</code> took its target from <code>prove.config.json</code> as two strings (<code>archive/v2/ssdt-agent/scripts/prove.mjs:133</code>; PAR-010). Its hand-kept Strict profile had drifted to <code>DropObjectsNotInSource</code> True against the pipeline's False, beside a literal <code>sa</code> password (<code>archive/v2/ssdt-agent/proving-ground/profiles/ProvingGround.Strict.publish.xml:29, :33</code>; <code>ProvingGround.Pipeline.publish.xml:43</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>A build test that compiles a planted project on every run, and IL opcodes matched by hand.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">io</p>
+      <h2>Questions that answer in integers</h2>
+    </div>
+    <div class="prose">
+      <p>A named environment's rows may be real, so v3 asks them only questions whose answers are integers. <code>SqlServer.Measure</code> runs one <code>AggregateQuery</code> at a time, and only io can make one; the planted project above calls <code>Of</code> from outside and gets CS0117. <code>Of</code> checks a ScriptDom tree and keeps the text ScriptDom writes back from it. What runs is what was checked, with no comment or second batch to hide in.</p>
+      <p>The outermost select list may hold <code>COUNT</code>, <code>COUNT_BIG</code>, <code>SUM(CASE WHEN … THEN 1 ELSE 0 END)</code>, <code>MIN</code> or <code>MAX</code> of a length, <code>CASE WHEN EXISTS</code>, or an integer literal. Beneath it sits the rule I admire most. A boundary is a length or a literal, never a value read from the data, and <code>=</code> or <code>&lt;&gt;</code> between two columns is the one exception, kept for joins and orphan checks. The comment beside it, <code>ABS(x - y) + x - y = 0 is x &lt;= y</code>, reads like the notes of someone who tried to break it. One refusal gives its reason in its own text:</p>
+    </div>
+    <pre><code>ConvertCall or CastCall => new Offence(x, "CONVERT or CAST, which quotes the value it fails on; TRY_CONVERT and TRY_CAST do not"),</code></pre>
+    <div class="prose">
+      <p>A failed <code>CAST</code> writes the offending value into Msg 245. A synonym is refused, since it can stand for a table on a linked server that the query's text cannot show.</p>
+      <p>The simpler design is a deny-list over text. Comments and quoting fool it, and it says nothing about what a legal <code>SELECT</code> returns, which is where values leak.</p>
+      <p>Here the admiration meets its edge. The allowlist bounds one query. It admits literal boundaries, so a run of queries with moving literals over one keyed row could still narrow a value. What bounds the run is who may build queries, and today no one does: the builders arrive with WP 2.3. The closure is half built, and the built half is the hard one.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>io/SqlServer.cs:230-247, :335-356, :752-758, :769-996</code> · <code>io/TSql.cs:19-26</code></dd></div>
+      <div><dt>Closes</dt><dd>A row value, an error quoting one, or another database's table reaching an answer from a named environment, whose SQL Server messages are withheld at the one error boundary (<code>io/SqlServer.cs:116</code>). Value P2.</dd></div>
+      <div><dt>v2</dt><dd><code>LiveProfiler</code> streamed <code>SELECT *</code> into per-row values (<code>archive/v2/src/Projection.Adapters.Sql/LiveProfiler.fs:90, :347</code>; PAR-011); <code>EvidenceImport</code> ran its SELECTs under whatever login it was given (PAR-012).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>228 lines of tree walk for one sentence of policy, and every precondition M2 writes must fit its forms.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">io · kernel</p>
+      <h2>Read whole, keyed once</h2>
+    </div>
+    <div class="prose">
+      <p>DacFx already knows what a schema is: every object a type with named properties and relationships, a package and a live database read into one model. The element reader takes DacFx at its word. <code>ModelObjects</code> visits every user-defined object, descends through each composing relationship, and reads every property the type declares that the platform carries, secrets excepted, with each relationship's targets and their own properties, written <code>Relationship[position].Property</code>. Values land in the kernel's closed <code>Value</code>. There is no reading code per type. What the reader knows of particular types fits on a screen: eleven serialized names in <code>io/ModelTypes.cs</code> that break DacFx's naming pattern, found by measuring 45 object kinds, the four constraint types that can sit on one column, and the secrets it will not read.</p>
+      <p>The care is in the keys. An unnamed default, check, unique or foreign key on one column is keyed under that column, so it travels with the column's rename. Unnamed siblings are numbered by what they reference and then by their values, never by SQL Server's generated <code>DF__</code> names, so a package and the database it was published to key alike.</p>
+      <p>v2 grew a reader per question. It read a schema four ways through three lifts (<code>V3_MILESTONES.md:178</code>), drained rows in fifteen hand-written loops (<code>V3_ARCHITECTURE.md:946</code>), and its Twin's <code>AddObjects</code> build never saw a refactorlog rename or a deploy script (§1 fact 8). A list of the properties we care about is a list of drift nobody will see. A column carries 29 properties and 4 relationships (§1 fact 6). One read covers them, and a change no pattern knows will surface as unclassified and go to proof.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>io/Ssdt.cs:583-589, :634-703, :717-739</code> · <code>io/ModelTypes.cs:83-96</code> · <code>kernel/Element.cs:16-67</code></dd></div>
+      <div><dt>Closes</dt><dd>A property DacFx knows that the fingerprint, the diff or the drift check cannot see; two objects merged under one key (<code>model.duplicate-key</code>). Law 3′.</dd></div>
+      <div><dt>v2</dt><dd>Four readers through three lifts; the Twin's build, which lost the refactorlog and both deploy scripts (PAR-001; <code>archive/v2/ssdt-agent/scripts/prove.mjs:216</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>The keying rule's doc comment is the densest paragraph in the code (<code>io/Ssdt.cs:599-619</code>), and it names its own edge: renaming a column that a constraint on several columns references can renumber that constraint and its siblings.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">kernel</p>
+      <h2>A kernel with no clock</h2>
+    </div>
+    <div class="prose">
+      <p>The kernel is pure by the absence of a capability. <code>kernel/BannedSymbols.txt</code> bans nineteen symbols, each with its reason:</p>
+    </div>
+    <pre><code>P:System.DateTime.UtcNow;the kernel has no clock: the caller passes the time
+T:System.Threading.Tasks.Task;the kernel is synchronous: effects and their scheduling live in io/</code></pre>
+    <div class="prose">
+      <p><code>BannedSymbolsTests</code> plants one use of each in a copy of the kernel project and asserts RS0030 on every line. The kernel's one pragma disables CS8524 for a switch over a closed enum (<code>kernel/Error.cs:105</code>), so that CS8509, a member with no arm, stays an error.</p>
+      <p>Purity lets two files be exact. <code>Fingerprint.Of</code> leads every list with its count, every string with its length in UTF-16 code units, every value with a tag and every key with whether it has a parent, then hashes with SHA-256. A test names nine pairs a looser encoding would confuse:</p>
+    </div>
+    <pre><code>[InlineData("tags: false and zero", 3)]
+[InlineData("counts: a null property and an absent one", 4)]
+[InlineData("counts: one relationship of two targets and two of one", 5)]</code></pre>
+    <div class="prose">
+      <p><code>Change.Between</code> runs in three phases, each a rule of SSDT's: where each key goes after the refactorlog's renames, parent first; which before key each after key continues; then created, dropped, renamed and altered, with a rename in letter case alone recorded and left uncounted.</p>
+      <p>The simpler design is a convention held by review. v2's core was pure as "Enforced by <code>NoUnsafeTimeInCoreAnalyzer</code> + audit," with one named exception (<code>archive/v2/CLAUDE.md:187-188</code>), and its lint markers drifted toward what its own guidance called performance-of-compliance (<code>archive/v1/AGENTS.md:99</code>). A rule with an allow-marker accumulates markers. A banned symbol has nothing to accumulate.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>kernel/BannedSymbols.txt:1-19</code> · <code>tests/Budgets.Tests/BannedSymbolsTests.cs</code> · <code>kernel/Fingerprint.cs:43-77</code> · <code>tests/Kernel.Tests/ElementTests.cs:55-87</code> · <code>kernel/Change.cs:60-211</code></dd></div>
+      <div><dt>Closes</dt><dd>A kernel function that reads the clock, the machine, the culture or the network, or awaits; two models with one fingerprint by any of the nine confusions. Law 3′.</dd></div>
+      <div><dt>v2</dt><dd><code>bake.mjs</code>'s 12-character fingerprint and its one length-prefix check (<code>archive/v2/ssdt-agent/scripts/bake.mjs:229-232</code>; PAR-008); A38's four partitions (<code>archive/v2/AXIOMS.md:1367</code>; PAR-003).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>The kernel cannot time, log or cancel itself, so io and the cli do. <code>Change</code>'s images and claims ask for a slow read, and the element sets CsCheck generates are what make them trustworthy.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">kernel · cli</p>
+      <h2>Refusal as data</h2>
+    </div>
+    <div class="prose">
+      <p>An <code>Error</code> cannot be made without a remedy. Its constructor throws on a blank message or remedy and on a code whose first word names no member of the closed <code>ErrorCategory</code>. <code>Contract.ExitByCategory</code> maps each member to an exit with no discard arm, so a category without an exit fails the build. The exit table can only grow:</p>
+    </div>
+    <pre><code># The frozen exit table: a code is added here in the change that adds it to cli/Contract.cs; no line is ever removed, renamed or renumbered.</code></pre>
+    <div class="prose">
+      <p>Every envelope refuses an exit its outcome does not list, and a <code>blockedBy</code> anywhere but exit 3. <code>Register.Errors</code> drives every error code the packages construct and fails a remedy that is not one imperative sentence led by a verb. The texture shows in a denied login, whose one sentence <code>DriftTests</code> asserts:</p>
+    </div>
+    <pre><code>env:uat refused this identity (Msg 18456, SQL Server's message withheld); a lead's prediction will appear on the pull request.</code></pre>
+    <div class="prose">
+      <p>The denial becomes a route: someone who can read UAT will. The number is kept and the message withheld, since SQL Server's text about a connection can name the server or the login. An exception nobody expected becomes <code>internal.unexpected</code>, its message dropped once the command has read a named environment's connection.</p>
+      <p>The simpler design is exceptions and a top-level catch, and its default is a silent downgrade.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>kernel/Error.cs:16-85</code> · <code>cli/Contract.cs:61-78, :178-213, :243-249</code> · <code>cli/exits.frozen</code> · <code>io/SqlServer.cs:102-119</code> · <code>tests/Io.Tests/DriftTests.cs:264</code></dd></div>
+      <div><dt>Closes</dt><dd>An error with no remedy, a category with no exit, an answer whose exit contradicts its outcome, an exit renumbered. Value S2.</dd></div>
+      <div><dt>v2</dt><dd>"Refusals named, downgrades never silent" was standing law, kept by review (<code>archive/v2/CLAUDE.md:209</code>). Here it is a constructor.</dd></div>
+      <div><dt class="cost">Cost</dt><dd>Exit 6 holds a missing SDK, a literal credential, a DacFx failure and a defect in dbchange alike. A script that branches on exits alone sees less than one that reads the code.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">tests · io</p>
+      <h2>A login watched from the server</h2>
+    </div>
+    <div class="prose">
+      <p>v3 says its read-only principal sends no DML, no DDL and no <code>EXEC</code>, and it does not take its own word for it. <code>ReadOnlyLoginTrace</code> opens an Extended Events session on the reader's login with <code>NO_EVENT_LOSS</code>. The test runs <code>check drift</code> on a matching environment, drifts a column and runs it again, runs <code>read --from env:dev</code>, then parses everything the login sent with ScriptDom, reading <code>sp_executesql</code> through to its statement. Where the Windows runner's LocalDB cuts DacFx's catalog query off past 500,000 characters, the trace counts write keywords token by token.</p>
+      <p>The session watches the wire, DacFx's traffic included, and DacFx's catalog queries are not v3's to allowlist. The ruling of 2026-09-25 admitted one <code>EXEC</code>, DacFx's <code>xp_instance_regread</code> of the default file paths (<code>DECISIONS.md:54</code>). The code then removed the need for it. Since 6da60be a read extracts the database once and plans package to package, which connects to nothing, so the test admits no <code>EXEC</code> at all.</p>
+      <p>Package to package has a price, paid in plain sight. DacFx refuses a case-insensitive model against a case-sensitive database on a live plan (SQL72030) and plans it empty between packages, so v3 makes that check itself, as <code>plan.collation</code>. And a plan over two packages takes no cancellation token, so once begun it runs to its end.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>tests/Io.Tests/ReadOnlyLoginTrace.cs:31-129</code> · <code>tests/Io.Tests/DriftTests.cs:268-311</code> · <code>io/DacFx.cs:94-158</code></dd></div>
+      <div><dt>Closes</dt><dd>A write, DDL or <code>EXEC</code> the reader sends, by v3 or by DacFx on its behalf, going unseen. Exit M1.8; value S7.</dd></div>
+      <div><dt>v2</dt><dd><code>EvidenceImport</code>'s SELECTs ran under whatever login it was given (<code>archive/v2/src/Twin.Runtime/EvidenceImport.fs</code>; PAR-012).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>A fixture test that needs a live server and an admin; one of DacFx's checks re-made by hand, which must follow DacFx if DacFx changes it.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">tests · ci</p>
+      <h2>Documents that fail</h2>
+    </div>
+    <div class="prose">
+      <p>v2's documents knew they drifted. Its rebuilt <code>CLAUDE.md</code> made any restated count a defect because "the predecessor's table drifted against the code within weeks" (<code>archive/v2/CLAUDE.md:264</code>), and v3's architecture called v2 "a system that knows its documents are wrong and has responded by writing more documents about being wrong" (<code>V3_ARCHITECTURE.md:607</code>). M0 gives the documents tests.</p>
+      <p><code>LAWS.md</code> is generated. <code>ci/laws.sh</code> writes a row for every Law, Value and Exit trait, then prints what nothing declares, 49 rows of <code>VALUES.md</code> and the exits a person or a CI job still runs (<code>LAWS.md:172, :221</code>). <code>Laws</code> fails unless the file regenerates byte for byte. <code>NoSkips</code> fails on any skip; v2's <code>AxiomTests.fs</code> carries 38, and v2's own survival list warns that soft-skipped Docker tests "are indistinguishable from passes at summary level" (<code>archive/v2/CLAUDE.md:153</code>). <code>NoRestatedCounts</code> reads each hand-written document for a number beside a counted thing; v2's proof lane still announces "the 41 SamplePr facts" and runs 47 (<code>.github/workflows/ssdt-agent-proof-lane.yml:3</code>).</p>
+      <p><code>ParityResolves</code> holds the ledger between the versions. Each of <code>V3_PARITY.md</code>'s 127 rows must name a v2 file that exists, down to its line, and each clause of its v3 cell must name a test, law, value or exit some test declares, or wait on a work package whose milestone is still open:</p>
+    </div>
+    <pre><code>private static readonly Regex NotHeldYet = new(@"— not held yet: (?:WP (\d)\.(\d+)|the cutover tools)$", RegexOptions.CultureInvariant);</code></pre>
+    <div class="prose">
+      <p>Completion is computed from the exit traits and from the lines of <code>NEXT.md</code> that name a person's command (<code>tests/Budgets.Tests/Documents.cs:111-115</code>). When a milestone closes, every row still waiting on it turns red, and so does a row that still says not held yet beside a test that now exists. Promises in this ledger expire.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>ci/laws.sh:18-80</code> · <code>tests/Budgets.Tests/</code> <code>Laws.cs</code>, <code>NoSkips.cs:18-24</code>, <code>NoRestatedCounts.cs:19-37</code>, <code>Budgets.cs:22-44</code>, <code>ParityResolves.cs:28, :96-168</code></dd></div>
+      <div><dt>Closes</dt><dd>A law with no test, a skip, a restated count, a ceiling passed, a parity row whose proof has moved or whose promise is overdue. Values L2, L3 and L6.</dd></div>
+      <div><dt>v2</dt><dd>M16, the live citation gate for axioms (<code>archive/v2/AXIOMS.md:434</code>; PAR-047), widened here to every law, value, exit and ledger row.</dd></div>
+      <div><dt class="cost">Cost</dt><dd>Documents are written to be parsed as well as read, and tests stand at 15,102 lines under a ceiling raised from 10,500 to 20,000 when M1 closed. A list of next steps can also become a list of finished ones without a sound: <code>NEXT.md:22-25</code> still names <code>AggregateQuery.Of</code> made internal, one database read and the trace extended to a drifted check, which landed on 2026-09-25 in 98ff3c4 and 6da60be. No test reads a plan against the log.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">the budget</p>
+      <h2>Where the weight sits</h2>
+    </div>
+    <div class="prose">
+      <p><code>io/</code> holds 5,203 of its 6,400 lines. Appendix F planned 1,850 for io across M0 and M1, so io ran at 2.8 times its plan through M1. What the plan still gives io, from the <code>BlockOnPossibleDataLoss</code> reader in M2 to <code>Knowledge</code> in M7, comes to 3,630 lines, and 1,197 remain. The cli stands in the same place at a smaller scale. The kernel has room.</p>
+    </div>
+    <figure class="chart">
+      <div class="bars" role="img" aria-label="Lines built and still planned against each package's ceiling. kernel: 2,365 built, 3,210 planned, ceiling 6,800. io: 5,203 built, 3,630 planned, ceiling 6,400. cli: 1,289 built, 880 planned, ceiling 1,700.">
+        <span class="name">kernel</span>
+        <div class="track"><span class="built" style="left:0;width:26.28%"></span><span class="planned" style="left:26.28%;width:35.67%"></span><span class="ceiling" style="left:75.56%"></span></div>
+        <span class="note">2,365 built · 3,210 planned · ceiling 6,800</span>
+        <span class="name">io</span>
+        <div class="track"><span class="built" style="left:0;width:57.81%"></span><span class="planned" style="left:57.81%;width:40.33%"></span><span class="ceiling" style="left:71.11%"></span></div>
+        <span class="note">5,203 built · 3,630 planned · ceiling 6,400</span>
+        <span class="name">cli</span>
+        <div class="track"><span class="built" style="left:0;width:14.32%"></span><span class="planned" style="left:14.32%;width:9.78%"></span><span class="ceiling" style="left:18.89%"></span></div>
+        <span class="note">1,289 built · 880 planned · ceiling 1,700</span>
+        <div class="axis" aria-hidden="true"><span style="left:0">0</span><span style="left:33.333%">3,000</span><span style="left:66.667%">6,000</span><span style="left:100%">9,000 lines</span></div>
+      </div>
+      <ul class="key">
+        <li><span class="swatch built"></span>built, at c1ce443</li>
+        <li><span class="swatch planned"></span>still planned, Appendix F</li>
+        <li><span class="swatch ceiling" style="background:var(--margin)"></span>ceiling, <code>ci/budgets.json</code></li>
+      </ul>
+      <figcaption>The hatched lengths are the plan's own figures, and M1 ran at 2.8 times its plan in io.</figcaption>
+    </figure>
+    <div class="prose">
+      <p>Some of the weight is width. The budgets count physical lines; 717 of io's lines run past 140 characters, the longest to 302, and 1,128 are doc comments, which is where the measurements live. <code>DECISIONS.md:55</code> kept io's and the cli's ceilings until a reflow to 140 characters is measured, and a reflow adds lines. Either a ceiling rises with a decision line, or the rest of io is far thinner per feature than M1's was.</p>
+      <p>There is a reading in which it will be. M1's io met each edge once: SqlClient's error numbers sorted into denied, unreachable, timed out and failed (<code>io/SqlServer.cs:35-38, :138-142</code>); a <code>file:</code> reference refused when git tracks it, when its group can read it, when it names a Windows data stream (<code>io/SqlServer.cs:502-651</code>). M2 to M7 should mostly call <code>Query</code>, <code>Measure</code>, <code>Extract</code>, <code>Plan</code> and <code>Publish</code>, which exist. Whether they do is the first thing M2 measures, and the budget test will say so in red if they do not.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">the ledger</p>
+      <h2>What the next waves add</h2>
+    </div>
+    <div class="prose">
+      <p>The parity ledger, as <code>ParityResolves</code> prints it at c1ce443:</p>
+    </div>
+    <figure class="chart">
+      <div class="tally" role="img" aria-label="127 parity rows: 21 held, 22 partly held, 75 not held yet, 3 waiting on the cutover tools, 6 retired.">
+        <span class="t-held" style="width:16.54%"></span><span class="t-partly" style="width:17.32%"></span><span class="t-waiting" style="width:59.06%"></span><span class="t-cutover" style="width:2.36%"></span><span class="t-retired" style="width:4.72%"></span>
+      </div>
+      <ul class="tally-key">
+        <li><i class="t-held"></i><b>21</b>held</li>
+        <li><i class="t-partly"></i><b>22</b>partly held</li>
+        <li><i class="t-waiting"></i><b>75</b>not held yet</li>
+        <li><i class="t-cutover"></i><b>3</b>the cutover tools</li>
+        <li><i class="t-retired"></i><b>6</b>retired</li>
+      </ul>
+      <figcaption>127 rows: what v2 does, where v2 proves it, and where v3 holds it or will.</figcaption>
+    </figure>
+    <div class="prose">
+      <p><code>V3_PARITY.md</code> §5 orders the work that needs no person:</p>
+      <ul class="waves">
+        <li>the code the rulings of 2026-09-25 ask for before M2, much of it already in place;</li>
+        <li>spikes S2, S4 and S9 to S11 in CI, each a question the plan or the Facsimile left open, from the check forms on both DacFx releases to system-named constraints through a publish;</li>
+        <li>WP 3.1, kernel <code>Schema</code> and <code>Order</code>, held by the strongest kind of proof the ledger knows, a differential against the catalog v2's read side writes for the same copy;</li>
+        <li>WP 3.4, <code>LocalServer</code> completed, LocalDB's 180-second waits included;</li>
+        <li>the first step of WP 3.5, the base built, published under the pipeline's profile, and backed up;</li>
+        <li>WP 7.1, the citations rewritten.</li>
+      </ul>
+      <p>M2 waits on the operator's go, and M3's shape on the answer to §17 item 20 of <code>V3_MILESTONES.md</code>. M2 is where the allowlist meets its builders and its closure gets the other half. WP 3.1 is where v3 first meets v2's own output.</p>
+    </div>
+  </section>
+
+  <section class="prose closing" aria-label="Closing">
+    <p>What M0 and M1 leave is a tool that can only look, and that knows, in tests, what it may say about what it sees. The care lives where few readers go: a constructor marked internal, a regular expression over a ledger cell, a remedy that has to begin with a verb. v2 wrote its disciplines down and kept them by hand. v3 writes them into the material, where being wrong makes a sound. The next waves ask whether the material can stay this careful at a third of the thickness.</p>
+  </section>
+
+  <footer>Read from the code at c1ce443; every figure was measured on 19 October 2026. The next essay follows M2.</footer>
+</main>

@@ -1,0 +1,166 @@
+{
+ "area": "The pre-M2 code (NEXT.md \"Next, before M2\", the rulings of 2026-09-25) and the pre-M2 pass (NEXT.md \"In flight\")",
+ "summary": "All five items NEXT.md:23-25 lists are already in the code. The pass built them before #704 merged into this branch (93586e7), so that bullet is stale, and so is V3_PARITY.md \u00a75 item 1, which points at it. Evidence: Provenance.Drift (kernel/Provenance.cs:61, commit b070e5e); AggregateQuery.Of internal, with a synonym check before every Measure (io/SqlServer.cs:241-244 and :349-356, commit 98ff3c4); a host required for each environment and compared by R15 for every environment (io/Environments.cs:86-89, io/LocalServer.cs:254-273); check drift built once per commit, the database read once by Extract, the plan run package to package (io/Ssdt.cs:249-251, io/DriftCheck.cs:54-78, commit 6da60be); and the Extended Events test running a matching check drift, a drifted one and read --from env:dev (tests/Io.Tests/DriftTests.cs:282). The pre-M2 pass is finished: five adapter merges (d1e2d95, abd6afc, 627759e, 377240b, 5a5aa6b), then the names commits once the operator had answered round two (review page database, 2026-09-26 01:31-01:51 UTC), then the tests refactor (06fd171..b35bc24), then the other model's review applied (7aa30ca..81beef2: S1-S30, N3-N16 and M1-M3 'of the pre-M2 review'). Three things remain. One is code: round-two finding DF-5, which the operator marked fix, has no commit (no system dacpacs in the tool folder). One is a small test gap: no test drives the absent \"host\" key. The rest is documents: NEXT.md, V3_PARITY.md \u00a70 and \u00a75 and rows PAR-002 and PAR-012, and V3_MILESTONES.md \u00a77 still describe the pass as pending. The laptop check still names a tool folder built at e0a4db94, before the pass. The two later lines dated 2026-09-25 say \"from M2\", so they belong to M2, but no M2 work package row carries them yet.",
+ "items": [
+  {
+   "name": "The provenance record's per-claim constructors (DECISIONS.md:57)",
+   "status": "done",
+   "evidence": "kernel/Provenance.cs:19-20 private constructor; :33-37 Change (the change claimed) and Schema (the target's schema), the ruling's Delta and Target under the names of rulings N4 and N12; :61-62 Provenance.Drift(targetSchema, deployReport, dacFx, server, publishProfile, target, at) puts the deploy report's fingerprint in Change; the summary at :14-15 defers a prediction's constructor to WP 2.1 and a proof's to WP 4.1. Sole caller: io/DriftCheck.cs:76. Commits b070e5e and f72025b. Tests: tests/Kernel.Tests/ProvenanceTests.cs:21 A_drift_claim_holds_the_deploy_report_as_its_change_and_the_target_s_elements_as_its_schema (fast); tests/Io.Tests/DriftTests.cs:187 A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report (fixture; Value R1, Exit M1.6).",
+   "remaining": "",
+   "files": [],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": "",
+   "testsFirst": []
+  },
+  {
+   "name": "AggregateQuery.Of internal to io, synonyms refused (DECISIONS.md:58, written there as Probe.Of before ruling N21 renamed it)",
+   "status": "done",
+   "evidence": "io/SqlServer.cs:230-249: the constructor is private, and both Of overloads (:241 text, :244 ScriptDom tree) are internal; Tables at :239 comes from TSql.TablesNamed. Measure (:337-341) runs NoSynonym (:349-356) first: one parameterized OBJECT_ID(name, N'SN') statement logged as 'Synonyms: <site>', and a synonym is aggregate-query.refused. Commit 98ff3c4. Tests: tests/Io.Tests/CapabilityTests.cs:39 plants SqlServer.AggregateQuery.Of in a project outside io and expects CS0117 (No_verb_writes_to_a_named_environment, build); tests/Io.Tests/StatementTests.cs:104 An_aggregate_query_that_reads_a_synonym_is_refused_before_it_runs (fixture); tests/Io.Tests/AggregateQueryTests.cs:30-45 (the synonym checks' log entries, fixture); driver tests/Budgets.Tests/Register/ErrorPaths.cs:358.",
+   "remaining": "",
+   "files": [],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": "",
+   "testsFirst": []
+  },
+  {
+   "name": "A server host per environment, so R15 compares every environment (DECISIONS.md:64)",
+   "status": "partial",
+   "evidence": "kernel/Environments.cs:83-91: NamedEnvironment.Host. io/Environments.cs:21 accepts the key 'host'; :78 binds HostOf; :86-89 refuses an absent key as environments.host. io/LocalServer.cs:254-273: R15 compares the local server with every environment's host, first by spelling and then by DNS address. Where a reference resolves, its server must be on the host the file names (:261-264, environments.host). CopyName's grammar is dbchange_<machine>_<pid>_<8 hex> (kernel/Target.cs:100, :126-131). Tests: tests/Io.Tests/TargetTests.cs:102, :119 A_local_server_on_the_host_of_an_environment_whose_reference_resolves_to_nothing_here_is_refused, :157, :187 and :203; tests/Kernel.Tests/TargetTests.cs:86, :98 and :114; driver ErrorPaths.cs:222, but only for Host.Of given a host with a port. No test drives the absent-key branch at io/Environments.cs:88: every fixture writes 'host' (tests/Shared/EnvironmentsJson.cs:63, tests/Io.Tests/ScratchRepository.cs:75).",
+   "remaining": "Add one fast test beside An_unknown_key_is_refused_by_its_place_in_the_environments_file (tests/Io.Tests/PublishProfilesTests.cs:123). Input: EnvironmentsFile.Read(RepositoryAt(\"{ \\\"environments\\\": { \\\"dev\\\": { \\\"connection\\\": \\\"env:A\\\", \\\"profile\\\": \\\"dbchange/p.publish.xml\\\" } } }\", raw: true)). Assert the code environments.host and a message starting 'environments.dev in dbchange/environments.json names no host'. No code change.",
+   "files": [
+    "tests/Io.Tests/PublishProfilesTests.cs"
+   ],
+   "linesEstimate": 0,
+   "testLinesEstimate": 12,
+   "parityRows": "",
+   "testsFirst": [
+    "Io.Tests: An_environment_that_names_no_host_is_refused_as_environments_host_by_its_place (fast)"
+   ]
+  },
+  {
+   "name": "check drift reuses a commit's built dacpac and reads the database once (DECISIONS.md:62)",
+   "status": "done",
+   "evidence": "io/Ssdt.cs:211-213: Build(repositoryRoot, reference, ...) goes through Git.At (io/Git.cs:69-70 reuses an unchanged worktree), then Build(Worktree, ...) at :224-227 into .dbchange/build/<commit>/<first 16 digits of the targets' fingerprint>/ (Folder, :311-312). Cached (:317-333) returns the package without running dotnet when built.json names the commit, the inputs, the targets and the package's fingerprint (:249-251); otherwise the build takes build.lock and checks again (:272-279). io/DriftCheck.cs:54-67: build, Open, then one extract of the database (DacFx.Extract); :73 runs DacFx.Plan package to package, which connects to nothing. Commit 6da60be. Tests: tests/Io.Tests/SsdtTests.cs:284 A_second_build_of_one_commit_with_the_same_targets_runs_no_dotnet, :314 A_cached_package_whose_bytes_changed_is_built_again, :336 Two_processes_building_one_commit_serialize_on_the_lock; tests/Io.Tests/DriftTests.cs:305-307 admits at most one masked DacFx catalog batch per read (masked.Count <= 3 for three reads).",
+   "remaining": "",
+   "files": [],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": "",
+   "testsFirst": []
+  },
+  {
+   "name": "The Extended Events test extended to a drifted check drift and read --from env:dev",
+   "status": "done",
+   "evidence": "tests/Io.Tests/DriftTests.cs:269-310 The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read (fixture; Value S7, Exit M1.8). It runs, through the published tool as the read-only principal, a matching check drift (exit 0), then ALTER COLUMN Email NVARCHAR(300), a drifted check drift (exit 5, asserting '`drift.column` Column [dbo].[Customer].[Email]: Length 300 \u2192 256'), and read --from env:dev (exit 0). It asserts HAS_PERMS_BY_NAME was seen, every masked text is rpc_completed sp_executesql (at most three), and zero writes, EXEC included. tests/Io.Tests/ReadOnlyLoginTrace.cs:62-92 Writes (ScriptDom, or token by token when the text does not parse); :132-160 its fast minimal pairs. Commits 6da60be, 9dd218c and 60f4921. CI green at 2a87f39 and c1ce443, on the Docker, LocalDB and outbound-deny lanes (PR #705 body).",
+   "remaining": "",
+   "files": [],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": "PAR-012 (V3_PARITY.md:106) may add the clause Io.Tests: \"The read only principal sends no DML no DDL and no EXEC through check drift and read\" beside exit M1.8, and its How-v3 cell should read 'no DML, no DDL and no EXEC at all: the plan runs package to package, so DacFx sends no xp_instance_regread' in place of 'no EXEC but DacFx's one registry read'",
+   "testsFirst": []
+  },
+  {
+   "name": "The two 'from M2' rulings: check drift lists, as notes, the objects the database holds that the tag lacks (DECISIONS.md:59), and check drift's --at takes dacpac:<the artifact Octopus deployed> (DECISIONS.md:60)",
+   "status": "not-applicable-yet",
+   "evidence": "Both lines begin 'from M2', so by the plan's words they belong to M2 itself, not to the pre-M2 pass. No V3_MILESTONES.md \u00a78 row carries them (WP 2.1-2.6 at :518-525); WP 1.7 (:472) built check drift. Today cli/Check.cs:48-50 reads --at through GitRef.Of only, with 'ref:' optional. DriftCheck.Request.At is a GitRef (io/DriftCheck.cs:20). Run always builds (:54). The check schema's 'commit' requires 40-64 hex (cli/Check.cs:25). The kernel already parses dacpac:<path> as Target.Dacpac (kernel/Target.cs:31, :66).",
+   "remaining": "When M2 opens, write both into a WP row with a decision line. WP 2.5 (lane B, io/Predict and the verbs) is the natural home, because io/DriftCheck.cs and cli/Check.cs are its verb surface. Then: (a) --at accepts ref:<ref>, a bare ref or dacpac:<path>. Request.At becomes a closed source (the kernel's Target.GitRef or Target.Dacpac). For a dacpac, Run skips Ssdt.Build and opens the file with Ssdt.Open. Answer.Commit becomes nullable, the check schema's commit becomes nullable, and the package's fingerprint is added. Regenerate cli/schemas/dbchange.check.1.schema.json. (b) A second, report-only DacFx.Plan of the same package against the same extract, with DropObjectsNotInSource=true. Make it a plan option on DacFx.Plan, not a PublishProfile, so Strict stays the profile as loaded and nothing can publish under it (S1). Each drop operation that the first plan does not hold becomes a Finding.Note (code e.g. drift.not-in-tag, its text held to the register). Neither changes the outcome or the exit.",
+   "files": [
+    "io/DriftCheck.cs",
+    "io/DacFx.cs",
+    "cli/Check.cs",
+    "cli/schemas/dbchange.check.1.schema.json",
+    "tests/Io.Tests/DriftTests.cs",
+    "tests/Io.Tests/CapabilityTests.cs",
+    "tests/Budgets.Tests/ContractTests.cs",
+    "V3_MILESTONES.md",
+    "DECISIONS.md"
+   ],
+   "linesEstimate": 120,
+   "testLinesEstimate": 150,
+   "parityRows": "",
+   "testsFirst": [
+    "Io.Tests: Check_drift_at_a_dacpac_plans_that_package_against_the_target_and_builds_nothing (fixture)",
+    "Io.Tests: Check_drift_names_as_a_note_each_object_the_database_holds_that_the_tag_lacks_and_its_exit_is_unchanged (fixture)",
+    "Io.Tests: The_plan_that_drops_objects_not_in_source_is_a_report_and_no_profile_a_copy_publishes_under (build, in CapabilityTests' planted project)",
+    "Budgets.Tests: ContractTests pair 'a check's at is a ref or a dacpac, and its commit is null exactly for a dacpac' (fast)"
+   ]
+  },
+  {
+   "name": "The pre-M2 pass (NEXT.md:18-20, 'In flight'): is it finished?",
+   "status": "done",
+   "evidence": "Five adapter branches merged on 2026-09-25 (-0700): pass/processes d1e2d95 13:02, pass/sqlserver abd6afc 13:30, pass/contract 627759e 13:54, pass/tests 377240b 15:32, pass/dacfx 5a5aa6b 16:32. The operator answered round two on the review page (https://claude.ai/artifact/JfvgbVhcbbAqRjr34G4t2B; its database records 45 decisions and 38 findings between 2026-09-26 01:31 and 01:51 UTC). The names then landed: 1b6c5d4 N8, bdda56e N18, 7319714 N6, a47a9ed N5, def023e N23/N1/N9, 861d7fe N7, f78d0df N2, with decision lines DECISIONS.md:83-91. The tests were refactored with R9's option B, which the operator chose: 06fd171, 390157b DisposableCopy, 62621be PlantedProject, b6ac752 VerbAnswer, through b35bc24. The other model's review was applied, each commit citing its item 'of the pre-M2 review': 7aa30ca..81beef2, covering S1, S2, S4-S6, S9-S14, S16, S18-S21, S23-S28, S30; N3-N9, N11-N14, N16; M1-M3; and round two's D6, NFR-3, F14 and F16. #704's head (81beef2) merged at 93586e7. CI is green on 2a87f39 and c1ce443. No commit cites the pre-M2 review's S3, S7, S8, S15, S17, S22, S29, N1, N2, N10 or N15. That review is in neither the repository nor the artifact list, so I cannot tell whether those were judged no-change or remain open.",
+   "remaining": "",
+   "files": [],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": "",
+   "testsFirst": []
+  },
+  {
+   "name": "Round-two finding DF-5, which the operator marked fix (decision 2.24 'Fix every remaining finding'), has no commit: the tool folder carries no system dacpacs, so a project that references master.dacpac fails with SQL72027",
+   "status": "missing",
+   "evidence": "Review page database: domain-DF-5 verdict fix (2026-09-26 01:50:13 UTC); 2.24 choice 0. No commit in 5fadcf0..93586e7^2 cites DF-5. ci/publish.sh:18-27 copies only the SqlTasks targets and refasm. With NetCoreBuild, DacFx 170.5.96's Microsoft.Data.Tools.Schema.SqlTasks.targets (lines 47-48) sets DacPacRootPath=$(NETCoreTargetsPath), and io/Ssdt.cs:362 passes NETCoreTargetsPath=<tool folder>. A classic project's $(DacPacRootPath)\\Extensions\\Microsoft\\SQLDB\\Extensions\\SqlServer\\160\\SqlSchemas\\master.dacpac therefore resolves inside dist/dbchange/, where nothing is. Nothing under tests/Golden references master (rg master.dacpac finds only plan prose and a Citations test case). On api.nuget.org on 2026-10-19: Microsoft.SqlServer.Dacpacs.Master 160.2.8 (latest 160.x) and 170.0.4; Microsoft.SqlServer.Dacpacs.Msdb 160.1.4 and 170.0.2. The NuGet cache holds only DacFx 170.5.96. The golden projects use Sql160DatabaseSchemaProvider (tests/Golden/project/SampleCatalog.sqlproj:16, tests/Golden/classic-minimal/ClassicMinimal.sqlproj:11).",
+   "remaining": "(1) In cli/cli.csproj, beside the ReferenceAssemblies PackageDownload at :28, add exact-version PackageDownloads for Microsoft.SqlServer.Dacpacs.Master and Microsoft.SqlServer.Dacpacs.Msdb for the 160 line. Central package management cannot pin a PackageDownload (DECISIONS 2026-09-23). Measure where each package keeps its .dacpac (likely tools/). (2) In ci/publish.sh and ci/publish.ps1, read both pins from cli.csproj as reference_assemblies is read, and copy master.dacpac and msdb.dacpac to dist/dbchange/Extensions/Microsoft/SQLDB/Extensions/SqlServer/160/SqlSchemas/. Add other versions only when S1 or S8 names them. (3) Add two rows to ci/packages.allow, and one DECISIONS.md line pinning the versions and saying why 160 alone. (4) Add a golden fixture tests/Golden/classic-master/ (about 40 lines, golden budget 1,461 of 3,000): a classic .sqlproj with <ArtifactReference Include=\"$(DacPacRootPath)\\Extensions\\Microsoft\\SQLDB\\Extensions\\SqlServer\\160\\SqlSchemas\\master.dacpac\"> and DatabaseVariableLiteralValue master, plus one view that reads master.sys.databases. Optionally add a same-server database reference through a SQLCMD variable, the review's second clause. (5) Check that ToolFolderTests and the doctor's tool item accept the new folder.",
+   "files": [
+    "cli/cli.csproj",
+    "ci/publish.sh",
+    "ci/publish.ps1",
+    "ci/packages.allow",
+    "DECISIONS.md",
+    "tests/Golden/classic-master/ClassicMaster.sqlproj",
+    "tests/Golden/classic-master/dbo/Views/Databases.sql",
+    "tests/Io.Tests/SsdtTests.cs",
+    "tests/Io.Tests/ToolFolderTests.cs"
+   ],
+   "linesEstimate": 0,
+   "testLinesEstimate": 45,
+   "parityRows": "",
+   "testsFirst": [
+    "Io.Tests: A_project_that_references_master_dacpac_builds_against_the_published_tool_folder (fast, as SsdtTests' other builds are)",
+    "Io.Tests: The_published_tool_folder_carries_the_master_and_msdb_packages_for_SQL_Server_160 (build, ToolFolderTests)",
+    "Io.Tests: A_package_built_with_a_master_reference_opens_from_a_stream_and_plans_against_a_copy (fixture, DacFxTests)"
+   ]
+  },
+  {
+   "name": "Documents that still describe the pass's code as pending (round-two findings F12 and F13 again)",
+   "status": "partial",
+   "evidence": "NEXT.md:18-20 calls the pass 'in flight'. NEXT.md:23-25 lists the five items as next, though all are done. NEXT.md:12 asks the operator to answer round two, though they did on 2026-09-26: 37 findings fix and plan-STATUS discuss; 2.5 sent back with the note 'What is the purpose of a milestone? I'm confused on relevance here'; the gate card at option 0. NEXT.md:14-16: the laptop check uses a tool folder built at e0a4db94, which comes before 5fadcf0 (git merge-base --is-ancestor). That folder runs the old route (LoadFromDatabase plus a live Script, which sent xp_instance_regread) under the old names (estate.dll, estate/posture.json, ESTATE_DEV). The steps on the review page write a posture.json with no 'host', which the head refuses as environments.host (io/Environments.cs:86-89). V3_PARITY.md:31 (\u00a70, the M2 row) and :298 (\u00a75 item 1) point at the five items. PAR-002 (V3_PARITY.md:91) says io/SqlServer.Model and LoadFromDatabase, which 6da60be removed in favour of DacFx.Extract. PAR-012 (:106) admits 'DacFx's one registry read'. V3_MILESTONES.md:475-477 says DriftTests shows exit 8 'on a matching environment only', and :499-501 admits xp_instance_regread. DECISIONS.md:50 and :54 both admit that one EXEC, which the current route no longer sends (DriftTests.cs:274-276).",
+   "remaining": "Rewrite NEXT.md. Remove 'In flight'. Replace 'Next, before M2' bullet 1 with DF-5 and the absent-host test, or drop it once those land. Replace the round-two bullet with a reply to decision 2.5's note and the plan-STATUS discuss note. Rewrite the laptop check: build the tool folder at the branch head (ci/publish.ps1 on the operator's machine, or a zip of dist/dbchange/ built here); write dbchange/environments.json with 'host'; set DBCHANGE_DEV; time check drift (the answer's elapsedMs) and read --from env:dev (the Extract alone); drop the xp_instance_regread question if the operator agrees. Update V3_PARITY.md \u00a70's M2 row and \u00a75 item 1 to name what remains. Update PAR-002's How cell to DacFx.Extract into a package, then the one element reader, and PAR-012's as in the item above. Correct V3_MILESTONES.md :475-477 to 'on a matching and a drifted environment, and read' and :499-501 to 'no EXEC'. Add a decision line, since lines 50 and 54 admitted the EXEC. Leave earlier DECISIONS.md lines as history.",
+   "files": [
+    "NEXT.md",
+    "V3_PARITY.md",
+    "V3_MILESTONES.md",
+    "DECISIONS.md"
+   ],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": "PAR-002: the How-v3 cell becomes 'io/DacFx.Extract into a package, then the one element reader (Ssdt.ReadModel)', last cell unchanged; PAR-012: as in the Extended Events item",
+   "question": "May S3 stop asking for Script and LoadFromDatabase times and whether xp_instance_regread is executable (DECISIONS.md:54 and :62)? check drift now calls neither live, and the read-only login sends no EXEC (DriftTests.cs:274-276). In their place it would ask for check drift's elapsedMs and the time of read --from env:dev (DacFx.Extract), run with a tool folder built at the branch head.",
+   "testsFirst": []
+  }
+ ],
+ "fileOverlaps": [
+  "NEXT.md",
+  "V3_PARITY.md (\u00a70, \u00a75, PAR-002, PAR-012)",
+  "V3_MILESTONES.md (\u00a77 exit lines 475-477 and 499-501; an M2 work package row for the two 'from M2' rulings)",
+  "DECISIONS.md",
+  "ci/packages.allow",
+  "cli/cli.csproj (PackageDownload pins)",
+  "ci/publish.sh and ci/publish.ps1",
+  "ci/docs.manifest.json (if NEXT.md's or V3_PARITY.md's manifest budget changes)",
+  "tests/Io.Tests/SsdtTests.cs, ToolFolderTests.cs, PublishProfilesTests.cs",
+  "io/DriftCheck.cs, io/DacFx.cs, cli/Check.cs (M2, the from-M2 rulings)"
+ ],
+ "risks": [
+  "NEXT.md, V3_PARITY.md \u00a75 item 1 and \u00a70 send the next wave to build code that already exists. A worker that takes them literally will duplicate or churn Provenance, AggregateQuery, Environments, Ssdt.Build or DriftTests. The real pre-M2 code remainder is DF-5 plus one test.",
+  "The round-two review page's gate card records option 0, 'After this round's rulings and one pre-M2 pass, start M2' (2026-09-26 01:51 UTC). This run's request says M2 waits on the operator's go, and that instruction takes precedence. Do not read the card as the go.",
+  "The laptop check (M1 exit 1, S1, S3) names a tool folder built at e0a4db94. That folder predates the pass: the old LoadFromDatabase-plus-live-Script route, the 'estate' names, and posture.json without 'host'. A report from it would measure code the branch no longer runs. Its posture file would also be refused at head (environments.host).",
+  "Provenance's properties are { get; init; } (kernel/Provenance.cs:34-52). Any assembly can therefore write `drift with { Change = x, Schema = y }` and bypass the per-kind constructors the ruling asks for, or give a drift claim ExistingData, which 'reads no data'. Making them get-only closes that. It costs ProvenanceTests.cs:37 and :41, which use `with`; the 'nothing lacking' case would wait for WP 2.1's prediction constructor. WP 2.1 also needs Fingerprint.Of(Change), which does not exist: kernel/Fingerprint.cs has Of(bytes), Of(string), Of(SortedArray<Element>) and Of(DeployReport) at :27, :34, :43 and :85.",
+  "DF-5 adds two NuGet packages that the cache lacks (restore from api.nuget.org) and changes the published tool folder. Both CI operating systems and ToolFolderTests must see the new Extensions/ tree. The folder layout under Extensions/Microsoft/SQLDB/Extensions/SqlServer/160/SqlSchemas/ follows SSDT's convention and should be confirmed by the new build test before it is relied on.",
+  "Eleven items of the other model's pre-M2 review (S3, S7, S8, S15, S17, S22, S29, N1, N2, N10, N15) are cited by no commit, and that review is not available to check. They may be no-change verdicts or open defects.",
+  "The operator's notes on the review page (decision 2.5 returned with a question; plan-STATUS marked discuss) have no reply in the repository or on the page.",
+  "io/SqlServer.cs (997 lines) and io/Ssdt.cs (767) are above the 500-line-per-code-file budget that task #7 is enforcing. The from-M2 drift work touches io/DriftCheck.cs and io/DacFx.cs beside them and would collide with that split if both run in one wave."
+ ]
+}

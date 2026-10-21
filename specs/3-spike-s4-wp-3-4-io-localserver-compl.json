@@ -1,0 +1,317 @@
+{
+ "area": "Spike S4, WP 3.4 (io/LocalServer completed) and WP 3.5 step 1 (the base built, published and backed up)",
+ "summary": "M1's minimal local server already chooses DBCHANGE_SQL, then the container via ~/.dbchange/sql.env, then LocalDB (io/LocalServer.cs:183-189). It names and registers copies as dbchange_<host>_<pid>_<rand> in .dbchange/copies.json under a lock (io/LocalServer.cs:223-235, 329-345; kernel/Target.cs:126-132). It waits 180 s on CREATE and DROP (io/LocalServer.cs:40, 303-307) and drops through SINGLE_USER WITH ROLLBACK IMMEDIATE after ClearPool, on an unpooled master connection (io/LocalServer.cs:32-33, 71-75). It refuses a server on an environment's host with exit 9 (io/LocalServer.cs:260-273; VerbExitTests.cs:65) and stamps the container's image digest into Server (io/LocalServer.cs:84-118; io/SqlServer.cs:719-722). Missing: the first-connect retry, the sweep (only the test fixture sweeps, by dead pid, SqlServerFixture.cs:120-136), backup and restore into .dbchange/cache/, io pulling or starting the container, a version check, any S4 test, and every part of WP 3.5 step 1. Two facts change the plan's assumptions. First, windows-latest is now windows-2025-vs2026 with LocalDB 17.0.4025.3, not 16.x (job 117856550219 of run 39188714136). Second, a probe here on the container (SQL Server 16.0.4295.3, DacFx 170.5.96, 300 tables, run while a fixture run shared the server) took 35.3 s to publish from scratch and 1.1 s to restore, so the base cache should restore rather than publish. Budget: io is at 5,203 of 6,400 and this area adds about 300 lines. LocalServer.cs would reach about 500 lines, so the cache half belongs in a partial file.",
+ "items": [
+  {
+   "name": "Spike S4: CREATE, publish, BACKUP, RESTORE and DROP of a 300-table copy, timed in CI on the container and on LocalDB",
+   "status": "missing",
+   "evidence": "V3_MILESTONES.md:426 (S4 row: LocalDB 16.x and the container; lands in a decision line; blocks WP 3.4); V3_MILESTONES.md:610-611 (restore assumed under 20 s, or publish from scratch). No S4 test exists: tests/Io.Tests/SpikeTests.cs holds facts 1 to 11 only. .github/workflows/dbchange.yml runs sql-ubuntu, sql-windows and sql-offline with `--filter Category=fixture` and the default console logger, which prints nothing from a passing test. tests/Budgets.Tests/NoSkips.cs:66-73 allows only the categories fast, fixture and build, so S4 must be fixture. Any other trait name, such as Spike, is free. windows-latest is windows-2025-vs2026 with LocalDB 17.0.4025.3, and sql-windows took 667 s of its 20-minute limit (run 39188714136, job 117856550219). Probe in scratch on the container (16.0.4295.3 Developer, DacFx 170.5.96, 300 OutSystems-shaped tables, each with PK, FK to the previous table, index, defaults and check): model and package 4.2 s, CREATE 0.23 s, publish from scratch 35.3 s, republish with nothing to do 9.3 s, BACKUP 0.39 s, RESTORE WITH MOVE 1.1 s, DROP 0.06 to 0.08 s. The same DDL as raw T-SQL took 2.3 s. Verified in scratch with xunit 2.9.3 and runner 3.1.5: `--logger \"console;verbosity=detailed\"` prints ITestOutputHelper lines of a passing test under 'Standard Output Messages:', and `--filter \"Category=fixture&Spike!=S4\"` works.",
+   "remaining": "1. New tests/Io.Tests/CopyTimingTests.cs: `public sealed class CopyTimingTests(ITestOutputHelper output) : IDisposable`, with root = SqlServerFixture.RepositoryRoot(.dbchange/copies-under-test/<pid>-<rand>) as CopyTests.cs:23 does.\n2. One [Fact] with [Trait(\"Category\",\"fixture\")] and [Trait(\"Spike\",\"S4\")]. Steps, each timed with Stopwatch (tests may use it; only kernel bans it):\n   (a) Build a Sql160 package of 300 tables named dbo.OSUSR_S4_T001 to T300, the way CopyTests.cs:224-228 builds one: `new TSqlModel(SqlServerVersion.Sql160, new TSqlModelOptions())`, `AddObjects` per table, `DacPackageExtensions.BuildPackage`. Each table has Id INT IDENTITY primary key, NVARCHAR(50) NOT NULL with a default, NVARCHAR(250) NULL, DECIMAL(37,8) and BIT and DATETIME with defaults, and PARENTID INT NULL. Give PARENTID a foreign key to the previous table and an index, and every tenth table a CHECK.\n   (b) CREATE: LocalServer.Create(root, await SqlServerFixture.ServerAsync(), log).\n   (c) Publish from scratch: copy.Publish(dacpac, PublishProfiles.Load(GoldenProject.Profile), log).\n   (d) Republish, which has nothing to do.\n   (e) Read SERVERPROPERTY('ProductVersion'), 'Edition' and 'InstanceDefaultBackupPath' on master. The backup path is the server's own; verified on 16.x as /var/opt/mssql/data. Add a 4-line string-scalar helper to SqlServerFixture.\n   (f) BACKUP DATABASE @db TO DISK = @path WITH COPY_ONLY, INIT, FORMAT, CHECKSUM, using SqlServerFixture.ExecuteAsync with the 180 s timeout. Use no COMPRESSION, which Express and LocalDB refuse.\n   (g) RESTORE FILELISTONLY, then RESTORE DATABASE <CopyName.Make(machine, pid, rand)> WITH MOVE for each logical file to InstanceDefaultDataPath / InstanceDefaultLogPath, CHECKSUM. A CopyName means the fixture's sweep catches a leftover.\n   (h) Drop the restored copy (SqlServerFixture.DropAsync), then the published one (LocalServer.Drop).\n   (i) Delete the .bak: File.Delete when the path exists on this machine (LocalDB). On the container, run `docker exec dbchange-sql rm -f <path>` through Command when LocalServer.Running answers.\n3. Assert no times. Assert only that the restored copy has 300 rows in sys.tables and as many sys.foreign_keys as the published copy, and that both databases are gone after the drops.\n4. Write one line: `S4 | <container sha256:<12> or LocalDB or DBCHANGE_SQL> | SQL Server <version> <edition> | 300 tables | create N ms | publish N ms | republish N ms | backup N ms | restore N ms | drop restored N ms | drop published N ms`. Write it with output.WriteLine, and when GITHUB_STEP_SUMMARY is set, also append it as a markdown table row (header on first write).\n5. Workflow: in sql-ubuntu, sql-windows and sql-offline, change the fixture filter to `Category=fixture&Spike!=S4`. Add a step to sql-ubuntu and sql-windows: `dotnet test tests/Io.Tests/Io.Tests.csproj --no-build --filter \"Spike=S4\" --logger \"console;verbosity=detailed\"`.\n   Optional: in a separate job, or with sql-windows raised to 30 minutes, install SQL Server 2022 LocalDB (SqlLocalDB.msi; verify the download URL), run `sqllocaldb create S4v16 16.0 -s`, and run the step again with DBCHANGE_SQL=Server=(localdb)\\S4v16;Integrated Security=true. That measures the laptops' 16.x as well as the runner's 17.0.\n6. Reading the timings: the run's job summary page shows the table. From the log, `gh run view <run> --job <job> --log | grep 'S4 |'`, or the GitHub tools' get_job_logs filtered on 'S4 |'.\n7. Land the decision line in DECISIONS.md:\n   `<date> \u00b7 S4, measured in CI run <id>: a 300-table copy publishes from scratch in A s on SQL Server 16.0 in Docker and B s on LocalDB 17.0 [and C s on 16.x], and restores from a backup in D s and E s; so a fresh copy is a restore from the base backed up in .dbchange/cache/, and the base is published once per fingerprint \u00b7 #705`.\n   Also correct the S4 row of V3_MILESTONES.md:426, which assumes LocalDB 16.x on windows-latest. This needs a decision line.\n8. The laptop half, against the SSDT repository's real schema, is a person's: add it to NEXT.md's Waiting on others.",
+   "files": [
+    "tests/Io.Tests/CopyTimingTests.cs",
+    "tests/Io.Tests/SqlServerFixture.cs",
+    ".github/workflows/dbchange.yml",
+    "DECISIONS.md",
+    "V3_MILESTONES.md",
+    "NEXT.md"
+   ],
+   "linesEstimate": 0,
+   "testLinesEstimate": 145,
+   "parityRows": "",
+   "testsFirst": [
+    "Io.Tests, fixture, Trait Spike=S4: \"S4 a copy of three hundred tables is created published backed up restored and dropped with each step timed\". It has no failing-first phase, since it measures. It asserts the restored copy's 300 tables and foreign-key count and that both drops leave no database."
+   ]
+  },
+  {
+   "name": "WP 3.4: DBCHANGE_SQL when it is set",
+   "status": "done",
+   "evidence": "LocalServer.Choice: io/LocalServer.cs:183-189, where DBCHANGE_SQL wins and sql.env is not read. LocalServer.Server: io/LocalServer.cs:172-176. Tests: DoctorTests.The_local_server_is_the_one_dbchange_would_use_DBCHANGE_SQL_first (tests/Io.Tests/DoctorTests.cs:229) and LocalDB_is_asked_about_only_when_neither_DBCHANGE_SQL_nor_sql_env_gives_a_server (:264). TargetTests.A_malformed_DBCHANGE_SQL_is_connection_malformed_as_the_same_text_is_as_a_reference_its_text_withheld (tests/Io.Tests/TargetTests.cs:287).",
+   "remaining": "",
+   "files": [],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": ""
+  },
+  {
+   "name": "WP 3.4: the container from the image pinned by tag and digest, pulled when absent, SQL Server Agent enabled, where Docker is installed",
+   "status": "partial",
+   "evidence": "The scripts do it, io does not.\n- ci/sql.sh:11 pins image=mcr.microsoft.com/mssql/server:2022-latest@sha256:4402d880\u2026\n- ci/sql.sh:36 pulls when absent.\n- ci/sql.sh:39-42 makes the container again when it runs another image.\n- ci/sql.sh:49 sets MSSQL_AGENT_ENABLED=true and publishes on 127.0.0.1. ci/sql.ps1 does the same.\n- io/Doctor.cs:28 holds the same pin as a constant (SqlServerImage); :98 ImageDigest; :287-294 the image item.\n- DoctorTests.The_sql_scripts_pin_the_image_the_doctor_checks (DoctorTests.cs:305) ties the scripts to that constant.\n- io/LocalServer.cs:185-186 chooses the container only when ~/.dbchange/sql.env (written by ci/sql.sh:47) gives a port and a password. io never pulls, creates or starts it.\n- The WP says the pin lives in dbchange/ledgers/toolchain.md. The ledger fixture (tests/Golden/dbchange/ledgers/toolchain.md:8-10) has four cells (Date, dbchange, Pinned DacFx, Release before) and no image. Doctor's Row regex (io/Doctor.cs:42) reads exactly four cells.\n- S8 (V3_MILESTONES.md:430) is a person's spike and decides the tag.\n- ci/publish.sh copies no ci/sql.* into dist/dbchange/. Yet the remedies name ci/sql.sh: io/LocalServer.cs:189, io/SqlServer.cs:116-117, io/Doctor.cs:291. The SSDT repository carries none of them.",
+   "remaining": "Two paths, depending on the answer.\n\n(a) io starts the container. Add `internal static Result<string> Up(Runner run)` to io/LocalServer.cs, all through io/Command:\n- `docker info`;\n- `docker image inspect <pin>`, else `docker pull <pin>`, the one fetch VALUES.md X5 allows;\n- `docker container inspect --format {{.Image}}` against the pin's id, and on a mismatch `docker rm -f`;\n- `docker run -d --name dbchange-sql --env-file ~/.dbchange/sql.env -e ACCEPT_EULA=Y -e MSSQL_AGENT_ENABLED=true -p 127.0.0.1:<port>:1433 <pin>`, with the password generated once into sql.env at 0600 by io/Write;\n- wait until a SELECT 1 answers, for up to 180 s.\nChoice calls it when Docker answers and sql.env is absent. Test (fast, a fake Runner as DoctorTests does): \"Where Docker answers and the image is absent the local server pulls the pinned image and starts the container with SQL Server Agent on\".\n\n(b) ci/sql.sh, ci/sql.ps1 and the session hook stay the only starter. A decision line amends WP 3.4 and \u00a74 row 16's 'pulled when absent'. The remedies then name a command the SSDT repository has, or dist/dbchange/ carries ci/sql.{sh,ps1}.\n\nFor the pin's location, recommend waiting for S8. When S8 answers, append a toolchain row with a fifth cell (`SQL Server image`), let Doctor's Row regex (io/Doctor.cs:42) accept four or five cells, and read the pin from the latest row before the compiled constant. Keep The_sql_scripts_pin_the_image_the_doctor_checks against the constant this repository's CI uses.",
+   "files": [
+    "io/LocalServer.cs",
+    "io/Doctor.cs",
+    "ci/publish.sh",
+    "tests/Io.Tests/DoctorTests.cs",
+    "DECISIONS.md"
+   ],
+   "linesEstimate": 70,
+   "testLinesEstimate": 40,
+   "parityRows": "",
+   "question": "Should io/LocalServer pull and start the dbchange-sql container itself (about 70 io lines porting ci/sql.sh up, with the SA password kept in ~/.dbchange/sql.env at mode 0600)? Or do ci/sql.sh, ci/sql.ps1 and the session hook stay its only starter, with a decision line amending WP 3.4 and \u00a74 row 16's 'pulled when absent'?",
+   "testsFirst": [
+    "Io.Tests, fast, only if the answer is that io starts it: \"Where Docker answers and the image is absent the local server pulls the pinned image and starts the container with SQL Server Agent on\", using a fake Runner that records the docker arguments."
+   ]
+  },
+  {
+   "name": "WP 3.4: LocalDB 16.x through sqllocaldb, and the SQL Server version window (VALUES.md R5)",
+   "status": "partial",
+   "evidence": "- Chosen.LocalDb is `(localdb)\\MSSQLLocalDB`: io/LocalServer.cs:161-169.\n- Doctor.LocalDbInstalled runs `sqllocaldb info MSSQLLocalDB` and checks only the exit code: io/Doctor.cs:185.\n- No version is checked anywhere. SqlServer.ServerOf reads ProductVersion (io/SqlServer.cs:719-722); kernel Server.Major exists (kernel/Provenance.cs:90); kernel Platform is a name only (kernel/Plan.cs:209-219).\n- VALUES.md:66 R5 cites `Io.Tests: \"a SQL Server version outside the window is refused\"` as not held yet, WP 3.4, but WP 3.4's What never names a version check.\n- The Facsimile's law S4 (archive/v2/ssdt-agent/facsimile/INVARIANTS.md:280) and case TLC-04 (cases/70-process.md) state the rule as: LocalDB's major version at least the project's DSP.\n- windows-latest's LocalDB is 17.0.4025.3, SQL Server 2025 (job 117856550219). The sql-windows job sets DBCHANGE_SQL to (localdb)\\MSSQLLocalDB, so the fixture never takes the Chosen.LocalDb path.\n- The comment at tests/Io.Tests/CopyTests.cs:206-207 ('an older release in the Windows runner's LocalDB') is now false.",
+   "remaining": "Recommended: the Facsimile's rule.\n- kernel/Plan.cs: add `Platform.Major` (Sql160 to 16, Sql170 to 17; any other name has none).\n- kernel: add a pure `Server.Refuses(Platform package) : Error?`, which is `server.platform` when server.Major < package's major, naming both, with the remedy 'install SQL Server Express LocalDB 2022 or later'.\n- io: call it where a package meets a copy, in Copy.Publish (io/SqlServer.cs) after SqlServer.ServerOf. Read the server once per copy.\n- If the operator keeps R5 literally (16 only), the same check refuses 17. CI would then need LocalDB 16.x installed, and R5's window could not widen until S8.\n- Rewrite VALUES.md:66 R5's last cell to name the test.\n- Fix the stale comment at CopyTests.cs:206-207.",
+   "files": [
+    "kernel/Plan.cs",
+    "kernel/Provenance.cs",
+    "io/SqlServer.cs",
+    "tests/Kernel.Tests/",
+    "tests/Io.Tests/CopyTests.cs",
+    "VALUES.md",
+    "LAWS.md"
+   ],
+   "linesEstimate": 20,
+   "testLinesEstimate": 40,
+   "parityRows": "",
+   "question": "R5 says the local server's SQL Server is 2022 and a version outside the window is refused, but windows-latest's LocalDB is 17.0 (SQL Server 2025). Should the refusal follow the Facsimile's S4 rule (the server's major version at least the package's platform, Sql160 to 16, so 17 passes), or R5 as written (16 only, which needs CI to install LocalDB 16.x)?",
+   "testsFirst": [
+    "Kernel.Tests, fast: \"A SQL Server older than the package's platform is refused naming both and a newer one is not\", over Server.Of(\"15.0.4382.1\", 150, null), Server.Of(\"16.0.4295.3\", 160, null) and Server.Of(\"17.0.4025.3\", 170, null) against Platform Sql160.",
+    "Io.Tests, fixture: \"A SQL Server version outside the window is refused\" (R5's name). It publishes a Sql170 package to a 16.x copy and expects server.platform before DacFx runs."
+   ]
+  },
+  {
+   "name": "WP 3.4: CREATE and DROP wait up to 180 seconds",
+   "status": "done",
+   "evidence": "LocalServer.DatabaseStatementTimeout = 180 s (io/LocalServer.cs:40), applied to every Run statement (:303-307). The fixture waits as long (tests/Io.Tests/SqlServerFixture.cs:156). DECISIONS.md:82 names it `Substrate.DatabaseStatementSeconds`, an older name the vocabulary sweep left in the record.",
+   "remaining": "Apply the same timeout to the new BACKUP, RESTORE and RESTORE FILELISTONLY statements by routing them through Run (see the backup and restore item). Nothing else.",
+   "files": [],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": ""
+  },
+  {
+   "name": "WP 3.4: DROP through SINGLE_USER WITH ROLLBACK IMMEDIATE, and ClearPool, on an unpooled master connection",
+   "status": "done",
+   "evidence": "Unmake (io/LocalServer.cs:32-33) wraps the DROP in `IF DB_ID(@name) IS NOT NULL \u2026 SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE`. Drop (:71-75) calls SqlConnection.ClearPool on the copy's own pooled connection, then runs Unmake through Run with Catalog=master and Pooled=false (:303-307). Test: CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row (CopyTests.cs:31). The WP's wording, 'ClearPool on an unpooled master connection', reads oddly: ClearPool on an unpooled connection does nothing. The code clears the copy database's pool and drops over unpooled master, which is the right reading.",
+   "remaining": "Optional, for the Facsimile's TLC-12: a fixture test \"A copy another session holds open is dropped\". It opens a SqlConnection to the copy, keeps it open, then calls LocalServer.Drop and expects success and no database left.",
+   "files": [
+    "tests/Io.Tests/CopyTests.cs"
+   ],
+   "linesEstimate": 0,
+   "testLinesEstimate": 20,
+   "parityRows": ""
+  },
+  {
+   "name": "WP 3.4: the first connect is retried once",
+   "status": "missing",
+   "evidence": "No retry exists. LocalServer.Run (io/LocalServer.cs:303-307) calls SqlServer.Query once, and Query (io/SqlServer.cs:383-437) opens one connection with no retry. ConnectTimeoutSeconds = 15 (io/ConnectionString.cs:57). The Facsimile's TLC-10 (archive/v2/ssdt-agent/facsimile/cases/70-process.md, 'LocalDB's first connection times out, and is retried') and TARGET.md:252 call for one retry. The fast test TargetTests.A_local_server_that_does_not_answer_names_ci_sql_up_and_leaves_no_registry_row (TargetTests.cs:645) uses a closed port, which refuses at once, so a retry keeps it fast. The remedy for an unreachable copy names ci/sql.sh even when the server is LocalDB (io/SqlServer.cs:116-117).",
+   "remaining": "In io/LocalServer.cs:\n- Add `internal static Result<T> Connected<T>(Func<Result<T>> attempt, TimeSpan pause)`. When the attempt fails with code server.unreachable and no statement of this process has yet reached the local server, wait `pause` (a named constant, FirstConnectPause = 2 s) and try once more. Any other error, or a second failure, returns as it is.\n- Keep a static flag, set with Interlocked after the first successful statement, so later statements are never retried.\n- Wrap Run's SqlServer.Query call in it.\n\nIn io/SqlServer.cs Database.ErrorOf (:116-117), give a copy on a LocalDB host (Host.LocalDb) the remedy `sqllocaldb start MSSQLLocalDB`, then run dbchange doctor.",
+   "files": [
+    "io/LocalServer.cs",
+    "io/SqlServer.cs",
+    "tests/Io.Tests/LocalServerTests.cs"
+   ],
+   "linesEstimate": 18,
+   "testLinesEstimate": 35,
+   "parityRows": "",
+   "testsFirst": [
+    "Io.Tests, fast: \"The first connect to the local server is retried once and a refusal is not\". It passes a counting attempt to LocalServer.Connected with a zero pause. Two server.unreachable failures give two attempts and server.unreachable. A server.denied gives one attempt. Unreachable then Ok gives Ok. After one success, a later unreachable is not retried."
+   ]
+  },
+  {
+   "name": "WP 3.4: the image's digest joins Server in every provenance record where a container serves",
+   "status": "done",
+   "evidence": "LocalServer.Image and Running (io/LocalServer.cs:84-118) read the RepoDigests of the image the dbchange-sql container runs, matched by published port. SqlServer.ServerOf passes it into Server.Of (io/SqlServer.cs:719-722; kernel/Provenance.cs:99-109). Every verb that reads a copy calls ServerOf: io/ModelRead.cs:63 and io/DriftCheck.cs:45. Tests in tests/Io.Tests/ImageTests.cs:28,38,46,51: A_copy_on_the_container_s_port_ran_in_the_image_Docker_reports_by_its_registry_digest; A_copy_on_a_container_whose_image_came_from_no_registry_ran_in_the_image_Docker_names_by_its_id; A_copy_on_another_server_than_the_container_names_no_image; Without_docker_or_its_container_no_image_is_named.",
+   "remaining": "WP 3.5's base cache key must take Server (version, compatibility level, image) from the same ServerOf. Nothing to build here.",
+   "files": [],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": ""
+  },
+  {
+   "name": "WP 3.4: every copy registered in .dbchange/copies.json under dbchange_<host>_<pid>_<rand>",
+   "status": "done",
+   "evidence": "CopyName grammar and Make: kernel/Target.cs:98-137. LocalServer.Create writes the row before the CREATE and removes it if the CREATE fails (io/LocalServer.cs:223-235). The row holds name, server, machine, pid and created (UTC, yyyy-MM-ddTHH:mm:ssZ). Registry reads and writes go under .dbchange/copies.lock through FileLock.Take with 1 minute (io/LocalServer.cs:329-345; io/LocalState.cs:44-46). copy: resolves only through the registry: LocalServer.Registered (io/LocalServer.cs:242-251). Tests: CopyTests.cs:31; TargetTests.A_copy_the_registry_does_not_hold_is_refused (TargetTests.cs:60); A_copy_resolves_only_on_the_server_its_row_records_and_never_on_a_named_host (:218).",
+   "remaining": "",
+   "files": [],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": ""
+  },
+  {
+   "name": "WP 3.4: the sweep drops only this host's registered names older than a day; done when a killed run is swept by the next",
+   "status": "missing",
+   "evidence": "io has no sweep. The only sweep is the test fixture's SqlServerFixture.SweepAsync (tests/Io.Tests/SqlServerFixture.cs:120-136). It reads sys.databases, not the registry, and drops this machine's CopyName-shaped databases whose pid is not running. io cannot do that check: io/BannedSymbols.txt bans System.Diagnostics.Process outside io/Command. VALUES.md:76 O5 cites `Io.Tests: \"a killed run is swept by the next\"` as not held yet, WP 3.4. Its text says the sweep drops only this host's registered names older than a day. That conflicts with the done-when 'a killed run is swept by the next': a run killed less than a day ago is not swept. Precedent for a holder-lock sweep: io/Git.At sweeps worktrees no running process holds (DECISIONS.md:37; io/LocalState.cs:55-56). tests/Io.Tests/DbChangeProcess.cs:16-41 already runs this test assembly as a child program, with a `lock` mode.",
+   "remaining": "In io/LocalServer.cs, add `public static Result<IReadOnlyList<CopyName>> Sweep(string repositoryRoot, SqlServer.QueryLog log)`, which calls `internal static Result<IReadOnlyList<CopyName>> Sweep(string repositoryRoot, SqlServer.QueryLog log, DateTimeOffset now, Func<Result<string>> chosen)`.\n\nThe selection is a pure function `internal static IReadOnlyList<CopyName> Stale(IEnumerable<JsonObject> rows, string machine, Kernel.ServerName server, DateTimeOffset now)`. A row is stale when all of these hold:\n- its name parses as a CopyName (CopyName.Of);\n- name.Machine == CopyName.Make(Environment.MachineName, 0, 0).Machine;\n- its server equals the local server as it is now. A row on another server cannot be dropped from here and is left;\n- its created is more than one day before now. A row with no created or an unparseable one counts as old.\n\nDrop each stale copy as Drop does: ClearPool, then Run(copy, \"DROP DATABASE\", Unmake, log), then remove its row through Change.\n\nCall Sweep at the start of `Create(repositoryRoot, server, log, resolve)` (io/LocalServer.cs:223), after R15 clears the server and before the new row is written. Return its error rather than swallow it.\n\nTests: add a `copy <repository root>` mode to DbChangeProcess (tests/Io.Tests/DbChangeProcess.cs). It makes a copy through LocalServer.Create on the server DBCHANGE_SQL names, passed in the child's environment and never on its command line. It prints the copy's name and waits on stdin.\n\nIf the operator prefers a killed copy to go at once: give each copy a holder FileLock at .dbchange/copies/<name>.lock, held by the creating process until Drop and released by the operating system when it dies, the worktree precedent. The sweep would take that lock with a zero timeout. That rewrites O5's text and needs a decision line.\n\nThen change VALUES.md:76 O5's last cell to `Io.Tests: \"a killed run is swept by the next\"` and regenerate LAWS.md with ci/laws.sh.",
+   "files": [
+    "io/LocalServer.cs",
+    "tests/Io.Tests/LocalServerTests.cs",
+    "tests/Io.Tests/DbChangeProcess.cs",
+    "VALUES.md",
+    "LAWS.md"
+   ],
+   "linesEstimate": 40,
+   "testLinesEstimate": 95,
+   "parityRows": "",
+   "testsFirst": [
+    "Io.Tests, fast: \"The sweep chooses only this host's copies on this server registered more than a day ago\", over LocalServer.Stale with rows from two machines, two servers, ages 23 h and 25 h, and one row without created.",
+    "Io.Tests, fixture, Trait Value O5: \"A killed run is swept by the next\". It starts DbChangeProcess `copy`, reads the name and kills the process; the database and row remain. It then calls Sweep with now set to the row's created plus one day and one minute; the database and row are gone, while another machine's row and a fresh row remain."
+   ]
+  },
+  {
+   "name": "WP 3.4: a local server on a host any environment's reference resolves to is exit 9",
+   "status": "done",
+   "evidence": "LocalServer.Unnamed compares by spelling, then by DNS address, with this machine counting as every loopback and local address. It refuses with copy.named-host, and a reference on another host than the environments file names gets environments.host (io/LocalServer.cs:260-283). Create (:223-224) and Registered (:242-251) both go through it. Exit 9: DECISIONS.md:43 ('copy 9'). Tests: VerbExitTests.A_copy_the_registry_does_not_hold_or_one_on_a_named_environment_s_host_is_exit_9 (VerbExitTests.cs:65); TargetTests.A_local_server_on_the_host_an_environment_names_is_refused (:102), A_local_server_on_the_host_of_an_environment_whose_reference_resolves_to_nothing_here_is_refused (:119), A_local_server_on_an_alias_of_an_environment_s_host_is_refused (:187).",
+   "remaining": "",
+   "files": [],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": ""
+  },
+  {
+   "name": "WP 3.4: backup and restore into .dbchange/cache/",
+   "status": "missing",
+   "evidence": "No BACKUP or RESTORE exists in io: rg finds none in io/*.cs. io/LocalState.cs:21-106 names no cache folder. V3_MILESTONES.md:276 maps the Facsimile's caches to `.dbchange/cache/`. The container's SQL Server runs as uid 10001 (mssql) and writes only inside the container. Its InstanceDefaultBackupPath is /var/opt/mssql/data, and ci/sql.sh:49 mounts no host folder. So BACKUP TO DISK cannot reach the repository's .dbchange/cache/ directly. LocalDB runs as the user and can write there. A DBCHANGE_SQL server on another machine writes to its own disk. A Windows SQL Server service usually cannot write to the user's folder (Msg 3201). CapabilityTests.Nothing_but_LocalServer_makes_a_Copy (CapabilityTests.cs:94-102, with CopyConstructor().Single() at :125) requires one internal Copy constructor, called only from inside LocalServer. A partial class LocalServer in another file still counts as inside.",
+   "remaining": "New file io/LocalServer.Cache.cs, declared `public static partial class LocalServer`. Make the class in io/LocalServer.cs partial as well.\n\nLocalState additions:\n- `Cache` (.dbchange/cache)\n- `CacheEntry(key)` (cache/<key>.bak)\n- `CacheMarker(key)` (cache/<key>.json)\n- `CacheLock(key)` (cache/<key>.lock)\nThe folder is made through LocalState.Made, so .dbchange/.gitignore stands beside it.\n\nBackup: `internal static Result<string> Backup(SqlServer.Copy copy, string entry, SqlServer.QueryLog log)`. Choose where the server writes:\n- When LocalServer.Image(copy) is not null (the container serves): back up to `<InstanceDefaultBackupPath>/dbchange-<key>-<rand>.bak` inside the container, then `docker cp dbchange-sql:<that> <entry>`, then `docker exec dbchange-sql rm -f <that>`. Both run through Command, with a named CopyTimeout of 180 s.\n- When the server's host is this machine (LocalDB, or localhost without the container): back up to the entry path itself.\n- Otherwise: error cache.unavailable naming the server, which the caller turns into a note and builds uncached.\nThe statement is `BACKUP DATABASE @name TO DISK = @path WITH COPY_ONLY, INIT, FORMAT, CHECKSUM`, with both parameters as variables and no dynamic SQL needed. Do not use COMPRESSION, which LocalDB and Express refuse. Run it through Run with the 180 s timeout. Msg 3201 or 3013 becomes cache.unwritable naming the folder.\n\nRestore: `internal static Result<SqlServer.Copy> Restore(string repositoryRoot, string entry, SqlServer.QueryLog log)`. It makes a new registered copy exactly as Create does: R15 check, sweep, the row written first and removed on failure. Factor Create's body so the statement that makes the database is a parameter, Make or the restore.\n- For the container, stage the .bak with `docker cp`. Make sure uid 10001 can read it: chmod 0644, or `docker exec -u 0 \u2026 chown mssql`.\n- Run RESTORE FILELISTONLY FROM DISK = @path for the logical names and types.\n- Then RESTORE DATABASE <the new name> FROM DISK = @path WITH MOVE <each logical file> TO <InstanceDefaultDataPath or InstanceDefaultLogPath><name>_<file_id>.<mdf|ldf|ndf>, CHECKSUM. Build the statement as dynamic SQL with N'\u2026' literals escaped by REPLACE. QUOTENAME returns NULL past 128 characters, and file paths can be longer.\n- Delete the staged file.",
+   "files": [
+    "io/LocalServer.Cache.cs",
+    "io/LocalServer.cs",
+    "io/LocalState.cs",
+    "tests/Io.Tests/LocalServerTests.cs",
+    "tests/Io.Tests/LocalStateTests.cs"
+   ],
+   "linesEstimate": 110,
+   "testLinesEstimate": 80,
+   "parityRows": "",
+   "testsFirst": [
+    "Io.Tests, fixture: \"A copy backed up into the cache restores as a new registered copy with the same model\". It publishes the golden base (GoldenProject.Built()) to a DisposableCopy, backs it up to .dbchange/cache/<key>.bak, and restores. The restored copy has a new dbchange_<host>_<pid>_<rand> name and a row in copies.json. Fingerprint.Of of the two extracted models is equal, and the .bak is under .dbchange/cache/. Both are dropped.",
+    "Io.Tests, fast: \"A backup the server cannot write into the cache is cache unwritable naming the folder\", or, on a remote server, \"cache unavailable\", tested through the choice of where the server writes.",
+    "Io.Tests, fast: a new writer row in LocalStateTests.Each_file_a_run_keeps_under_dot_dbchange_leaves_git_listing_nothing_with_no_worktree_made_first (LocalStateTests.cs:52) for the cache folder (R3, R4)."
+   ]
+  },
+  {
+   "name": "WP 3.4 done-when: two concurrent runs share nothing",
+   "status": "partial",
+   "evidence": "Within one process this already holds. CopyTests.A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint (CopyTests.cs:85-109) makes two copies. SqlServerFixtureTests.Two_databases_registered_at_once_get_two_names_each_holds_its_own_table_and_both_are_dropped_when_disposed (SqlServerFixtureTests.cs:15). The registry is changed under a file lock (io/LocalServer.cs:329-345), and each run gets its own run folder (io/SqlServer.cs:454-459). No test runs two processes. VALUES.md:77 O6 cites `Io.Tests: \"two concurrent runs share nothing\"` as not held yet, WP 3.5, and adds the synthetic copy's fingerprint name and lock. V3_MILESTONES.md:584 puts the same test in WP 3.4's done-when.",
+   "remaining": "Add an Io.Tests fixture test using DbChangeProcess `copy` (from the sweep item). Start two children against one repository root at once. While both run: two distinct names, both databases exist, two rows, and two distinct .dbchange/runs/<id>/ folders. Close each child's stdin; each drops only its own copy, and the registry ends empty. Split VALUES.md:77 O6's last cell into `Io.Tests: \"two concurrent runs share nothing\"` and `the synthetic copy under its lock \u2014 not held yet: WP 3.5`.",
+   "files": [
+    "tests/Io.Tests/LocalServerTests.cs",
+    "tests/Io.Tests/DbChangeProcess.cs",
+    "VALUES.md",
+    "LAWS.md"
+   ],
+   "linesEstimate": 0,
+   "testLinesEstimate": 50,
+   "parityRows": "",
+   "testsFirst": [
+    "Io.Tests, fixture, Trait Value O6: \"Two concurrent runs share nothing\", with two DbChangeProcess `copy` children at once."
+   ]
+  },
+  {
+   "name": "The environments file's localServer preference (not in WP 3.4's What; \u00a74 row 14 promises it)",
+   "status": "partial",
+   "evidence": "The key is parsed: io/Environments.cs:41-46, kernel/Environments.cs:23 and 41-71 (LocalServerKind Docker or LocalDb). LocalServer.Choice (io/LocalServer.cs:183-189) never reads it, and nothing in io or cli reads Environments.LocalServer. V3_MILESTONES.md:319 (\u00a74 row 14) says the environments file holds 'the local server preference'. VALUES.md:72 O1 cites `Io.Tests` on both local servers as not held yet, WP 3.4.",
+   "remaining": "Pass the environments file's LocalServer into Choice, for Create and Doctor alike.\n- `localdb` skips the container even when sql.env names one.\n- `docker` refuses LocalDB as the fallback with local-server.missing, naming the preference.\n- DBCHANGE_SQL still wins over both.\nDoctor's item prints which one it chose. Optionally, cite S4's test, which runs on both local servers in CI, in O1's last cell.",
+   "files": [
+    "io/LocalServer.cs",
+    "io/Doctor.cs",
+    "tests/Io.Tests/DoctorTests.cs",
+    "VALUES.md"
+   ],
+   "linesEstimate": 12,
+   "testLinesEstimate": 25,
+   "parityRows": "",
+   "testsFirst": [
+    "Io.Tests, fast: \"The environments file's local server preference chooses LocalDB over the container and refuses LocalDB when it names Docker\", over LocalServer.Choice with sql.env and LocalDB both present."
+   ]
+  },
+  {
+   "name": "WP 3.5 step 1: the database named from its fingerprints (\u00a74 row 13)",
+   "status": "blocked-on-operator",
+   "evidence": "V3_MILESTONES.md:318 (\u00a74 row 13) names the synthetic copy `dbchange_synthetic_<schema>_<evidence>_<seed>_<tier>[_<existing-data>]`. The re-cut (V3_MILESTONES.md:555-575, \u00a717 item 20, pending) drops evidence and seed, and the only tier is existing-data. DECISIONS.md:86 fixes the `[_<existing-data>]` suffix. VALUES.md:77 O6 still lists 'schema, evidence, seed, tier and existing data'.\n\nWhat the plan leaves unsettled:\n- Width: Fingerprint.ToString is 64 hex (kernel/Fingerprint.cs:122). Two of them plus the prefix is about 150 characters, past SQL Server's 128-character sysname, so they must be cut. Precedent: Ssdt.Build cuts to the first 16 digits (io/Ssdt.cs:217-218).\n- Which inputs 'schema' covers: the package alone, or also profile, DacFx and server. The Facsimile's base key, D5, covers the dacpac, reference data, options, tool, DacFx and LocalDB versions (archive/v2/ssdt-agent/facsimile/ARCHITECTURE.md:227-237).\n- Host: there is none, so two machines on one DBCHANGE_SQL, or two clones on one machine each with their own .dbchange/ lock, collide on one fingerprint name.\n- The suffix: `--existing-data` needs WP 2.1's ExistingData (M2, which waits on the operator's go). Only Provenance.ExistingData exists, as a Fingerprint? (kernel/Provenance.cs:40).\n- Name clash: CopyName's grammar (kernel/Target.cs:100) is `[a-z0-9_]`, and the fixture's sweep (SqlServerFixture.cs:131) drops whatever parses as one. A synthetic name must never parse as a CopyName.\n- CapabilityTests.cs:125 requires Copy to keep one internal constructor, which takes a CopyName (io/SqlServer.cs:180). A fingerprint-named Copy therefore needs that constructor generalized (its uses: DacFx.cs:174 and LocalServer.cs:74, 229, 234, 306).",
+   "remaining": "Proposed name for the step-1 synthetic copy: `dbchange_synthetic_<16 hex of the base's fingerprint>_existing-data[_<16 hex of the ExistingData fingerprint>]`. Example: dbchange_synthetic_0123456789abcdef_existing-data_fedcba9876543210, 69 characters.\n- The base's fingerprint is the cache key: Fingerprint.Of over canonical text of the package model's fingerprint (pre- and post-deploy scripts and refactorlog included, so the seeds count), the profile's Fingerprint, DacFx.Version, Server version, compatibility level and image, and the dbchange version. A profile, DacFx or server change then gives a new name.\n- The hyphen in `existing-data` keeps the name outside CopyName's grammar, so no per-process sweep ever drops it.\n- Defer the kernel type (`SyntheticCopyName`, readonly record struct in kernel/Target.cs beside CopyName, with Make(Fingerprint base, Fingerprint? existingData), Of(subject, text), and ToString; about 35 lines) to the restore that plants the synthetic copy (steps 2 to 8). Step 1 can build its base in a registered disposable copy, as the next item says.\n- Record the settled grammar as one paragraph correcting \u00a74 row 13 and VALUES.md O6, with a decision line.",
+   "files": [
+    "kernel/Target.cs",
+    "tests/Kernel.Tests/TargetTests.cs",
+    "V3_MILESTONES.md",
+    "VALUES.md",
+    "DECISIONS.md"
+   ],
+   "linesEstimate": 35,
+   "testLinesEstimate": 40,
+   "parityRows": "",
+   "question": "\u00a74 row 13 names the synthetic copy dbchange_synthetic_<schema>_<evidence>_<seed>_<tier>[_<existing-data>]. The re-cut leaves <schema>_<tier>[_<existing-data>], and full fingerprints push that past SQL Server's 128-character limit. May it read dbchange_synthetic_<16 hex of the base's fingerprint (package, profile, DacFx, server)>_existing-data[_<16 hex of the existing data's>], with no host, recorded as a correction to row 13?",
+   "testsFirst": [
+    "Kernel.Tests, fast, when the name lands: \"A synthetic copy's name carries its base's and its existing data's fingerprints and never reads as a disposable copy's name\". A CsCheck property: Of(Make(b, e).ToString()) equals Make(b, e); CopyName.Of fails on every made name; the length is at most 128."
+   ]
+  },
+  {
+   "name": "WP 3.5 step 1: the base built at a ref, published under the pipeline's profile, backed up into .dbchange/cache/ under a lock, and reached again from the cache",
+   "status": "missing",
+   "evidence": "There is no io/SyntheticCopy.cs, and Target.SyntheticCopy resolves to 'synthetic-copy.not-built' (io/SqlServer.cs:219-220). What exists to build on:\n- FileLock.Take(path, timeout): io/FileLock.cs:31.\n- Building at a ref: Ssdt.Build(repositoryRoot, reference, project, toolVariable, workingDirectory), io/Ssdt.cs:211-213.\n- Copy.Publish (io/SqlServer.cs:194-201) runs the post-deploy seeds. CopyTests.cs:146-147 notes the seed's MERGE runs on every publish.\n- The flow DriftCheck.Run follows: Standing.Of, then EnvironmentsFile.Read, then Resolve, Reach, ServerOf, Build (io/DriftCheck.cs:31-58).\n- A copy's profile is chosen only inside DriftCheck's private Profile (io/DriftCheck.cs:88-95): the named one, else Environments.SharedProfile (kernel/Environments.cs:38).\n\nConflicts with the WP text:\n- 'With drop-not-in-source': the golden pipeline profile sets DropObjectsNotInSource False (tests/Golden/project/profiles/pipeline.publish.xml). PublishProfile is closed to Strict and Permissive, which differ only in BlockOnPossibleDataLoss (io/PublishProfiles.cs:117-170; VALUES S1; CapabilityTests.Permissive_never_reaches_an_environment, :71). On a database just created the option has nothing to drop anyway.\n- The WP orders 'create a database named from its fingerprints, publish, back it up'. The Facsimile builds its base in `fx_base_<hash12>_<rand4>` (ARCHITECTURE.md:229-232), a disposable name.\n\nPAR-148 (V3_PARITY.md:249) cites `the copy build \u2014 not held yet: WP 3.5`. PAR-029 (V3_PARITY.md:143) cites `check and status \u2014 not held yet: WP 3.6`. V3_PARITY.md:290-303 (\u00a75) words step 1 as 'the base built, published and backed up'.",
+   "remaining": "Smallest honest slice: no verb, and no change to the contract (cli/schemas, --help --json, cli/exits.frozen). `synthetic-copy up` is WP 3.5 as a whole; it needs WP 3.8 (pending \u00a717 item 20) and WP 2.1's ExistingData for --existing-data.\n\nNew io/SyntheticCopy.cs, `public static class SyntheticCopy`:\n- `public sealed record Base(string Key, string Backup, Reached How, Fingerprint Schema, Server Server)`, where `Reached` is a closed abstract record with the cases Built and Cached, shaped like kernel/Toolchain.cs Pin.\n- `public static Stamped<Base> Of(Checkout checkout, GitRef at, string? profile, string? project, SqlServer.QueryLog log)`. Steps:\n  - Standing.Of(checkout), as io/DriftCheck.cs:33-40 does.\n  - The profile: lift DriftCheck.Profile (io/DriftCheck.cs:88-95) into `PublishProfiles.ForCopy(string root, Result<Environments> environmentsFile, string? named)` and use it from both.\n  - Ssdt.Build(checkout.Root, at.ToString(), project, checkout.Tool, checkout.WorkingDirectory).\n  - Then the inner Of.\n- `internal static Result<Base> Of(string root, string dacpac, PublishProfile.Strict profile, string toolVersion, SqlServer.QueryLog log)`. Steps:\n  - Ssdt.Open(dacpac). The schema is Fingerprint.Of(package.Elements.Elements).\n  - LocalServer.Create(root, log): a registered disposable copy, which the sweep reaps if the run dies.\n  - SqlServer.ServerOf(copy, log).\n  - The key: first 16 hex of Fingerprint.Of(canonical text of schema, profile.Fingerprint, DacFx.Version, the server's version, compatibility level and image, and toolVersion).\n  - FileLock.Take(state.CacheLock(key), BaseTimeout). Name BaseTimeout as Ssdt.BuildTimeout plus 10 minutes.\n  - Under the lock, a hit is a marker (.json) that names the same inputs and the .bak's SHA-256. On a hit: drop the empty copy and return Cached.\n  - On a miss: copy.Publish(dacpac, profile, log) under Strict as loaded. Then LocalServer.Backup(copy, state.CacheEntry(key), log). Write the marker last through Json.Text and Write.Text, as Ssdt.Build writes its marker last. Then LocalServer.Drop(copy, log) and return Built.\n  - Backup's cache.unavailable becomes a note `cache.unavailable`, and the base is reported Built and uncached.\n- The fingerprint-named database is the restore target of steps 2 to 8. M4's fresh copies are LocalServer.Restore(root, state.CacheEntry(key), log).\n\nStrike or explain 'with drop-not-in-source' with a decision line. It is moot on a freshly created database, and a third profile kind contradicts VALUES S1.\n\nGolden corpus: add tests/Golden/changes/add-a-view-over-two-tables/edits.txt. It appends `GO` and `CREATE VIEW dbo.CustomerOrders AS SELECT c.Id AS CustomerId, o.Id AS OrderId FROM dbo.Customer AS c JOIN dbo.[Order] AS o ON o.CustomerId = c.Id;` to Modules/Order.sql, after an anchor that occurs exactly once there (GoldenEdit.ApplyTo, tests/Shared/Io/GoldenProject.cs:108-115, asserts that). The corpus is at 1,461 of 3,000 lines.",
+   "files": [
+    "io/SyntheticCopy.cs",
+    "io/PublishProfiles.cs",
+    "io/DriftCheck.cs",
+    "io/LocalState.cs",
+    "tests/Io.Tests/SyntheticCopyTests.cs",
+    "tests/Golden/changes/add-a-view-over-two-tables/edits.txt",
+    "V3_PARITY.md",
+    "VALUES.md",
+    "DECISIONS.md",
+    "LAWS.md"
+   ],
+   "linesEstimate": 140,
+   "testLinesEstimate": 150,
+   "parityRows": "PAR-148 (from 'not held yet' to 'partly held'), new last cell: the publish keeps a view over two tables: `Io.Tests: \"A base whose project holds a view over two tables publishes it and restores it from the cache\"`; the planter skips views \u2014 not held yet: WP 3.8.\nPAR-029, optional (from 'not held yet' to 'partly held'), new last cell: the base reached again comes from the cache and plans nothing: `Io.Tests: \"The base of a package is published with its seeds backed up once and reached again from the cache\"`; `check` and `status` \u2014 not held yet: WP 3.6.\nBoth turned: tally 21 held, 24 partly held, 73 not held yet, 3 the cutover tools, 6 retired.\nAlso VALUES.md:64 R3: the synthetic copy's cache under .dbchange/ \u2014 cite the cache writer's row in LocalStateTests.",
+   "testsFirst": [
+    "Io.Tests, fixture: \"The base of a package is published with its seeds backed up once and reached again from the cache\". The first Of over GoldenProject.Built() is Built; the second is Cached. A LocalServer.Restore of the entry holds Customer's seed rows. The plan of the package against the restored copy is empty (DacFx.Plan with DacFx.Extract), and no disposable copy is left registered.",
+    "Io.Tests, fixture: \"A base whose project holds a view over two tables publishes it and restores it from the cache\" (PAR-148), over GoldenProject.Built(GoldenProject.Change(\"add-a-view-over-two-tables\")). sys.views holds CustomerOrders in the restored copy, and SELECT COUNT(*) FROM dbo.CustomerOrders answers.",
+    "Io.Tests, fixture: \"Two runs reaching one base at once build it once\". Two Of calls at once on one root: exactly one is Built and the other Cached, and one .bak is left.",
+    "Io.Tests, fast: \"A base whose backup no longer matches its marker is not a cache hit\", over the marker check with a truncated .bak."
+   ]
+  },
+  {
+   "name": "WP 3.5 step 1: the verb surface",
+   "status": "not-applicable-yet",
+   "evidence": "The contract (cli/Contract.cs, cli/schemas/, cli/exits.frozen) has no synthetic-copy verb, and Target.SyntheticCopy answers synthetic-copy.not-built (io/SqlServer.cs:219-220). WP 3.5's done-when ('after synthetic-copy up --at <Dev's deployed tag>, check drift --target synthetic-copy --at <that tag> exits 0'; 'a copy missing one witness fails acceptance') needs steps 2 to 8. Those wait on WP 3.8 (\u00a717 item 20, the operator) and on WP 2.1's ExistingData (M2, the operator's go). The cli budget stands at 1,289 of 1,700.",
+   "remaining": "None now. Step 1 lands as io/SyntheticCopy.Of with fixture tests only. `synthetic-copy up` and Target.SyntheticCopy's resolution arrive with steps 2 to 8 and WP 3.6.",
+   "files": [],
+   "linesEstimate": 0,
+   "testLinesEstimate": 0,
+   "parityRows": ""
+  }
+ ],
+ "fileOverlaps": [
+  ".github/workflows/dbchange.yml (S4 steps and filters; the S2 and S9 to S11 spikes may add steps)",
+  "DECISIONS.md",
+  "NEXT.md",
+  "V3_PARITY.md",
+  "VALUES.md (O1, O5, O6, R3, R5 cells)",
+  "LAWS.md (regenerated by ci/laws.sh when tests carry Value traits)",
+  "V3_MILESTONES.md (S4 row, \u00a74 row 13, WP 3.4 and 3.5 corrections, each with a decision line)",
+  "tests/Io.Tests/SqlServerFixture.cs",
+  "tests/Io.Tests/DbChangeProcess.cs",
+  "tests/Io.Tests/CopyTests.cs",
+  "tests/Io.Tests/LocalStateTests.cs",
+  "tests/Golden/changes/ (S2, S9 to S11 may add sample changes too)",
+  "io/SqlServer.cs (shared with the pre-M2 provenance and aggregate-query work)",
+  "io/DriftCheck.cs (shared with the pre-M2 'check drift reusing a built dacpac')",
+  "io/LocalState.cs",
+  "io/PublishProfiles.cs",
+  "kernel/Plan.cs",
+  "kernel/Target.cs",
+  "ci/budgets.json (read only: io 5,203 of 6,400)"
+ ],
+ "risks": [
+  "windows-latest moved to windows-2025-vs2026 with LocalDB 17.0.4025.3 (SQL Server 2025), and the laptops run 16.x. S4 in CI measures 17.0, not 16.x, unless a job installs LocalDB 16. R5's literal '2022 only' window would refuse the Windows fixture lane outright.",
+  "A container's backup lands inside the container (/var/opt/mssql/data, written as uid 10001). Reaching .dbchange/cache/ needs docker cp in both directions, and ownership fixed so mssql can read a staged file. The alternative is a bind mount, which changes ci/sql.sh's docker run and recreates nothing already running.",
+  "A DBCHANGE_SQL server on another machine, or a Windows SQL Server service account (Msg 3201), cannot write to the repository's .dbchange/cache/. The base then has to be published from scratch every time, with a note.",
+  "io's ceiling: io is at 5,203 of 6,400. This area adds about 300 lines, and Appendix F still plans M2 at 690, M4 550, M5 670, M6 370 and M7 400, well past the remaining 1,197. A raised ceiling is the operator's decision. LocalServer.cs grows from 346 to about 500 lines; split it into a partial io/LocalServer.Cache.cs, which still satisfies CapabilityTests.Nothing_but_LocalServer_makes_a_Copy.",
+  "The sweep's 'older than a day' (VALUES O5) means a killed run's copy stays up to a day, taking LocalDB disk on laptops. The killed-run test must move the clock through an internal now parameter, because io may not use System.Diagnostics.Process to check pids.",
+  "A fingerprint-named synthetic copy has no host. Two machines on one DBCHANGE_SQL, or two clones on one machine (each with its own .dbchange/ lock), collide on the same name, and a per-checkout lock does not serialize them.",
+  "The test fixture's sweep (SqlServerFixture.cs:120-136) drops any CopyName-shaped database of this machine whose pid has ended. Any new name form must stay outside CopyName's grammar, which the hyphen in existing-data guarantees.",
+  "S4 adds roughly 1 to 3 minutes on LocalDB to a sql-windows job already at 667 s of its 20-minute limit. Installing LocalDB 16.x as well calls for a separate job or a 30-minute limit.",
+  "The probe numbers here (publish from scratch 35.3 s against restore 1.1 s for 300 tables) were taken while another fixture run shared the container. They are indicative; the decision line must cite the CI run.",
+  "The stand-in schema is built with TSqlModel and carries no post-deploy seeds. S4's publish time therefore omits the seed MERGEs the SSDT repository's real post-deploy runs; the laptop half against the real schema is a person's.",
+  ".dbchange/cache/ has no eviction. A .bak per base fingerprint accumulates across refs and DacFx or server changes.",
+  "Remedies in io name ci/sql.sh and ci/sql.ps1 (io/LocalServer.cs:189, io/SqlServer.cs:116-117, io/Doctor.cs:291), which neither the SSDT repository nor dist/dbchange/ carries."
+ ]
+}

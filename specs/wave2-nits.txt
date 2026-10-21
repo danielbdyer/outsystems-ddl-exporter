@@ -1,0 +1,123 @@
+[2.1a] WHERE: kernel/Coordinates.cs:33-34 (Coordinates.Of, the made and held sets)
+EVIDENCE: Coordinates.Of builds `made` and `held` with ElementKey's record equality, which compares names ordinally. Change.Between and Preconditions.BaselineDrift both take a Collation and compare keys through ElementKey.Comparer(collation), and decision 2.26 treats a difference in letter case alone as no change under a case-insensitive collation. Under Latin1_General_CI_AS, an environment model that spells [dbo].[CUSTOMER] where the package spells [dbo].[Customer] makes Coordinates.Of refuse with plan.missing-object, although the object exists. The refusal errs on the safe side, and whether it occurs depends on which model WP 2.5 passes as `environment`.
+FIX: Take the collation. Build `made` and `held` with ElementKey.Comparer(collation), and return the environment's own spelling as Place.Environment so WP 2.3's queries name the object as the environment holds it. Add a CoordinatesTests case under CaseInsensitive in which the environment spells a table in other letter case.
+
+[2.1a] WHERE: kernel/Preconditions.cs (376 lines); V3_MILESTONES.md:1125 (Appendix F)
+EVIDENCE: Appendix F plans Preconditions.cs at 320 lines, and the brief repeats that figure. The file has 376, and kernel/Coordinates.cs (145 lines) is a file the plan does not name. Both are within the 500-line rule and the kernel ceiling (3216 of 6800). The plan's figures are data for comparison, never a failure.
+FIX: In the pull request's budgets section, report the per-file actuals against Appendix F: Preconditions.cs 376 of 320, Outcome.cs 113 of 320, Coordinates.cs 145 unplanned, ColumnType.cs 58. No code change.
+
+[2.1a] WHERE: io/ (ci/budgets.json budgets.io, ceiling 6400); io/DacFx.cs:413-458 (Keys.Unnamed)
+EVIDENCE: Counted at 6818b0c, excluding bin/ and obj/: io holds 6271 of its 6400 lines, and io/DacFx.cs holds 482 of the 500-line per-file ceiling. This branch adds 54 io lines and removes 4. Appendix F still plans 690 io lines for M2 (AggregateQueries.cs and Predict.cs, for WP 2.2, 2.3 and 2.5). The first of those work packages will turn Budgets.Tests 'Each_budget_holds_its_ceiling(io)' red. The brief scoped this slice to the kernel; the io lines come from the review's second finding. The implementer's report gives the totals but does not raise the question.
+FIX: In the pull request's budgets section, state io 6271/6400 and DacFx.cs 482/500, and name the coming overrun as the design question AGENTS.md describes: shrink io, or raise its ceiling with a decision line in the pull request that needs the room. This branch needs no code change for it.
+
+[2.1a] WHERE: kernel/Preconditions.cs (376 lines); V3_MILESTONES.md:1125
+EVIDENCE: Appendix F plans 320 lines for Preconditions.cs, covering the preconditions, ExistingData and baseline drift. The file holds 376. Coordinates.cs (145) and ColumnType.cs (58) are new kernel files that Appendix F does not list. The second slice of WP 2.1 still adds seven kinds (KeyLength, Rebuild, Computed, Temporal, Scan, Authored, SeedDrift), and 124 lines remain before the 500-line per-file ceiling. Outcome.cs uses 113 of its planned 320.
+FIX: Record the 56 lines over plan in the pull request's budgets section. Plan for the second slice's kinds to go into their own file, or move Preconditions.BaselineDrift and its helpers (Preconditions.cs:235-296) beside Outcome.Predict, which reports the drift.
+
+[2.1a] WHERE: tests/ (ci/budgets.json budgets.tests, ceiling 20000); tests/Kernel.Tests/QuestionCases.cs (433), tests/Kernel.Tests/Model.cs (259)
+EVIDENCE: Tests hold 17939 of 20000 lines. This branch adds 1711 test lines, which is 86% of Appendix F's M2 test plan (1984) in one slice of one work package. That leaves 2061 lines for the rest of M2 and for M3 to M7, which plan 10223. No test file goes past 800 lines; the largest is ContractTests.cs at 772, which is older than this branch.
+FIX: Name the tests budget in the pull request's budgets section, next to the kernel and io figures the report already gives.
+
+[2.1a] WHERE: DECISIONS.md:106
+EVIDENCE: The line carries two decisions. One is the coordinate rule measured on DacFx 170.5.96: a created column holds its default when NOT NULL and NULL when it allows NULL, because there is no WITH VALUES. The other is a scope decision: WP 2.3's queries read that value where the column's name would stand, and treat a parent table the change creates as one with no row. The implementer's report says one line covers both. The line passes Decisions 'Every_line_under_the_heading_is_one_dated_decision_with_its_pull_request', and line 105 has the right shape: one correction of the WP 2.1 table.
+FIX: Split DECISIONS.md:106 into two lines in the dated format, each ending with ' · #705': the nullable rule (WP 2.1 row), then WP 2.3 reading created columns and parent tables in place (WP 2.3 row).
+
+[2.1a] WHERE: ci/budgets.json; tests/Budgets.Tests/Budgets.cs
+EVIDENCE: ci/budgets.json sets only package ceilings (kernel 6800, io 6400, cli 1700, code 14900, tests 20000, golden 3000). It sets no per-file line ceiling and no line-width ceiling, and no Budgets test enforces 500 lines a file or 140 characters a line. I measured both by hand. Every kernel file is within 500 lines (largest Preconditions.cs, 376) and within 140 characters. No line this branch adds to a .cs file is over 140 bytes. The only lines over 140 in changed files (tests/Budgets.Tests/Register/ErrorPaths.cs:514-573) predate the branch, and io/DacFx.cs:212 is 141 bytes but 140 characters, because it contains '§'.
+FIX: Outside this work package: the per-file budget work (500 lines a code file, 800 a test file, 140 characters a line) should add those ceilings to ci/budgets.json and a Budgets test, so CI checks what this review checked by hand.
+
+[SUB] WHERE: tests/Kernel.Tests/ProvenanceTests.cs:71,77 (base); tests/Io.Tests/DoctorTests.cs
+EVIDENCE: Two test methods were renamed: A_server_is_refused_for_a_version_of_other_than_four_numbers_a_level_SQL_Server_never_had_or_a_malformed_digest became ..._or_a_blank_edition, and A_server_prints_its_version_its_level_and_its_image_where_it_has_one became A_server_prints_its_version_its_edition_and_its_level. In DoctorTests, four Docker tests were replaced by tests under new names. The workflow rule says never to rename a test method. On the base branch, git grep finds no citation of any of these names in V3_PARITY.md, VALUES.md or LAWS.md, and the old names describe behaviour this work package removes, so nothing breaks.
+FIX: None needed for these tests. Say in the pull request that the renamed and replaced tests had no citation and that their subject (the image digest and Docker) is gone.
+
+[SUB] WHERE: tests/Io.Tests/DoctorTests.cs:331-346
+EVIDENCE: The summary of A_closed_loopback_port_accepts_no_connection_and_a_listening_one_does says 'each answered without waiting for the probe timeout', but the test measures no time. A Listening that waited the full 20 seconds on a closed port would still pass.
+FIX: Assert that each call returns well under Command.ProbeTimeout, for example with a Stopwatch and a bound of 5 seconds, or delete the clause from the summary.
+
+[SUB] WHERE: tests/Io.Tests/TargetTests.cs:466-467; tests/Io.Tests/StatementTests.cs:194; tests/Io.Tests/DiffTests.cs:80; tests/Io.Tests/DriftTests.cs:342
+EVIDENCE: Test comments still describe the Docker local server: 'as after the container stopped ... with the remedy that starts the container', 'a password the container no longer has', 'on the container the fixture's identity signs in as sa', and 'The container's SQL Server shows DacFx's catalog batch masked'.
+FIX: Rewrite each comment for the SQL Server that ~/.dbchange/sql.env names: 'as after ci/sql.sh down', 'the remedy ci/sql.sh up', and 'SQL Server Express on Linux'.
+
+[SUB] WHERE: V3_MILESTONES.md:415 (WP 0.5), V3_MILESTONES.md:417 (WP 0.7)
+EVIDENCE: WP 0.5 still says 'Docker as the local server' and that the hook starts 'Docker and the shared SQL Server container'. WP 0.7 still describes 'a container from the pinned image (pulled when absent, SQL Server Agent enabled)', 'Ubuntu with SQL Server in Docker', 'the CDC tests on Ubuntu' and an outbound deny 'once the image is present'. §1 fact 12 at line 89 was marked superseded, but these two rows were not.
+FIX: Add 'Superseded on 2026-10-19 (§4 row 16)' to each row, in the same form as §1 fact 12, in one paragraph with its decision line.
+
+[SUB] WHERE: ci/sql.sh:53-60 and ci/sql.sh:108-127 (install keeps an installed server; up)
+EVIDENCE: Suppose mssql-server 16 or later is already installed and was configured elsewhere, for example with mssql-conf setup, its own SA password in master and sqlservr under systemd on port 1433. install() keeps it, and up() writes a fresh password and port 11434 into sql.env. It then skips start because sqlservr is running, or because master ignores MSSQL_SA_PASSWORD after its first creation, and fails only after 90 tries (three minutes) with a remedy about another program holding the port. The implementer ran neither this branch nor the refusal of an older server.
+FIX: When mssql-server is installed but sql.env is absent, or sqlservr already runs while sql.env is absent, refuse at once. The message should say that this script did not set that server up, and the remedy should set DBCHANGE_SQL to it or remove it first.
+
+[SUB] WHERE: V3_MILESTONES.md:417 (WP 0.7) and V3_MILESTONES.md:415 (WP 0.1)
+EVIDENCE: WP 0.7 still reads 'a container from the pinned image (pulled when absent, SQL Server Agent enabled) on Ubuntu and in cloud sessions', 'a SQL lane running Io.Tests (the CDC tests on Ubuntu)' and 'once the image is present'. WP 0.1 still has the SessionStart hook 'start Docker and the shared SQL Server container'. Item (6) of the brief asked for every document that assumes CDC runs here to be converted; §1 fact 12 at line 89 got a 'Superseded on 2026-10-19' clause, and these two rows did not.
+FIX: Add one in-place clause to each row, 'Superseded on 2026-10-19 (§4 row 16): ci/sql.sh up runs SQL Server 2022 Express natively, and no local server runs SQL Server Agent', keeping the file within its 1163-line budget.
+
+[SUB] WHERE: DECISIONS.md:105
+EVIDENCE: The 2026-10-19 local-server line supersedes the 2026-09-23 line 9 ('the SessionStart hook starts Docker and the SQL Server container in remote sessions only, an exception to "no hook starts a daemon"') but does not restate that SessionStart running ci/sql.sh up, which starts sqlservr, is still such an exception. CLAUDE.md:8 and the §4 text in V3_MILESTONES.md describe the exception as 'recorded as a decision line', and that line is now superseded.
+FIX: Add to the same 2026-10-19 line: 'the SessionStart hook runs ci/sql.sh up in remote sessions only, which starts sqlservr, and stays an exception to "no hook starts a daemon"'.
+
+[SUB] WHERE: ci/sql.sh:61 (install: the keyring)
+EVIDENCE: `curl -fsSL "$repo/keys/microsoft.asc" | gpg --dearmor | root tee "$keyring"` takes whatever key the fetch returns, unchecked. apt then verifies the pinned mssql-server=16.0.4305.5-1 against that key. The Docker image this replaces was pinned by its content digest, and libldap in the same script is pinned by SHA-256.
+FIX: Before writing the keyring, fail unless `gpg --show-keys --with-colons` reports fingerprint BC528686B50D79E339D3721CEB3E94ADBE1229CF, or pin microsoft.asc's SHA-256 as the script does for libldap.
+
+[SUB] WHERE: tests/Io.Tests/DoctorTests.cs:240, and the renamed tests in tests/Io.Tests/DoctorTests.cs and tests/Kernel.Tests/ProvenanceTests.cs
+EVIDENCE: Commit 41f224d renamed five test methods, against the brief's 'Never rename an existing test method or test class'. DoctorTests: Without_Docker_LocalDB_is_the_local_server_and_no_image_is_needed -> Where_neither_DBCHANGE_SQL_nor_sql_env_names_a_server_LocalDB_is_the_local_server_and_no_docker_runs; Docker_installed_with_its_daemon_stopped_says_to_start_Docker_and_Docker_absent_says_to_install_it -> With_no_local_server_the_remedy_names_ci_sql_up_and_DBCHANGE_SQL; The_sql_scripts_pin_the_image_the_doctor_checks -> The_sql_scripts_start_SQL_Server_2022_Express_on_Linux_and_LocalDB_on_Windows_and_run_no_container. ProvenanceTests: A_server_is_refused_..._or_a_malformed_digest -> ..._or_a_blank_edition; A_server_prints_its_version_its_level_and_its_image_where_it_has_one -> A_server_prints_its_version_its_edition_and_its_level. git grep at the base finds none of them cited in VALUES.md, V3_PARITY.md, LAWS.md or V3_MILESTONES.md, and each old name states behaviour the ruling removed. The report's 'no test was renamed' holds only for 7c2b0ad.
+FIX: List the five old and new names in the pull request body, so a reviewer sees that each name moved with its behaviour; no code change is needed.
+
+[SUB] WHERE: io/Doctor.cs:345 (Endpoint)
+EVIDENCE: Endpoint returns null for an empty data source, so the doctor skips the probe. The built doctor with DBCHANGE_SQL="Password=<planted>;Server=" reads READY with 'local-server=DBCHANGE_SQL (localhost)', and nothing was reached.
+FIX: Treat an empty data source as localhost:1433, as ServerName already spells it, and probe it; or name it as missing with the remedy to correct DBCHANGE_SQL.
+
+[SUB] WHERE: DECISIONS.md:105
+EVIDENCE: The line is in the dated format and Budgets.Tests Decisions passes. It holds several decisions in one sentence: the Linux route (SQL Server 2022 Express from packages.microsoft.com, with the libldap-2.5-0 install fetched from Launchpad on 24.04 so CI stays on ubuntu-latest), ci/sql.sh's install-only-when-absent rule and cleared environment, and the CDC consequence (law 8's CDC half and M4 exit 7's CDC clause become checks a principal runs). The brief asked for one local-server line and the implementer followed it, but a reader looking for the CDC ruling has to find it inside the local-server line.
+FIX: Optional: split the CDC clause into its own 2026-10-19 line ending '· #705' ('CDC is never proven in this repository ... each recorded with its command'), so that each line holds one decision.
+
+[SUB] WHERE: DECISIONS.md:47 and DECISIONS.md:106
+EVIDENCE: Line 47 (2026-09-24) still reads that `io/Substrate` chooses '(ESTATE_SQL, the estate-sql container, LocalDB)'. Line 106 replaces that order with DBCHANGE_SQL, then the SQL Server ~/.dbchange/sql.env names, then LocalDB. Line 105 names only the 2026-09-23 lines it supersedes, and line 106 names no earlier line. A reader of line 47 cannot tell that its container clause no longer holds.
+FIX: Add to line 106: 'this supersedes the container in the order of 2026-09-24's io/Substrate line'.
+
+[SUB] WHERE: tests/Kernel.Tests/ProvenanceTests.cs:75, tests/Kernel.Tests/ProvenanceTests.cs:79, tests/Io.Tests/DoctorTests.cs:240
+EVIDENCE: Three existing test methods were renamed. A_server_is_refused_..._or_a_malformed_digest became ..._or_a_blank_edition. A_server_prints_its_version_its_level_and_its_image_where_it_has_one became A_server_prints_its_version_its_edition_and_its_level. Without_Docker_LocalDB_is_the_local_server_and_no_image_is_needed became Where_neither_DBCHANGE_SQL_nor_sql_env_names_a_server_LocalDB_is_the_local_server_and_no_docker_runs. The brief says never to rename one. Running git grep on the base found none of the old names in V3_PARITY.md, VALUES.md or LAWS.md. The subject of each test, the image digest or Docker, is gone. ParityResolves, ValuesResolve and Laws all pass, so no citation is left unresolved.
+FIX: No code change. The pull request body names the three renames and why each was forced, so the ledger's no-rename rule is visibly not broken by accident.
+
+[SUB] WHERE: io/Doctor.cs:22, io/ConnectionString.cs:17, tests/Io.Tests/DriftTests.cs:204
+EVIDENCE: Rewrapping the doc comments left short lines: '/// ~/.dbchange/sql.env names, LocalDB); and Git LFS. Each item', '/// itself.', and '    /// the stamp says'. Every line stays within 140 characters. The check counts characters, and no line the diff adds exceeds 140 in any .cs, .sh, .ps1 or .yml file.
+FIX: Optional: refill each summary paragraph to the 140-character width.
+
+[R1] WHERE: V3_ARCHITECTURE.md:1740 and :3000
+EVIDENCE: Both amendments still say the re-cut is 'pending the operator (its §17 item 20)'. The operator confirmed it on 2026-10-19, and V3_MILESTONES.md §9 and §17 item 20 now say it is settled.
+FIX: Replace 'pending the operator' with 'confirmed by the operator on 2026-10-19' in both places.
+
+[R1] WHERE: V3_BLUEPRINT_PROMPT.md:143-145
+EVIDENCE: The prompt still says '`V3_MILESTONES.md` budgets 14,900 product lines' and 'Its test ceiling is 20,000'. ci/budgets.json now holds 25,900 for the code and 41,300 for the tests.
+FIX: State the new ceilings, or say that the figures are those as of a named date.
+
+[R1] WHERE: V3_MILESTONES.md:872 (§17 item 20)
+EVIDENCE: Item 20 says D6, P1, P2 and P3 'moved to their planted forms (WP 3.8 and WP 3.5)'. VALUES.md P2 now reads 'not held yet: WP 3.7', and the DECISIONS.md line says P2's column shape is held by WP 3.7.
+FIX: Name WP 3.7 in item 20 beside WP 3.8 and WP 3.5.
+
+[R1] WHERE: V3_MILESTONES.md:999 (the privacy closure row); V3_PARITY.md:104 (PAR-011)
+EVIDENCE: Both still say the measurement is integer-only ('integer-only aggregate queries'; 'integers only, so no value leaves at all'). Ruling (d) and WP 3.7 now add one allowlist form that returns character-class signatures, which are strings, with their counts.
+FIX: Add the one signature form, with rare ones folded (§17 item 24), to both cells.
+
+[R1] WHERE: V3_MILESTONES.md:506 (M1 'Watch for.') and :514 (M2 'Outcome.')
+EVIDENCE: Two paragraphs the rulings do not touch were each joined from three physical lines into one. This keeps the file at its manifest ceiling of 1,163 lines while two new paragraphs are added. The text grew, but the line count did not show it.
+FIX: Shorten text elsewhere, or raise V3_MILESTONES.md's budget in ci/docs.manifest.json with a decision line, and restore the original line breaks.
+
+[R1] WHERE: NEXT.md:6-11 (the laptop check)
+EVIDENCE: M1 exit 1 passes only when check drift 'exits 0 with "Dev is in sync with <tag>", or 5 naming each differing object, within a minute'. The laptop check asks for elapsedMs and collation_name but not for check drift's exit code or its output. It also tells the operator to run 'dist\dbchange\dbchange.exe' from the SSDT repository's clone, but that path is relative to the v3 clone.
+FIX: Ask for check drift's exit code and its JSON output as well. Give the executable as '<v3 clone>\dist\dbchange\dbchange.exe'.
+
+[R1] WHERE: NEXT.md line 7; V3_BUILD_PROMPT.md line 84
+EVIDENCE: NEXT.md line 7 is 170 characters and V3_BUILD_PROMPT.md line 84 is 164 characters. The text around each wraps near 115 characters. V3_BUILD_PROMPT.md is at 552 of its 556 lines, so it has room to rewrap.
+FIX: Rewrap both lines to the width of the text around them. NEXT.md is at 39 of 40 lines, so tighten a sentence there if the rewrap needs another line.
+
+[R1] WHERE: DECISIONS.md line 105
+EVIDENCE: The line opens "the lines per file are the budget to keep, and a package's ceiling may rise", but line 106 is the decision about package ceilings. It also cites "(the operator's ruling of 2026-10-19)" twice, so it reads as two rulings combined in one line.
+FIX: Limit line 105 to the per-file ceilings (500 lines and 140 characters for kernel/, io/ and cli/; 800 lines and no width for tests/) and cite the ruling once. Leave the ceiling rise to line 106.
+
+[R1] WHERE: V3_MILESTONES.md line 872 (§17 item 20)
+EVIDENCE: Item 20 says D6, P1, P2 and P3 moved to their planted forms "(WP 3.8 and WP 3.5)". VALUES.md P2 says "not held yet: WP 3.7", and DECISIONS.md line 108 says "P2's column shape by WP 3.7".
+FIX: Write "(WP 3.8, WP 3.5 and WP 3.7)" in item 20.
+
+[R1] WHERE: tests/Budgets.Tests/Budgets.cs Every_line_of_a_file_of_a_group_holds_the_width_ceiling; LAWS.md L3 row
+EVIDENCE: The theory now runs only over the groups that carry a widthCeiling (WidthGroups, today only 'code'). The LAWS.md row 'Every line of a file of a group holds the width ceiling' reads as if every group, tests included, were held to a width. The method is not on the base (it arrives with wp/B1.budgets), so the rule against renaming existing tests does not bind it yet.
+FIX: Either rename the method to state the rule, for example Every_line_of_a_code_file_holds_the_width_ceiling, and regenerate LAWS.md with ci/laws.sh; or keep the name and make the summary and the law row say 'a group that carries a widthCeiling'.

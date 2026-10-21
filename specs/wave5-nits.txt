@@ -1,0 +1,43 @@
+[H5] WHERE: tests/Io.Tests/ServerProbeTests.cs:23
+EVIDENCE: The rewrapped summary line is still 145 characters ('    /// alone, a batch's first statement without EXEC among them, are refused; xp_instance_regread, sp_executesql, a SELECT that quotes the name,'). The wave-4 nit asked for the comment to wrap at 140 characters, like the lines around it.
+FIX: Break the line before 'a SELECT that quotes the name,' so that every line of the summary is at most 140 characters.
+
+[H5] WHERE: V3_BLUEPRINT_PROMPT.md:85
+EVIDENCE: The edited line is 112 characters wide. The rest of the paragraph (lines 80 to 89) wraps at 98 characters or fewer. The wave-3 nit on V3_MILESTONES.md objected to exactly this kind of overlong line.
+FIX: Rewrap the bullet so that '(§17 item 20).' moves to the next line. The file can take the extra line.
+
+[H5] WHERE: NEXT.md:22 ('WP 2.1's second slice: the statement kinds the plan's §4 shapes name, with the four refinements of spike S2's decision lines.')
+EVIDENCE: In this repository 'the plan' means V3_MILESTONES.md, but the statement shapes are the Facsimile's §4. DECISIONS.md, 2026-10-19, on the Facsimile's §11 question 3: 'the statement shapes its §4 matches are in both releases' plans, with four refinements for WP 2.1'. The kinds are those V3_MILESTONES.md §4 row 20 lists. As written, the reference points the next session at the wrong section.
+FIX: Write: 'WP 2.1's second slice: the statement kinds V3_MILESTONES.md §4 row 20 names (KeyLength, Rebuild, Computed, Temporal, Scan, Authored, SeedDrift), matched on the Facsimile's §4 shapes, with the four refinements of the 2026-10-19 line on the Facsimile's §11 question 3.'
+
+[H5] WHERE: kernel/Order.cs:89-93 (Order.Cycle.Error)
+EVIDENCE: A table with two NOT NULL self-references gives '[dbo].[Employee] references itself through a NOT NULL foreign key ([dbo].[Employee] → [dbo].[Employee]; foreign keys [dbo].[FK_Employee_ManagerId] and [dbo].[FK_Employee_MentorId])'. OrderTests.A_cycle_s_error_names_every_NOT_NULL_foreign_key_its_path_follows asserts this text. The head of the sentence says one key, and the parenthesis then names two.
+FIX: Write 'through NOT NULL foreign keys' when Keys.Count > 1 in the self-reference branch.
+
+[H5] WHERE: DECISIONS.md line 155 (PAR-012 and PAR-002) and line 160 (§1 preamble, M0 Watch for and M7 sentence)
+EVIDENCE: AGENTS.md: 'At most one line in DECISIONS.md per decision' and 'V3_MILESTONES.md only to keep it true, one paragraph at a time, each correction with a decision line'. Line 155 records two separate ledger corrections. Line 160 records changes to three V3_MILESTONES.md paragraphs. The brief's three no-EXEC corrections each have their own line, so the brief itself is met.
+FIX: Split line 155 into a PAR-012 line and a PAR-002 line. Split line 160 into one line for the §1 preamble and one for M0's Watch for. The M7 shortening can stay with whichever line it serves.
+
+[H5] WHERE: tests/Io.Tests/AggregateQueriesTests.cs:453-456 and DECISIONS.md line 150 (the ISNULL literal rule)
+EVIDENCE: The three new counted cases (ISNULL([Tiny],(0)), ISNULL([Flag],(0)), ISNULL([Tiny],'0')) assert that a Check precondition is queried and that nothing reads not predictable. They do not assert what the query counts. No fixture test in AggregateQueriesCountTests runs a literal ISNULL against SQL Server beside the check's validation, unlike the other Check rules, whose decision lines say 'as measured on SQL Server 2022'. The brief asked only for the InlineData case, and mutants confirm those cases fail without the rule.
+FIX: Optional: add the literal cases to a fixture count test, for example ISNULL([Tiny],(0))>(0) over the planted rows 1, 0 and NULL, expecting violating 2 and no failed query.
+
+[H5] WHERE: NEXT.md (the two spike S2 nits on tests/Io.Tests/BlockOnPossibleDataLossCheckTests.cs that were skipped)
+EVIDENCE: The implementer left two wave-3 nits to WP 2.2, which works on that test class in this wave: an assertion that the comment before the Customer check names both [Email] and [ContactPhone], and the PRIMARY KEY CLUSTERED fragment. NEXT.md does not record the hand-off. DECISIONS.md's spike S2 line still claims 'a block comment naming each site on it', and no test asserts that.
+FIX: Add a NEXT.md line saying WP 2.2 carries both S2 test nits, or confirm that WP 2.2's brief names them.
+
+[2.2] WHERE: tests/Io.Tests/BlockOnPossibleDataLossReaderTests.cs:156, A_variable_the_script_uses_with_no_value_is_sqlcmd_undefined_before_anything_is_parsed
+EVIDENCE: The test feeds Script(Checks), which parses cleanly, with Values[..2], and asserts only the code sqlcmd.undefined and $(ServiceToken). The name's clause "before anything is parsed" is never tested: a script that both lacks a value and does not parse would show which error wins.
+FIX: Add a statement TSql160Parser rejects to the script, and assert that the error is still sqlcmd.undefined, not plan.unparsed. Do not rename the method.
+
+[2.2] WHERE: tests/Io.Tests/BlockOnPossibleDataLossChecks.cs:14 and V3_MILESTONES.md:143 (§2.2 adapters table)
+EVIDENCE: The helper's summary still says "WP 2.2's reader in io/SqlServer.Plan replaces In". The reader is io/BlockOnPossibleDataLoss, and In is kept as S2's extraction. The §2.2 row 'A live database's plan' still credits `io/SqlServer.Plan` with "BlockOnPossibleDataLoss sites". The decision line and the WP 2.2 row (V3_MILESTONES.md:523) were corrected to io/BlockOnPossibleDataLoss; these two places were not.
+FIX: Change the helper's comment to name io/BlockOnPossibleDataLoss and say that the reader is held to the same committed files. Correct the §2.2 row to name io/BlockOnPossibleDataLoss for the sites, citing the existing 2026-10-20 decision line.
+
+[2.2] WHERE: tests/Io.Tests/BlockOnPossibleDataLossChecks.cs:14; V3_MILESTONES.md:143
+EVIDENCE: Both still name io/SqlServer.Plan as the reader's location. The helper's doc says "WP 2.2's reader in io/SqlServer.Plan replaces In", but In is kept and the reader lives at io/BlockOnPossibleDataLoss. The §2 sources row says "`io/SqlServer.Plan`: `DacServices.Script` ...; the script's AST; `BlockOnPossibleDataLoss` sites". The commit corrected only the WP 2.2 row.
+FIX: In the helper's doc, say that io/BlockOnPossibleDataLoss is held to the same committed files and that In stays as S2's extraction. In V3_MILESTONES.md:143, name io/DacFx.Plan and io/BlockOnPossibleDataLoss. The existing decision line can cover the change.
+
+[2.2] WHERE: io/BlockOnPossibleDataLoss.cs:40-41 (Read(Plan, Database)); io/BlockOnPossibleDataLoss.cs:74
+EVIDENCE: The public path WP 2.5 will call has no test: Read(plan, target) through SqlServer.SqlCmdValues, with values that come from env:/file: references. The implementer lists this under Not checked. All sensitive-value tests feed the internal Read(string, values) directly. Also, Result.All fails the whole read when one check's predicate is refused. The brief says "the predicate passes the allowlist or the site refuses", so one refused site hides every other check of the plan.
+FIX: Add a fixture fact that resolves an env: target with a file: SQLCMD reference, plans, and calls Read(plan, target). Assert that a check reading the variable is sqlcmd.sensitive, and that neither the planted value nor the queries.log holds it. Either record that the whole read refuses, or return per-check results for WP 2.5.

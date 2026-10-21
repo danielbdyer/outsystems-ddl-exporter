@@ -1,0 +1,62 @@
+S2 is built and committed as 9ae0f46 on wp/S2 (not pushed). The build, the fast and build lanes and the fixture lane are green.
+
+FINDING THE SCOUT DID NOT SEE. Statements match on both releases except for one block. A model that sets no Query Store option is Query Store OFF to DacFx 162.5.57 and READ_WRITE to 170.5.96. SQL Server 2022 creates a database with READ_WRITE. So on a copy one release published, the other release plans 'IF EXISTS (... sysdatabases ...) BEGIN ALTER DATABASE [$(DatabaseName)] SET QUERY_STORE ... WITH ROLLBACK IMMEDIATE END' for every change, and for an unchanged model too: 162 writes 'SET QUERY_STORE = OFF', 170 writes 'SET QUERY_STORE (OPERATION_MODE = READ_WRITE)'. The scout missed it because each release published its own copy. The receipt is kept as a test: the statements Theory compares the plans without that block and requires the block in 162's plan, and a separate fact publishes a second copy with 162 to pin both directions. This adds a fourth DECISIONS.md line and a note on S7 in NEXT.md.
+
+CHECKS. One check form on both releases, in a live Script and in io's DacFx.Plan between two packages: IF EXISTS (select top 1 1 from [s].[T]) RAISERROR (..., 16, 127) WITH NOWAIT. DacFx writes it with CRLF line endings, one check per table. Eleven sample changes write checks, and their extracted checks are under tests/Golden/data-loss-checks/. A sample change with no file is the claim that it writes no check. No file for a single release is needed.
+
+WHAT CHANGED.
+- tests/DacFx162/: Program.cs and DacFx162.csproj, using VersionOverride 162.5.57 with its own lock file, and added to DbChange.sln.
+  - Verbs: 'script' and 'publish'. The connection string goes in DBCHANGE_DACFX162_CONNECTION. The first line of output is 'DacFx 162.5.57'.
+  - The verb table leaves room for S9 to S11 to add a schema read and a trust read.
+  - tests/Io.Tests/DacFx162Child.cs finds the dll for the test's configuration and fails with the build command if the dll is missing.
+- tests/Golden/changes/: the scout's 23 sample changes, edits.txt only.
+- tests/Io.Tests/BlockOnPossibleDataLossChecks.cs: the extraction (SpikeTests' visitor moved here) and the statement listing.
+- Docs:
+  - Directory.Packages.props: its comment now names the override.
+  - ci/packages.allow: gained a comment line only. A package line for a transitive package would fail 'every allowed package is used'.
+  - DECISIONS.md: four lines.
+  - V3_PARITY.md: PAR-019 and PAR-020 cells, §0 and §5 item 2. The tally is unchanged.
+  - NEXT.md: updated, and LAWS.md regenerated.
+  - .github/workflows/dbchange.yml: a comment only. Restoring the solution already restores and builds tests/DacFx162 before the outbound-deny step.
+
+DEVIATIONS FROM THE SPEC.
+- Names: the spec's DataLossChecks and DataLossCheckTests are BlockOnPossibleDataLossChecks and BlockOnPossibleDataLossCheckTests. ci/register.json retires 'DataLossCheck', and Register.Prose failed on NEXT.md.
+- Citations.cs: the example for a missing corpus path moved to tests/Golden/trust-states/, because tests/Golden/data-loss-checks/ now exists. This changes InlineData only; no test was renamed.
+- The child's release test is in the build category, not fixture. It starts a process and needs no SQL Server.
+
+CI TIME, NOT CHECKED. Both the 162 and 170 halves still run on every fixture job. The Windows LocalDB lane is not measured: here the S2 class adds about 2 min 50 s to a 9-minute fixture lane. If windows-latest goes past 20 minutes (11 min 18 s at the base), the remedy the brief names applies: run the 162 half on Ubuntu only, by excluding it from the Windows filter, with a decision line. Also not checked: LocalDB 17.0, the outbound-denied job, and package-to-package plans by 162.
+
+FOR WP 2.2 (THE READER).
+- Swap BlockOnPossibleDataLossChecks.In in the Theory 'Each sample change's plan writes the data loss checks committed for it on both DacFx releases' for io/SqlServer.Plan's reader. Run it over the same three scripts (Live170, Package170, Live162) and against the same committed files.
+- Match on ScriptDom, never on text. The match is an IF whose Predicate is an ExistsPredicate, with no ELSE, and whose ThenStatement is a single RaiseErrorStatement with a ThirdParameter of 127.
+- Every plan carries the guard's text in the pre-deploy block comment.
+- Two lookalikes exist:
+  - the rebuild's 'IF EXISTS (SELECT TOP 1 1 FROM [T]) BEGIN ... INSERT ... END';
+  - the unnamed-constraint verification, 'RAISERROR (N'An error occurred while verifying constraints', 16, 127)' under IF @@ROWCOUNT > 0, which is Msg 50000 at state 127 with a different message. WP 4.1's blockedBy must tell the two apart by message text.
+- The table comes from the ExistsPredicate's FROM (TSql.TablesNamed). The protected sites are named in the /* */ comment just before each IF, one check per table; two-sites-on-one-table pins that.
+
+FOR WP 2.1'S SECOND SLICE (THE STATEMENT KINDS). Each receipt row gives a vocabulary kind, a sample change, a ScriptDom type and a fragment, held on both releases.
+- Rows:
+  - HasRows: IfStatement.
+  - NotNull and Fits (length, precision, scale, collation): AlterTableAlterColumnStatement.
+  - Unique: CreateIndexStatement or AlterTableAddTableElementStatement.
+  - Orphan and CheckFalse, named: AlterTableConstraintModificationStatement 'WITH CHECK CHECK CONSTRAINT [x]'.
+  - Orphan and CheckFalse, unnamed: AlterTableAddTableElementStatement 'WITH NOCHECK ADD FOREIGN KEY|CHECK', validated by the sp_executesql cursor.
+  - KeyLength: a plain CreateIndexStatement; the over-limit key shows nowhere.
+  - Rebuild: InsertStatement into [tmp_ms_xx_T].
+  - Computed: AlterTableAddTableElementStatement 'AS ... PERSISTED'.
+  - Temporal: AlterTableSetStatement 'SYSTEM_VERSIONING = ON' on tmp_ms_xx_T, inside a rebuild.
+  - Scan: CreateIndexStatement, or 'DEFAULT (0) NOT NULL'.
+- A clustered primary key redefinition arrives as a rebuild (CreateTableStatement [tmp_ms_xx_T] plus sp_rename), never as ADD CONSTRAINT.
+- A collation change writes no check.
+- These need rows that read nothing, or 'Unknown stops' fires on every plan: the Query Store block above, #tmpErrors, @@ERROR and @@TRANCOUNT, PRINT, SET, WAITFOR DELAY (live plans only), the #__checkStatus cursor, the DEFAULT drop and re-add around ALTER COLUMN, __RefactorLog and CREATE ROLE.
+- BlockOnPossibleDataLossChecks.Statements is the listing to start from: every statement, recursing into IF, BEGIN...END and TRY...CATCH, regenerated by io's Sql160ScriptGenerator with white space collapsed.
+
+OPEN QUESTION, NOT FOR THIS WORK PACKAGE. Should the SSDT project declare its Query Store state, so that the release in use does not decide it? This depends on S7 naming the pipeline's DacFx release. It is recorded in NEXT.md under S7.
+
+Files:
+- /home/user/outsystems-ddl-exporter/.claude/worktrees/wf_12c17dd5-fa3-4/tests/DacFx162/Program.cs
+- /home/user/outsystems-ddl-exporter/.claude/worktrees/wf_12c17dd5-fa3-4/tests/Io.Tests/BlockOnPossibleDataLossCheckTests.cs
+- /home/user/outsystems-ddl-exporter/.claude/worktrees/wf_12c17dd5-fa3-4/tests/Io.Tests/BlockOnPossibleDataLossChecks.cs
+- /home/user/outsystems-ddl-exporter/.claude/worktrees/wf_12c17dd5-fa3-4/tests/Io.Tests/DacFx162Child.cs
+- /home/user/outsystems-ddl-exporter/.claude/worktrees/wf_12c17dd5-fa3-4/tests/Golden/data-loss-checks/

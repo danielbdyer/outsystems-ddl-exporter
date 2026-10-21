@@ -1,0 +1,685 @@
+﻿2026-10-21T06:24:44.6384807Z Current runner version: '2.337.0'
+2026-10-21T06:24:44.6421238Z ##[group]Runner Image Provisioner
+2026-10-21T06:24:44.6422449Z Hosted Compute Agent
+2026-10-21T06:24:44.6423372Z Version: 20261002.596
+2026-10-21T06:24:44.6424407Z Commit: c3d12f3313a95f25162a1503be624f3b0617f8c0
+2026-10-21T06:24:44.6425581Z Build Date: 2026-10-02T22:28:27Z
+2026-10-21T06:24:44.6426776Z Worker ID: {d275137c-d859-4d02-a9dd-ad9e19861262}
+2026-10-21T06:24:44.6428014Z Region: eastus
+2026-10-21T06:24:44.6428902Z Cloud: Azure
+2026-10-21T06:24:44.6429851Z ##[endgroup]
+2026-10-21T06:24:44.6431960Z ##[group]Operating System
+2026-10-21T06:24:44.6433527Z Microsoft Windows Server 2025
+2026-10-21T06:24:44.6434636Z 10.0.26100
+2026-10-21T06:24:44.6435486Z Datacenter
+2026-10-21T06:24:44.6436404Z ##[endgroup]
+2026-10-21T06:24:44.6437278Z ##[group]Runner Image
+2026-10-21T06:24:44.6438244Z Image: windows-2025-vs2026
+2026-10-21T06:24:44.6439229Z Version: 20261007.264.1
+2026-10-21T06:24:44.6441701Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20261007.264/images/windows/Windows2025-VS2026-Readme.md
+2026-10-21T06:24:44.6444743Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20261007.264
+2026-10-21T06:24:44.6446601Z ##[endgroup]
+2026-10-21T06:24:44.6448556Z ##[group]GITHUB_TOKEN Permissions
+2026-10-21T06:24:44.6451149Z Contents: read
+2026-10-21T06:24:44.6452140Z Metadata: read
+2026-10-21T06:24:44.6453060Z ##[endgroup]
+2026-10-21T06:24:44.6456322Z Secret source: Actions
+2026-10-21T06:24:44.6457709Z Cache mode: write
+2026-10-21T06:24:44.6458862Z Prepare workflow directory
+2026-10-21T06:24:44.6867984Z Prepare all required actions
+2026-10-21T06:24:44.6916066Z Getting action download info
+2026-10-21T06:24:44.8163208Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-10-21T06:24:44.9551005Z Download action repository 'actions/setup-dotnet@v4' (SHA:67a3573c9a986a3f9c594539f4ab511d57bb3ce9)
+2026-10-21T06:24:45.3363362Z Complete job name: sql (windows-latest, LocalDB)
+2026-10-21T06:24:45.5150684Z ##[group]Run actions/checkout@v4
+2026-10-21T06:24:45.5152187Z with:
+2026-10-21T06:24:45.5152885Z   repository: danielbdyer/outsystems-ddl-exporter
+2026-10-21T06:24:45.5159515Z   token: ***
+2026-10-21T06:24:45.5160103Z   ssh-strict: true
+2026-10-21T06:24:45.5160950Z   ssh-user: git
+2026-10-21T06:24:45.5161574Z   persist-credentials: true
+2026-10-21T06:24:45.5162263Z   clean: true
+2026-10-21T06:24:45.5162887Z   sparse-checkout-cone-mode: true
+2026-10-21T06:24:45.5163617Z   fetch-depth: 1
+2026-10-21T06:24:45.5164208Z   fetch-tags: false
+2026-10-21T06:24:45.5164816Z   show-progress: true
+2026-10-21T06:24:45.5165433Z   lfs: false
+2026-10-21T06:24:45.5165996Z   submodules: false
+2026-10-21T06:24:45.5166614Z   set-safe-directory: true
+2026-10-21T06:24:45.5167316Z   allow-unsafe-pr-checkout: false
+2026-10-21T06:24:45.5168307Z env:
+2026-10-21T06:24:45.5168714Z   DOTNET_CLI_TELEMETRY_OPTOUT: 1
+2026-10-21T06:24:45.5169263Z   DOTNET_NOLOGO: 1
+2026-10-21T06:24:45.5169741Z   DACFX_TELEMETRY_OPTOUT: 1
+2026-10-21T06:24:45.5170220Z ##[endgroup]
+2026-10-21T06:24:45.6922845Z Syncing repository: danielbdyer/outsystems-ddl-exporter
+2026-10-21T06:24:45.6926673Z ##[group]Getting Git version info
+2026-10-21T06:24:45.6928527Z Working directory is 'D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter'
+2026-10-21T06:24:45.8085838Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-10-21T06:24:46.1067089Z git version 2.56.0.windows.2
+2026-10-21T06:24:46.1134611Z ##[endgroup]
+2026-10-21T06:24:46.1159339Z Temporarily overriding HOME='D:\a\_temp\8e6ca4a9-8c1b-41ea-8f22-3f8fec920e64' before making global git config changes
+2026-10-21T06:24:46.1163958Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-21T06:24:46.1178431Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter
+2026-10-21T06:24:46.2022550Z Deleting the contents of 'D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter'
+2026-10-21T06:24:46.2028224Z ##[group]Initializing the repository
+2026-10-21T06:24:46.2037648Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter
+2026-10-21T06:24:46.4561358Z Initialized empty Git repository in D:/a/outsystems-ddl-exporter/outsystems-ddl-exporter/.git/
+2026-10-21T06:24:46.4614809Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/danielbdyer/outsystems-ddl-exporter
+2026-10-21T06:24:46.6279731Z ##[endgroup]
+2026-10-21T06:24:46.6281069Z ##[group]Disabling automatic garbage collection
+2026-10-21T06:24:46.6292080Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+2026-10-21T06:24:46.6763455Z ##[endgroup]
+2026-10-21T06:24:46.6764608Z ##[group]Setting up auth
+2026-10-21T06:24:46.6776144Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-10-21T06:24:46.7181071Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-10-21T06:24:48.5101356Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-21T06:24:48.5500271Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-10-21T06:24:49.1544128Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-21T06:24:49.1961226Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-10-21T06:24:49.9060873Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2026-10-21T06:24:49.9548477Z ##[endgroup]
+2026-10-21T06:24:49.9550093Z ##[group]Fetching the repository
+2026-10-21T06:24:49.9571726Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +f0cdc104cbf9bc6f0f54706b11d202e25366863a:refs/remotes/pull/705/merge
+2026-10-21T06:24:51.1878660Z From https://github.com/danielbdyer/outsystems-ddl-exporter
+2026-10-21T06:24:51.1879814Z  * [new ref]         f0cdc104cbf9bc6f0f54706b11d202e25366863a -> pull/705/merge
+2026-10-21T06:24:51.1923632Z ##[endgroup]
+2026-10-21T06:24:51.1924206Z ##[group]Determining the checkout info
+2026-10-21T06:24:51.1927452Z ##[endgroup]
+2026-10-21T06:24:51.1942522Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+2026-10-21T06:24:51.2474080Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+2026-10-21T06:24:51.2870202Z ##[group]Checking out the ref
+2026-10-21T06:24:51.2879716Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force refs/remotes/pull/705/merge
+2026-10-21T06:24:52.3144076Z Note: switching to 'refs/remotes/pull/705/merge'.
+2026-10-21T06:24:52.3144648Z 
+2026-10-21T06:24:52.3145023Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-21T06:24:52.3146255Z changes and commit them, and you can discard any commits you make in this
+2026-10-21T06:24:52.3147316Z state without impacting any branches by switching back to a branch.
+2026-10-21T06:24:52.3147703Z 
+2026-10-21T06:24:52.3147986Z If you want to create a new branch to retain commits you create, you may
+2026-10-21T06:24:52.3148610Z do so (now or later) by using -c with the switch command. Example:
+2026-10-21T06:24:52.3148946Z 
+2026-10-21T06:24:52.3149141Z   git switch -c <new-branch-name>
+2026-10-21T06:24:52.3149385Z 
+2026-10-21T06:24:52.3149528Z Or undo this operation with:
+2026-10-21T06:24:52.3150883Z 
+2026-10-21T06:24:52.3151018Z   git switch -
+2026-10-21T06:24:52.3151214Z 
+2026-10-21T06:24:52.3151512Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-21T06:24:52.3151884Z 
+2026-10-21T06:24:52.3152336Z HEAD is now at f0cdc10 Merge ec826375c92840ab03a48654150410b517db1663 into 03b10f41338df8e4487919f2fb710cfce7cf5898
+2026-10-21T06:24:52.3274308Z ##[endgroup]
+2026-10-21T06:24:52.3794624Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+2026-10-21T06:24:52.4150997Z f0cdc104cbf9bc6f0f54706b11d202e25366863a
+2026-10-21T06:24:52.4670948Z ##[group]Run echo "DBCHANGE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+2026-10-21T06:24:52.4671544Z [36;1mecho "DBCHANGE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"[0m
+2026-10-21T06:24:52.4693336Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2026-10-21T06:24:52.4693737Z env:
+2026-10-21T06:24:52.4693958Z   DOTNET_CLI_TELEMETRY_OPTOUT: 1
+2026-10-21T06:24:52.4694202Z   DOTNET_NOLOGO: 1
+2026-10-21T06:24:52.4694412Z   DACFX_TELEMETRY_OPTOUT: 1
+2026-10-21T06:24:52.4694617Z ##[endgroup]
+2026-10-21T06:24:52.7702767Z ##[group]Run actions/setup-dotnet@v4
+2026-10-21T06:24:52.7704074Z with:
+2026-10-21T06:24:52.7704288Z   global-json-file: global.json
+2026-10-21T06:24:52.7705675Z   cache: false
+2026-10-21T06:24:52.7705998Z env:
+2026-10-21T06:24:52.7706237Z   DOTNET_CLI_TELEMETRY_OPTOUT: 1
+2026-10-21T06:24:52.7706483Z   DOTNET_NOLOGO: 1
+2026-10-21T06:24:52.7706678Z   DACFX_TELEMETRY_OPTOUT: 1
+2026-10-21T06:24:52.7706907Z   DBCHANGE_JOB_START: 1792563892
+2026-10-21T06:24:52.7707134Z ##[endgroup]
+2026-10-21T06:24:52.9633174Z (node:9632) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-21T06:24:52.9634426Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-21T06:24:53.1003722Z [command]"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -Sta -NoProfile -NonInteractive -ExecutionPolicy Unrestricted -Command & 'D:\a\_actions\actions\setup-dotnet\v4\externals\install-dotnet.ps1' -SkipNonVersionedFiles -Runtime dotnet -Channel LTS
+2026-10-21T06:24:55.0596546Z dotnet-install: Downloaded file https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.13/dotnet-runtime-10.0.13-win-x64.zip size is 36970749 bytes.
+2026-10-21T06:24:55.0600373Z dotnet-install: Either downloaded or local package size can not be measured. One of them may be corrupted.
+2026-10-21T06:24:55.0628751Z dotnet-install: Extracting the archive.
+2026-10-21T06:24:56.0774290Z dotnet-install: Note that the script does not ensure your Windows version is supported during the installation.
+2026-10-21T06:24:56.0781469Z dotnet-install: To check the list of supported versions, go to https://learn.microsoft.com/dotnet/core/install/windows#supported-versions
+2026-10-21T06:24:56.0788378Z dotnet-install: Installed version is 10.0.13
+2026-10-21T06:24:56.0795501Z dotnet-install: Installation finished
+2026-10-21T06:24:56.2421353Z [command]"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -Sta -NoProfile -NonInteractive -ExecutionPolicy Unrestricted -Command & 'D:\a\_actions\actions\setup-dotnet\v4\externals\install-dotnet.ps1' -SkipNonVersionedFiles -Version 10.0.401
+2026-10-21T06:24:56.9794943Z dotnet-install: .NET Core SDK with version '10.0.401' is already installed.
+2026-10-21T06:24:57.0885526Z ##[group]Run dotnet restore DbChange.sln --locked-mode
+2026-10-21T06:24:57.0886025Z [36;1mdotnet restore DbChange.sln --locked-mode[0m
+2026-10-21T06:24:57.1468217Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-10-21T06:24:57.1468659Z env:
+2026-10-21T06:24:57.1468897Z   DOTNET_CLI_TELEMETRY_OPTOUT: 1
+2026-10-21T06:24:57.1469198Z   DOTNET_NOLOGO: 1
+2026-10-21T06:24:57.1469460Z   DACFX_TELEMETRY_OPTOUT: 1
+2026-10-21T06:24:57.1469741Z   DBCHANGE_JOB_START: 1792563892
+2026-10-21T06:24:57.1470044Z   DOTNET_ROOT: C:\Program Files\dotnet
+2026-10-21T06:24:57.1470353Z ##[endgroup]
+2026-10-21T06:25:01.7840646Z   Determining projects to restore...
+2026-10-21T06:25:15.1727769Z   Restored D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Kernel.Tests\Kernel.Tests.csproj (in 12.27 sec).
+2026-10-21T06:25:21.9543495Z   Restored D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\io\io.csproj (in 19.06 sec).
+2026-10-21T06:25:21.9563753Z   Restored D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Io.Tests\Io.Tests.csproj (in 19.06 sec).
+2026-10-21T06:25:21.9575093Z   Restored D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Budgets.Tests\Budgets.Tests.csproj (in 4.95 sec).
+2026-10-21T06:25:21.9660479Z   Restored D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\kernel\kernel.csproj (in 2 ms).
+2026-10-21T06:25:24.5111048Z   Restored D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\cli\cli.csproj (in 21.49 sec).
+2026-10-21T06:25:30.8471109Z   Restored D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\DacFx162\DacFx162.csproj (in 8.89 sec).
+2026-10-21T06:25:31.0134590Z ##[group]Run dotnet build DbChange.sln --no-restore
+2026-10-21T06:25:31.0135058Z [36;1mdotnet build DbChange.sln --no-restore[0m
+2026-10-21T06:25:31.0210124Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-10-21T06:25:31.0210476Z env:
+2026-10-21T06:25:31.0210660Z   DOTNET_CLI_TELEMETRY_OPTOUT: 1
+2026-10-21T06:25:31.0210898Z   DOTNET_NOLOGO: 1
+2026-10-21T06:25:31.0211091Z   DACFX_TELEMETRY_OPTOUT: 1
+2026-10-21T06:25:31.0211310Z   DBCHANGE_JOB_START: 1792563892
+2026-10-21T06:25:31.0211549Z   DOTNET_ROOT: C:\Program Files\dotnet
+2026-10-21T06:25:31.0211817Z ##[endgroup]
+2026-10-21T06:25:41.2605391Z   DacFx162 -> D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\DacFx162\bin\Debug\net10.0\DbChange.DacFx162.dll
+2026-10-21T06:25:43.0778379Z   kernel -> D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\kernel\bin\Debug\net10.0\DbChange.Kernel.dll
+2026-10-21T06:25:54.4877724Z   io -> D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\io\bin\Debug\net10.0\DbChange.Io.dll
+2026-10-21T06:25:55.6910564Z   Kernel.Tests -> D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Kernel.Tests\bin\Debug\net10.0\DbChange.Kernel.Tests.dll
+2026-10-21T06:25:55.7051652Z   cli -> D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\cli\bin\Debug\net10.0\dbchange.dll
+2026-10-21T06:26:05.5362378Z   Budgets.Tests -> D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Budgets.Tests\bin\Debug\net10.0\DbChange.Budgets.Tests.dll
+2026-10-21T06:26:07.1627053Z   Io.Tests -> D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Io.Tests\bin\Debug\net10.0\DbChange.Io.Tests.dll
+2026-10-21T06:26:07.1893414Z 
+2026-10-21T06:26:07.1900828Z Build succeeded.
+2026-10-21T06:26:07.1902249Z     0 Warning(s)
+2026-10-21T06:26:07.1902526Z     0 Error(s)
+2026-10-21T06:26:07.1904189Z 
+2026-10-21T06:26:07.1904986Z Time Elapsed 00:00:35.55
+2026-10-21T06:26:07.8698081Z ##[group]Run ./ci/sql.ps1 up
+2026-10-21T06:26:07.8698559Z [36;1m./ci/sql.ps1 up[0m
+2026-10-21T06:26:07.8822533Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-10-21T06:26:07.8823554Z env:
+2026-10-21T06:26:07.8823884Z   DOTNET_CLI_TELEMETRY_OPTOUT: 1
+2026-10-21T06:26:07.8824297Z   DOTNET_NOLOGO: 1
+2026-10-21T06:26:07.8824640Z   DACFX_TELEMETRY_OPTOUT: 1
+2026-10-21T06:26:07.8825034Z   DBCHANGE_JOB_START: 1792563892
+2026-10-21T06:26:07.8825467Z   DOTNET_ROOT: C:\Program Files\dotnet
+2026-10-21T06:26:07.8825899Z ##[endgroup]
+2026-10-21T06:26:19.2158244Z LocalDB instance "MSSQLLocalDB" started.
+2026-10-21T06:26:19.2162002Z 
+2026-10-21T06:26:19.6553928Z LocalDB MSSQLLocalDB: SQL Server 17.0.4025.3 on (localdb)\MSSQLLocalDB
+2026-10-21T06:26:19.7675506Z ##[group]Run dotnet test DbChange.sln --no-build --filter "Category=fixture&Spike!=S4" --blame-hang-timeout 10m --blame-hang-dump-type none --logger "console;verbosity=normal"
+2026-10-21T06:26:19.7677741Z [36;1mdotnet test DbChange.sln --no-build --filter "Category=fixture&Spike!=S4" --blame-hang-timeout 10m --blame-hang-dump-type none --logger "console;verbosity=normal"[0m
+2026-10-21T06:26:19.7805443Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-10-21T06:26:19.7806044Z env:
+2026-10-21T06:26:19.7806355Z   DOTNET_CLI_TELEMETRY_OPTOUT: 1
+2026-10-21T06:26:19.7806760Z   DOTNET_NOLOGO: 1
+2026-10-21T06:26:19.7807099Z   DACFX_TELEMETRY_OPTOUT: 1
+2026-10-21T06:26:19.7807495Z   DBCHANGE_JOB_START: 1792563892
+2026-10-21T06:26:19.7807928Z   DOTNET_ROOT: C:\Program Files\dotnet
+2026-10-21T06:26:19.7808355Z ##[endgroup]
+2026-10-21T06:26:21.6827000Z Test run for D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Kernel.Tests\bin\Debug\net10.0\DbChange.Kernel.Tests.dll (.NETCoreApp,Version=v10.0)
+2026-10-21T06:26:21.8047162Z Test run for D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Io.Tests\bin\Debug\net10.0\DbChange.Io.Tests.dll (.NETCoreApp,Version=v10.0)
+2026-10-21T06:26:21.8306102Z Test run for D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Budgets.Tests\bin\Debug\net10.0\DbChange.Budgets.Tests.dll (.NETCoreApp,Version=v10.0)
+2026-10-21T06:26:22.5617272Z A total of 1 test files matched the specified pattern.
+2026-10-21T06:26:22.7552991Z A total of 1 test files matched the specified pattern.
+2026-10-21T06:26:22.7554410Z A total of 1 test files matched the specified pattern.
+2026-10-21T06:26:23.9505285Z [xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.13)
+2026-10-21T06:26:23.9540330Z [xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.13)
+2026-10-21T06:26:24.0807534Z [xUnit.net 00:00:00.17]   Discovering: DbChange.Budgets.Tests
+2026-10-21T06:26:25.0404292Z [xUnit.net 00:00:00.21]   Discovering: DbChange.Io.Tests
+2026-10-21T06:26:25.0408211Z [xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.13)
+2026-10-21T06:26:25.0427771Z [xUnit.net 00:00:00.21]   Discovering: DbChange.Kernel.Tests
+2026-10-21T06:26:25.0428968Z [xUnit.net 00:00:01.06]   Discovered:  DbChange.Budgets.Tests
+2026-10-21T06:26:25.0430911Z No test matches the given testcase filter `Category=fixture&Spike!=S4` in D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Budgets.Tests\bin\Debug\net10.0\DbChange.Budgets.Tests.dll
+2026-10-21T06:26:25.0432944Z [xUnit.net 00:00:01.12]   Discovered:  DbChange.Io.Tests
+2026-10-21T06:26:25.0433958Z [xUnit.net 00:00:00.71]   Discovered:  DbChange.Kernel.Tests
+2026-10-21T06:26:25.0549497Z No test matches the given testcase filter `Category=fixture&Spike!=S4` in D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Kernel.Tests\bin\Debug\net10.0\DbChange.Kernel.Tests.dll
+2026-10-21T06:26:25.0814982Z Data collector 'Blame' message: All tests finished running, Sequence file will not be generated.
+2026-10-21T06:26:25.1240387Z 
+2026-10-21T06:26:25.1241642Z Data collector 'Blame' message: All tests finished running, Sequence file will not be generated.
+2026-10-21T06:26:25.1749425Z 
+2026-10-21T06:26:25.2380209Z [xUnit.net 00:00:01.33]   Starting:    DbChange.Io.Tests
+2026-10-21T06:26:28.5321499Z   Passed DbChange.Io.Tests.AggregateQueriesKindsTests.KeyLength_counts_exactly_the_rows_on_which_CREATE_INDEX_fails_with_Msg_1946 [1 s]
+2026-10-21T06:26:36.5607596Z   Passed DbChange.Io.Tests.ReadOnlyPrincipalTests.The_read_only_principal_holds_VIEW_DEFINITION_and_db_datareader_and_nothing_server_wide_beyond_CONNECT_SQL [9 s]
+2026-10-21T06:26:39.6115376Z   Passed DbChange.Io.Tests.ReadOnlyPrincipalTests.The_read_only_principal_its_login_and_its_file_are_dropped_with_its_database [1 s]
+2026-10-21T06:27:12.9003778Z   Passed DbChange.Io.Tests.AggregateQueryTests.A_failed_query_against_a_real_environment_reports_only_its_number_and_its_site [642 ms]
+2026-10-21T06:27:14.4113367Z   Passed DbChange.Io.Tests.AggregateQueryTests.A_denied_login_names_the_environment_and_quotes_nothing [923 ms]
+2026-10-21T06:27:25.3336004Z   Passed DbChange.Io.Tests.SpikeTests.Fact_4_the_deploy_report_of_a_copy_that_matches_its_package_has_no_operations [13 s]
+2026-10-21T06:27:28.2143209Z   Passed DbChange.Io.Tests.AggregateQueryTests.Every_admitted_query_of_the_corpus_returns_integers_as_the_read_only_principal_and_queries_log_holds_each_statement_and_its_row_count [15 s]
+2026-10-21T06:27:29.7181608Z   Passed DbChange.Io.Tests.AggregateQueryTests.A_login_without_VIEW_DEFINITION_is_denied_before_DacFx_runs [803 ms]
+2026-10-21T06:27:29.7207017Z   Passed DbChange.Io.Tests.CopyCacheTests.A_fresh_copy_on_a_server_with_no_cache_is_published_from_scratch_each_time_with_the_note_cache_unavailable [1 m 4 s]
+2026-10-21T06:27:31.2291118Z   Passed DbChange.Io.Tests.ReadSideTests.Order_of_the_golden_copy_puts_parents_first_defers_the_optional_cycle_and_names_the_mandatory_one [62 ms]
+2026-10-21T06:27:31.2293455Z   Passed DbChange.Io.Tests.ReadSideTests.Schema_of_a_published_copy_equals_the_catalog_v2_s_read_side_writes_for_it [19 ms]
+2026-10-21T06:27:37.4374147Z   Passed DbChange.Io.Tests.SpikeTests.Fact_5_LoadFromDatabase_runs_as_the_read_only_login_into_the_model_the_build_produced [12 s]
+2026-10-21T06:27:38.9274158Z   Passed DbChange.Io.Tests.SpikeTests.Fact_6_one_read_of_every_property_finds_Nullable_true_to_false_and_nothing_else [110 ms]
+2026-10-21T06:27:38.9293140Z   Passed DbChange.Io.Tests.SpikeTests.Fact_1_the_classic_build_of_the_golden_project_carries_the_refactorlog_and_both_deploy_scripts [2 ms]
+2026-10-21T06:27:41.7775447Z   Passed DbChange.Io.Tests.SpikeTests.Fact_7_the_deploy_report_stays_coarse_one_Alter_on_the_table_and_no_alert [4 s]
+2026-10-21T06:27:46.7432361Z   Passed DbChange.Io.Tests.CopyCacheTests.A_fresh_copy_of_a_base_is_published_once_and_restored_from_its_backup_after [17 s]
+2026-10-21T06:27:52.2352862Z   Passed DbChange.Io.Tests.AggregateQueryTests.The_model_and_the_plan_of_a_named_environment_read_as_the_read_only_principal [23 s]
+2026-10-21T06:28:03.0583095Z   Passed DbChange.Io.Tests.AggregateQueryTests.A_database_the_login_cannot_open_is_denied_by_its_number [10 s]
+2026-10-21T06:28:11.6277991Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S11_a_DF_name_given_explicitly_is_dropped_by_every_plan_of_a_project_that_leaves_it_unnamed [39 s]
+2026-10-21T06:28:20.3305682Z   Passed DbChange.Io.Tests.SpikeTests.Fact_11_a_clean_foreign_key_on_a_populated_child_lands_trusted_by_default_and_untrusted_with_validation_off [38 s]
+2026-10-21T06:28:21.8391055Z   Passed DbChange.Io.Tests.SpikeTests.Fact_10_the_pipeline_profile_loads_as_deploy_options_names_no_target_and_is_the_only_profile [8 ms]
+2026-10-21T06:28:21.8446766Z   Passed DbChange.Io.Tests.AggregateQueryTests.One_database_read_twice_by_one_identity_fingerprints_equally [18 s]
+2026-10-21T06:28:24.8513114Z   Passed DbChange.Io.Tests.StatementTests.A_copy_the_server_refuses_to_create_leaves_no_registry_row [1 s]
+2026-10-21T06:28:24.8515126Z   Passed DbChange.Io.Tests.StatementTests.A_statement_whose_entry_the_run_s_log_cannot_take_answers_file_unwritable [476 ms]
+2026-10-21T06:28:24.8517313Z   Passed DbChange.Io.Tests.SpikeTests.Fact_2_Script_of_a_head_against_a_published_copy_runs_as_the_read_only_login [4 s]
+2026-10-21T06:28:27.8336853Z   Passed DbChange.Io.Tests.StatementTests.Every_statement_dbchange_sends_to_a_copy_is_in_the_run_s_log_with_its_site_and_row_count [3 s]
+2026-10-21T06:28:29.3203373Z   Passed DbChange.Io.Tests.SpikeTests.Fact_3_the_data_loss_check_is_found_at_state_127_and_its_predicate_returns_1_as_the_read_only_login [4 s]
+2026-10-21T06:28:31.4221136Z   Passed DbChange.Io.Tests.StatementTests.An_aggregate_query_that_reads_a_synonym_is_refused_before_it_runs [3 s]
+2026-10-21T06:28:32.9139226Z   Passed DbChange.Io.Tests.StatementTests.A_SqlException_inside_another_exception_is_read_by_its_number [446 ms]
+2026-10-21T06:28:34.4293541Z   Passed DbChange.Io.Tests.CopyCacheTests.A_backup_restores_into_a_new_registered_copy_whose_plan_against_the_base_package_is_empty [46 s]
+2026-10-21T06:28:34.4299038Z   Passed DbChange.Io.Tests.StatementTests.An_aggregate_query_past_its_timeout_is_measured_as_timed_out_and_the_server_still_answers [2 s]
+2026-10-21T06:28:35.9355840Z   Passed DbChange.Io.Tests.StatementTests.Dropping_a_copy_twice_is_no_error_and_leaves_no_row [939 ms]
+2026-10-21T06:28:35.9357327Z   Passed DbChange.Io.Tests.StatementTests.A_local_server_login_the_server_refuses_names_sql_env_and_leaves_no_registry_row [9 ms]
+2026-10-21T06:28:37.4434089Z   Passed DbChange.Io.Tests.SqlServerFixtureTests.Two_databases_registered_at_once_get_two_names_each_holds_its_own_table_and_both_are_dropped_when_disposed [2 s]
+2026-10-21T06:28:40.4492982Z   Passed DbChange.Io.Tests.CopyCacheTests.A_synthetic_name_another_checkout_s_database_holds_is_copy_foreign_to_Create_and_Restore_and_the_database_stands [6 s]
+2026-10-21T06:28:45.1285466Z   Passed DbChange.Io.Tests.CopyLifetimeTests.A_copy_left_restoring_is_dropped_by_Drop_and_by_the_sweep [7 s]
+2026-10-21T06:28:49.3334096Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "declare-what-the-planter-reads") [1 s]
+2026-10-21T06:28:54.9646551Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-foreign-key-whose-parent-the-seed-adds") [5 s]
+2026-10-21T06:28:59.9262112Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "narrow-a-column") [4 s]
+2026-10-21T06:29:02.9277385Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S9_a_plan_sees_a_disabled_check_but_never_an_untrusted_key_and_no_publish_trusts_it_again [51 s]
+2026-10-21T06:29:04.6369309Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "widen-a-column") [4 s]
+2026-10-21T06:29:10.0103211Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "narrow-precision") [5 s]
+2026-10-21T06:29:14.4466713Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-persisted-computed-column") [4 s]
+2026-10-21T06:29:19.2521694Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "cut-scale") [4 s]
+2026-10-21T06:29:20.7799364Z   Passed DbChange.Io.Tests.CopyLifetimeTests.Two_concurrent_runs_share_nothing [35 s]
+2026-10-21T06:29:22.2534097Z   Passed DbChange.Io.Tests.CopyLifetimeTests.A_killed_run_is_swept_by_the_next [1 s]
+2026-10-21T06:29:24.3584480Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "rename-a-column") [5 s]
+2026-10-21T06:29:28.8485545Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "rename-a-table-without-the-refactorlog") [4 s]
+2026-10-21T06:29:33.7442967Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-two-tables-and-a-defaulted-column") [4 s]
+2026-10-21T06:29:38.1901802Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-lookup-and-its-seed") [4 s]
+2026-10-21T06:29:39.6998569Z   Passed DbChange.Io.Tests.CopyLifetimeTests.Two_drops_and_two_sweeps_of_one_copy_at_once_all_succeed_and_leave_neither_its_database_nor_its_row [16 s]
+2026-10-21T06:29:41.2106605Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.Unique_reads_not_predictable_read_only_where_the_change_converts_its_column_so_that_other_planted_values_are_equal [1 s]
+2026-10-21T06:29:41.2109718Z   Passed DbChange.Io.Tests.SyntheticCopyTests.A_copy_differing_by_a_check_written_with_IN_alone_answers_differs_naming_it_and_stays_the_target_check_drift_reads [58 s]
+2026-10-21T06:29:42.8501803Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "retype-int-to-smallint") [4 s]
+2026-10-21T06:29:47.8481384Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "redefine-the-primary-key") [4 s]
+2026-10-21T06:29:49.3578088Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.The_session_s_LANGUAGE_decides_how_a_month_written_as_its_name_converts [8 s]
+2026-10-21T06:29:51.8507093Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.Check_counts_a_string_SQL_Server_converts_with_no_CONVERT_written_through_TRY_CONVERT_and_raises_nothing [3 s]
+2026-10-21T06:29:53.3608914Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-mandatory-with-default") [4 s]
+2026-10-21T06:29:54.8586990Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.Fits_into_a_string_or_binary_type_counts_as_violating_exactly_the_rows_ALTER_COLUMN_refuses [1 s]
+2026-10-21T06:29:56.3913820Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.Unique_counts_the_rows_planted_in_each_collation_class_under_the_collation_the_index_is_built_with [1 s]
+2026-10-21T06:29:56.3962102Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.Unique_counts_within_a_filter_over_two_integers_and_over_a_column_the_change_creates [949 ms]
+2026-10-21T06:29:57.8736377Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-unique-constraint") [4 s]
+2026-10-21T06:29:59.6233598Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.Check_counts_under_the_collation_its_expression_names_on_a_column_and_on_a_conversion [3 s]
+2026-10-21T06:30:01.2897267Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "convert-to-temporal") [3 s]
+2026-10-21T06:30:02.7935551Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S9_a_release_that_leaves_a_declared_key_unchanged_adds_it_again_where_it_is_disabled_and_fails_Msg_547_on_an_orphan [59 s]
+2026-10-21T06:30:04.2995057Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.Check_counts_the_rows_that_make_it_false_or_fail_its_conversion_and_reads_a_created_column_as_its_default [3 s]
+2026-10-21T06:30:05.8062613Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "rename-a-column-without-the-refactorlog") [4 s]
+2026-10-21T06:30:07.3155925Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.NotNull_counts_the_rows_planted_with_NULL [3 s]
+2026-10-21T06:30:07.3157072Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.A_query_that_fails_against_a_real_environment_reports_its_number_and_precondition_and_no_value [567 ms]
+2026-10-21T06:30:08.8247301Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.ForeignKey_counts_the_planted_orphans_once_each_and_every_non_null_key_to_a_parent_the_change_creates [412 ms]
+2026-10-21T06:30:08.8249302Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.Fits_counts_the_rows_planted_in_each_value_class_and_reads_the_table_once [382 ms]
+2026-10-21T06:30:10.3335850Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.A_check_whose_error_would_quote_a_row_s_value_reads_not_predictable_read_only_and_runs_in_no_query [1 s]
+2026-10-21T06:30:10.3339371Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-an-index-over-the-key-limit") [4 s]
+2026-10-21T06:30:13.7114408Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.TableEmpty_reads_the_table_s_rows_and_the_same_rows_from_sys_partitions_as_a_VIEW_DEFINITION_only_login [4 s]
+2026-10-21T06:30:15.2123938Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "turn-off-identity") [3 s]
+2026-10-21T06:30:15.2126951Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "make-mandatory") [263 ms]
+2026-10-21T06:30:15.2129757Z   Passed DbChange.Io.Tests.AggregateQueriesCountTests.The_session_s_DATEFORMAT_decides_how_a_date_written_as_a_string_converts [528 ms]
+2026-10-21T06:30:18.7286307Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "retype-int-to-bigint") [4 s]
+2026-10-21T06:30:23.6645064Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "make-optional") [4 s]
+2026-10-21T06:30:29.1051482Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-an-unnamed-check-to-a-populated-table") [5 s]
+2026-10-21T06:30:34.7802773Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-table-with-an-unnamed-check-on-two-columns") [5 s]
+2026-10-21T06:30:36.2954079Z   Passed DbChange.Io.Tests.CopyTests.A_publish_s_script_passes_through_no_file_another_call_for_the_same_copy_could_take [10 s]
+2026-10-21T06:30:39.4243172Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "drop-an-index") [4 s]
+2026-10-21T06:30:40.9409401Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S10_constraint_validation_runs_after_the_post_deploy_seed_so_a_parent_it_adds_satisfies_a_new_key [37 s]
+2026-10-21T06:30:40.9828003Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-foreign-key-on-a-populated-child") [510 ms]
+2026-10-21T06:30:45.7617855Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-mandatory-no-default") [5 s]
+2026-10-21T06:30:50.1123550Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-an-index") [4 s]
+2026-10-21T06:30:55.0757935Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "edit-the-pre-deploy-script") [4 s]
+2026-10-21T06:31:01.0501970Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "drop-a-column-and-narrow-another") [5 s]
+2026-10-21T06:31:02.5508441Z   Passed DbChange.Io.Tests.CopyTests.A_publish_the_data_loss_check_stops_is_server_failed_by_Msg_50000_quoting_DacFx_s_errors_and_not_its_informational_messages [26 s]
+2026-10-21T06:31:06.0861776Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-audit-columns") [5 s]
+2026-10-21T06:31:11.0616924Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-table-with-an-identity-key-and-a-foreign-key") [4 s]
+2026-10-21T06:31:16.0144236Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "change-a-unique-index") [4 s]
+2026-10-21T06:31:20.8560223Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-unique-index") [4 s]
+2026-10-21T06:31:23.3788865Z   Passed DbChange.Io.Tests.SyntheticCopyTests.A_need_the_plan_knows_stops_up_at_needs_input_before_any_row_is_planted [1 m 43 s]
+2026-10-21T06:31:26.3681061Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-an-unnamed-foreign-key-to-a-populated-table") [5 s]
+2026-10-21T06:31:27.8659252Z   Passed DbChange.Io.Tests.CopyTests.A_package_for_a_newer_platform_planned_for_a_named_environment_fails_naming_both_platforms [25 s]
+2026-10-21T06:31:31.5898635Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "drop-a-default") [5 s]
+2026-10-21T06:31:37.1108729Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-check-constraint") [5 s]
+2026-10-21T06:31:41.8291829Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S9_on_DacFx_162_a_release_that_leaves_a_declared_key_unchanged_also_adds_it_again_where_it_is_disabled [1 m 2 s]
+2026-10-21T06:31:43.3402344Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "remove-a-seed-row") [5 s]
+2026-10-21T06:31:46.5502265Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "grant-two-roles") [4 s]
+2026-10-21T06:31:52.2459623Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-column-and-make-another-mandatory") [5 s]
+2026-10-21T06:31:57.7111521Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "change-a-named-default") [5 s]
+2026-10-21T06:32:03.0622323Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-foreign-key") [5 s]
+2026-10-21T06:32:08.3887308Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "drop-a-column") [5 s]
+2026-10-21T06:32:14.1936919Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-check-written-with-in") [5 s]
+2026-10-21T06:32:20.2336250Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-nullable-column") [6 s]
+2026-10-21T06:32:25.6289461Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "drop-the-primary-key") [5 s]
+2026-10-21T06:32:31.7605272Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "turn-on-identity") [6 s]
+2026-10-21T06:32:38.8004481Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "change-collation") [7 s]
+2026-10-21T06:32:44.2620759Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "drop-a-table") [5 s]
+2026-10-21T06:32:45.7577115Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "change-an-unnamed-default") [371 ms]
+2026-10-21T06:32:48.6930164Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S11_system_names_differ_between_the_copy_and_the_environment_and_the_head_plans_agree_but_for_them [1 m 6 s]
+2026-10-21T06:32:50.2099375Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-junction-table") [4 s]
+2026-10-21T06:32:50.2157198Z   Passed DbChange.Io.Tests.SyntheticCopyTests.A_table_the_declared_witnesses_plant_whole_takes_no_planted_row_and_its_child_links_to_the_declared_row [1 m 26 s]
+2026-10-21T06:32:54.4722449Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "two-sites-on-one-table") [5 s]
+2026-10-21T06:32:58.3415951Z   Passed DbChange.Io.Tests.CopyTests.A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint [1 m 31 s]
+2026-10-21T06:32:59.8391747Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "retype-nvarchar-to-int") [4 s]
+2026-10-21T06:33:04.4737517Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-a-temporal-table") [5 s]
+2026-10-21T06:33:09.2729245Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-filtered-unique-index") [4 s]
+2026-10-21T06:33:10.7780996Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-unnamed-constraints") [268 ms]
+2026-10-21T06:33:14.2517679Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "move-a-table-to-another-schema-without-the-refacto"···) [4 s]
+2026-10-21T06:33:19.4349708Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "add-one-object-of-each-serialized-type") [5 s]
+2026-10-21T06:33:25.4352441Z   Passed DbChange.Io.Tests.SampleChangePredictionTests.Each_sample_change_predicts_on_an_empty_a_populated_and_a_violating_copy_what_its_predict_txt_states(name: "edit-the-post-deploy-seed") [5 s]
+2026-10-21T06:34:01.2581753Z   Passed DbChange.Io.Tests.CopyTests.A_publish_returns_the_report_and_script_DacFx_deployed [1 m 2 s]
+2026-10-21T06:34:04.2268543Z   Passed DbChange.Io.Tests.CopyTests.A_publish_whose_token_is_cancelled_publishes_nothing_and_throws [2 s]
+2026-10-21T06:34:22.5506921Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S10_on_DacFx_162_constraint_validation_also_runs_after_the_post_deploy_seed [1 m 33 s]
+2026-10-21T06:34:54.6428134Z   Passed DbChange.Io.Tests.CopyTests.The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not [50 s]
+2026-10-21T06:34:56.1438795Z   Passed DbChange.Io.Tests.CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row [1 s]
+2026-10-21T06:35:12.6444126Z   Passed DbChange.Io.Tests.CopyTests.A_SQL_Server_version_outside_the_window_is_refused [16 s]
+2026-10-21T06:35:24.7516667Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "grant-two-roles") [16 ms]
+2026-10-21T06:35:24.7519954Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "cut-scale") [15 ms]
+2026-10-21T06:35:24.7523332Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-mandatory-no-default") [16 ms]
+2026-10-21T06:35:24.7526195Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "edit-the-post-deploy-seed") [7 ms]
+2026-10-21T06:35:24.7529402Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-lookup-and-its-seed") [8 ms]
+2026-10-21T06:35:24.7532293Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-foreign-key-whose-parent-the-seed-adds") [12 ms]
+2026-10-21T06:35:24.7535186Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-junction-table") [9 ms]
+2026-10-21T06:35:24.7537898Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "drop-a-table") [8 ms]
+2026-10-21T06:35:24.7540622Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-foreign-key-on-a-populated-child") [10 ms]
+2026-10-21T06:35:24.8360744Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "drop-an-index") [10 ms]
+2026-10-21T06:35:24.8363749Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-mandatory-with-default") [8 ms]
+2026-10-21T06:35:24.8366396Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "retype-int-to-bigint") [10 ms]
+2026-10-21T06:35:24.8369072Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-an-index") [7 ms]
+2026-10-21T06:35:24.8371834Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "rename-a-table-without-the-refactorlog") [8 ms]
+2026-10-21T06:35:24.8374639Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "remove-a-seed-row") [7 ms]
+2026-10-21T06:35:24.8377323Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-unnamed-constraints") [14 ms]
+2026-10-21T06:35:24.8380368Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "change-a-unique-index") [8 ms]
+2026-10-21T06:35:24.8383045Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "turn-off-identity") [8 ms]
+2026-10-21T06:35:24.9526593Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-two-tables-and-a-defaulted-column") [11 ms]
+2026-10-21T06:35:24.9533114Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-check-written-with-in") [8 ms]
+2026-10-21T06:35:24.9537031Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "change-a-named-default") [8 ms]
+2026-10-21T06:35:24.9540426Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "turn-on-identity") [15 ms]
+2026-10-21T06:35:24.9543426Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-foreign-key") [13 ms]
+2026-10-21T06:35:24.9547495Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "make-optional") [14 ms]
+2026-10-21T06:35:24.9550640Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "retype-int-to-smallint") [16 ms]
+2026-10-21T06:35:24.9556036Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "edit-the-pre-deploy-script") [12 ms]
+2026-10-21T06:35:24.9560062Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-an-index-over-the-key-limit") [14 ms]
+2026-10-21T06:35:25.0834417Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "drop-a-column-and-narrow-another") [19 ms]
+2026-10-21T06:35:25.0860406Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-column-and-make-another-mandatory") [11 ms]
+2026-10-21T06:35:25.0911543Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-filtered-unique-index") [8 ms]
+2026-10-21T06:35:25.0921313Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-unique-index") [15 ms]
+2026-10-21T06:35:25.0930906Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "change-an-unnamed-default") [19 ms]
+2026-10-21T06:35:25.0940588Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "redefine-the-primary-key") [11 ms]
+2026-10-21T06:35:25.0969794Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "narrow-a-column") [15 ms]
+2026-10-21T06:35:25.0975436Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "retype-nvarchar-to-int") [12 ms]
+2026-10-21T06:35:25.0979985Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-an-unnamed-foreign-key-to-a-populated-table") [14 ms]
+2026-10-21T06:35:25.2240456Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-table-with-an-unnamed-check-on-two-columns") [18 ms]
+2026-10-21T06:35:25.2249745Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "drop-a-column") [14 ms]
+2026-10-21T06:35:25.2255028Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "change-collation") [13 ms]
+2026-10-21T06:35:25.2258451Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-table-with-an-identity-key-and-a-foreign-key") [17 ms]
+2026-10-21T06:35:25.2261685Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "two-sites-on-one-table") [14 ms]
+2026-10-21T06:35:25.2265246Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-audit-columns") [14 ms]
+2026-10-21T06:35:25.2270730Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "rename-a-column") [18 ms]
+2026-10-21T06:35:25.2274386Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "convert-to-temporal") [14 ms]
+2026-10-21T06:35:25.2277648Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "rename-a-column-without-the-refactorlog") [13 ms]
+2026-10-21T06:35:25.3666717Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-temporal-table") [22 ms]
+2026-10-21T06:35:25.3669993Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "drop-a-default") [9 ms]
+2026-10-21T06:35:25.3673986Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "move-a-table-to-another-schema-without-the-refacto"···) [14 ms]
+2026-10-21T06:35:25.3678218Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-nullable-column") [15 ms]
+2026-10-21T06:35:25.3683943Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "widen-a-column") [9 ms]
+2026-10-21T06:35:25.3687095Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-check-constraint") [8 ms]
+2026-10-21T06:35:25.3689914Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "declare-what-the-planter-reads") [30 ms]
+2026-10-21T06:35:25.3693094Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "narrow-precision") [14 ms]
+2026-10-21T06:35:25.3695959Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-one-object-of-each-serialized-type") [16 ms]
+2026-10-21T06:35:25.8868026Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-unique-constraint") [15 ms]
+2026-10-21T06:35:25.8871654Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-a-persisted-computed-column") [12 ms]
+2026-10-21T06:35:25.8874473Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "make-mandatory") [13 ms]
+2026-10-21T06:35:25.8877448Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "add-an-unnamed-check-to-a-populated-table") [17 ms]
+2026-10-21T06:35:25.8880383Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_sample_change_s_plan_writes_the_data_loss_checks_committed_for_it_on_both_DacFx_releases(change: "drop-the-primary-key") [13 ms]
+2026-10-21T06:35:25.8883370Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-mandatory-with-default") [152 ms]
+2026-10-21T06:35:25.8887013Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "convert-to-temporal") [97 ms]
+2026-10-21T06:35:25.8890101Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "drop-a-table") [87 ms]
+2026-10-21T06:35:25.8893432Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-table-with-an-unnamed-check-on-two-columns") [108 ms]
+2026-10-21T06:35:26.6048513Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "make-mandatory") [89 ms]
+2026-10-21T06:35:26.6052097Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-junction-table") [81 ms]
+2026-10-21T06:35:26.6055591Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "rename-a-column") [93 ms]
+2026-10-21T06:35:26.6059381Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-nullable-column") [103 ms]
+2026-10-21T06:35:26.6062584Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "drop-the-primary-key") [128 ms]
+2026-10-21T06:35:26.6065796Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "drop-an-index") [82 ms]
+2026-10-21T06:35:26.6069401Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "change-collation") [80 ms]
+2026-10-21T06:35:26.6072324Z   Passed DbChange.Io.Tests.SyntheticCopyTests.A_copy_reproduces_a_key_the_environment_holds_disabled_and_a_check_it_holds_untrusted_and_never_forces_their_trust [2 m 36 s]
+2026-10-21T06:35:27.6077851Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-check-constraint") [111 ms]
+2026-10-21T06:35:27.6081459Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-lookup-and-its-seed") [122 ms]
+2026-10-21T06:35:27.6085564Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "turn-off-identity") [88 ms]
+2026-10-21T06:35:27.6089045Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "change-an-unnamed-default") [130 ms]
+2026-10-21T06:35:27.6092575Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-mandatory-no-default") [125 ms]
+2026-10-21T06:35:27.6096245Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-table-with-an-identity-key-and-a-foreign-key") [125 ms]
+2026-10-21T06:35:27.6099942Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-an-unnamed-foreign-key-to-a-populated-table") [93 ms]
+2026-10-21T06:35:27.6104127Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "redefine-the-primary-key") [138 ms]
+2026-10-21T06:35:27.6107458Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-filtered-unique-index") [122 ms]
+2026-10-21T06:35:28.6429822Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "narrow-a-column") [121 ms]
+2026-10-21T06:35:28.6473906Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-one-object-of-each-serialized-type") [152 ms]
+2026-10-21T06:35:28.6605167Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-check-written-with-in") [117 ms]
+2026-10-21T06:35:28.6617491Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "change-a-unique-index") [102 ms]
+2026-10-21T06:35:28.6811098Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "widen-a-column") [110 ms]
+2026-10-21T06:35:28.6942690Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "turn-on-identity") [94 ms]
+2026-10-21T06:35:28.7087045Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "rename-a-column-without-the-refactorlog") [86 ms]
+2026-10-21T06:35:28.7282713Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "grant-two-roles") [132 ms]
+2026-10-21T06:35:28.7639405Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "rename-a-table-without-the-refactorlog") [115 ms]
+2026-10-21T06:35:29.7439259Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-temporal-table") [138 ms]
+2026-10-21T06:35:29.7442641Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "edit-the-post-deploy-seed") [111 ms]
+2026-10-21T06:35:29.7446346Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-column-and-make-another-mandatory") [118 ms]
+2026-10-21T06:35:29.7449572Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "narrow-precision") [123 ms]
+2026-10-21T06:35:29.7452697Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "cut-scale") [123 ms]
+2026-10-21T06:35:29.7455676Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "drop-a-default") [123 ms]
+2026-10-21T06:35:29.7458815Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-an-index") [117 ms]
+2026-10-21T06:35:29.7462214Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-foreign-key-on-a-populated-child") [130 ms]
+2026-10-21T06:35:29.7466236Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-an-index-over-the-key-limit") [117 ms]
+2026-10-21T06:35:30.7745564Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-unique-constraint") [100 ms]
+2026-10-21T06:35:30.7749115Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-unnamed-constraints") [106 ms]
+2026-10-21T06:35:30.7752373Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "declare-what-the-planter-reads") [214 ms]
+2026-10-21T06:35:30.7759176Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "move-a-table-to-another-schema-without-the-refacto"···) [118 ms]
+2026-10-21T06:35:30.7762931Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-unique-index") [118 ms]
+2026-10-21T06:35:30.8040597Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "retype-int-to-smallint") [75 ms]
+2026-10-21T06:35:30.8044028Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "retype-nvarchar-to-int") [84 ms]
+2026-10-21T06:35:30.8047085Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "retype-int-to-bigint") [100 ms]
+2026-10-21T06:35:30.8050140Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "drop-a-column-and-narrow-another") [111 ms]
+2026-10-21T06:35:31.8240449Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "make-optional") [120 ms]
+2026-10-21T06:35:31.8247851Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "change-a-named-default") [101 ms]
+2026-10-21T06:35:31.8250978Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-foreign-key") [117 ms]
+2026-10-21T06:35:31.8254644Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "drop-a-column") [119 ms]
+2026-10-21T06:35:31.8258010Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-foreign-key-whose-parent-the-seed-adds") [110 ms]
+2026-10-21T06:35:31.8262040Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "edit-the-pre-deploy-script") [109 ms]
+2026-10-21T06:35:31.8265311Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-a-persisted-computed-column") [106 ms]
+2026-10-21T06:35:31.8268696Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-an-unnamed-check-to-a-populated-table") [132 ms]
+2026-10-21T06:35:31.8272384Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-audit-columns") [108 ms]
+2026-10-21T06:35:32.1950666Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "add-two-tables-and-a-defaulted-column") [120 ms]
+2026-10-21T06:35:32.1965148Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "two-sites-on-one-table") [108 ms]
+2026-10-21T06:35:32.2011017Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_93_every_statement_of_DacFx_s_own_in_each_sample_change_s_plan_on_both_DacFx_releases_matches_a_row_of_the_vocabulary(change: "remove-a-seed-row") [99 ms]
+2026-10-21T06:35:32.2057990Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-foreign-key") [13 ms]
+2026-10-21T06:35:32.2116654Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-foreign-key-whose-parent-the-seed-adds") [9 ms]
+2026-10-21T06:35:32.2202195Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "drop-a-table") [8 ms]
+2026-10-21T06:35:32.2223834Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-an-index") [10 ms]
+2026-10-21T06:35:32.2238799Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "rename-a-table-without-the-refactorlog") [12 ms]
+2026-10-21T06:35:32.2309256Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-check-written-with-in") [10 ms]
+2026-10-21T06:35:32.2979008Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-foreign-key-on-a-populated-child") [10 ms]
+2026-10-21T06:35:32.3077961Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "convert-to-temporal") [12 ms]
+2026-10-21T06:35:32.3160729Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-table-with-an-identity-key-and-a-foreign-key") [14 ms]
+2026-10-21T06:35:32.3274006Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-column-and-make-another-mandatory") [10 ms]
+2026-10-21T06:35:32.3802795Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-mandatory-no-default") [10 ms]
+2026-10-21T06:35:32.3961737Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "two-sites-on-one-table") [13 ms]
+2026-10-21T06:35:32.4141712Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-an-index-over-the-key-limit") [10 ms]
+2026-10-21T06:35:32.4193885Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "drop-the-primary-key") [10 ms]
+2026-10-21T06:35:32.4348754Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "edit-the-pre-deploy-script") [8 ms]
+2026-10-21T06:35:32.4563826Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-nullable-column") [12 ms]
+2026-10-21T06:35:32.4621069Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-lookup-and-its-seed") [10 ms]
+2026-10-21T06:35:32.4658072Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "edit-the-post-deploy-seed") [12 ms]
+2026-10-21T06:35:32.4711807Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-one-object-of-each-serialized-type") [14 ms]
+2026-10-21T06:35:32.4721897Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "drop-a-default") [12 ms]
+2026-10-21T06:35:32.4725299Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "rename-a-column-without-the-refactorlog") [10 ms]
+2026-10-21T06:35:32.4760717Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "make-optional") [11 ms]
+2026-10-21T06:35:32.4844980Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-unnamed-constraints") [21 ms]
+2026-10-21T06:35:32.4928858Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-temporal-table") [10 ms]
+2026-10-21T06:35:32.5298312Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-an-unnamed-check-to-a-populated-table") [13 ms]
+2026-10-21T06:35:32.5358112Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-persisted-computed-column") [12 ms]
+2026-10-21T06:35:32.5455821Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-two-tables-and-a-defaulted-column") [11 ms]
+2026-10-21T06:35:32.5471360Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "rename-a-column") [10 ms]
+2026-10-21T06:35:32.5474445Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "drop-an-index") [10 ms]
+2026-10-21T06:35:32.5477691Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "cut-scale") [13 ms]
+2026-10-21T06:35:32.5480556Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "change-collation") [10 ms]
+2026-10-21T06:35:32.5483793Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "turn-on-identity") [12 ms]
+2026-10-21T06:35:32.5487050Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-an-unnamed-foreign-key-to-a-populated-table") [14 ms]
+2026-10-21T06:35:32.6352292Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "move-a-table-to-another-schema-without-the-refacto"···) [10 ms]
+2026-10-21T06:35:32.6355865Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "change-a-unique-index") [10 ms]
+2026-10-21T06:35:32.6359004Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "drop-a-column") [11 ms]
+2026-10-21T06:35:32.6362226Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "drop-a-column-and-narrow-another") [11 ms]
+2026-10-21T06:35:32.6365367Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "turn-off-identity") [17 ms]
+2026-10-21T06:35:32.6368821Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-mandatory-with-default") [10 ms]
+2026-10-21T06:35:32.6372014Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "remove-a-seed-row") [9 ms]
+2026-10-21T06:35:32.6375098Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "retype-nvarchar-to-int") [16 ms]
+2026-10-21T06:35:32.6378325Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "change-an-unnamed-default") [13 ms]
+2026-10-21T06:35:32.7376317Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-table-with-an-unnamed-check-on-two-columns") [15 ms]
+2026-10-21T06:35:32.7380046Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "declare-what-the-planter-reads") [20 ms]
+2026-10-21T06:35:32.7383151Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-check-constraint") [10 ms]
+2026-10-21T06:35:32.7386661Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "make-mandatory") [10 ms]
+2026-10-21T06:35:32.7390057Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "retype-int-to-bigint") [10 ms]
+2026-10-21T06:35:32.7393078Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "redefine-the-primary-key") [9 ms]
+2026-10-21T06:35:32.7398088Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-unique-constraint") [11 ms]
+2026-10-21T06:35:32.7403075Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "narrow-a-column") [6 ms]
+2026-10-21T06:35:32.7406307Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-a-junction-table") [7 ms]
+2026-10-21T06:35:32.8304197Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "retype-int-to-smallint") [11 ms]
+2026-10-21T06:35:32.8307211Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-audit-columns") [8 ms]
+2026-10-21T06:35:32.8310066Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "narrow-precision") [12 ms]
+2026-10-21T06:35:32.8312895Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "change-a-named-default") [10 ms]
+2026-10-21T06:35:32.8315827Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "widen-a-column") [12 ms]
+2026-10-21T06:35:32.8318482Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "grant-two-roles") [7 ms]
+2026-10-21T06:35:32.8321237Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-unique-index") [8 ms]
+2026-10-21T06:35:32.8324368Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Both_DacFx_releases_plan_each_sample_change_as_the_same_statements_but_the_Query_Store_block_162_5_57_adds(change: "add-filtered-unique-index") [10 ms]
+2026-10-21T06:35:32.8328197Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Orphan", change: "add-an-unnamed-foreign-key-to-a-populated-table", statement: "AlterTableAddTableElementStatement", fragment: "WITH NOCHECK ADD FOREIGN KEY") [10 ms]
+2026-10-21T06:35:32.9153774Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "HasRows", change: "make-mandatory", statement: "IfStatement", fragment: "SELECT TOP 1 1 FROM [dbo].[Customer]") [8 ms]
+2026-10-21T06:35:32.9157708Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Rebuild", change: "turn-on-identity", statement: "InsertStatement", fragment: "INSERT INTO [dbo].[tmp_ms_xx_Category]") [9 ms]
+2026-10-21T06:35:32.9162478Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Unique", change: "add-unique-constraint", statement: "AlterTableAddTableElementStatement", fragment: "UNIQUE NONCLUSTERED") [6 ms]
+2026-10-21T06:35:32.9173160Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Unique", change: "add-unique-index", statement: "CreateIndexStatement", fragment: "CREATE UNIQUE NONCLUSTERED INDEX [UIX_Product_Code"···) [7 ms]
+2026-10-21T06:35:32.9177803Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Fits", change: "narrow-a-column", statement: "AlterTableAlterColumnStatement", fragment: "NVARCHAR (10) NOT NULL") [6 ms]
+2026-10-21T06:35:32.9182438Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Scan", change: "add-an-index", statement: "CreateIndexStatement", fragment: "CREATE NONCLUSTERED INDEX [IX_Customer_Email]") [11 ms]
+2026-10-21T06:35:32.9187842Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Unique", change: "redefine-the-primary-key", statement: "CreateTableStatement", fragment: "[tmp_ms_xx_OrderLine]") [10 ms]
+2026-10-21T06:35:32.9192464Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "CheckFalse", change: "add-an-unnamed-check-to-a-populated-table", statement: "AlterTableAddTableElementStatement", fragment: "WITH NOCHECK ADD CHECK") [11 ms]
+2026-10-21T06:35:32.9196640Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "NotNull", change: "make-mandatory", statement: "AlterTableAlterColumnStatement", fragment: "[Email] NVARCHAR (256) NOT NULL") [12 ms]
+2026-10-21T06:35:33.2882380Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Computed", change: "add-a-persisted-computed-column", statement: "AlterTableAddTableElementStatement", fragment: "AS LEN(Code) PERSISTED") [9 ms]
+2026-10-21T06:35:33.2886412Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "KeyLength", change: "add-an-index-over-the-key-limit", statement: "CreateIndexStatement", fragment: "[IX_Product_Name]") [10 ms]
+2026-10-21T06:35:33.2890776Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Fits", change: "change-collation", statement: "AlterTableAlterColumnStatement", fragment: "COLLATE Latin1_General_CS_AS") [10 ms]
+2026-10-21T06:35:33.2895048Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "CheckFalse", change: "add-a-check-constraint", statement: "AlterTableConstraintModificationStatement", fragment: "[CK_Product_Code]") [13 ms]
+2026-10-21T06:35:33.2899162Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Fits", change: "cut-scale", statement: "AlterTableAlterColumnStatement", fragment: "DECIMAL (18, 1)") [11 ms]
+2026-10-21T06:35:33.2904119Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Orphan", change: "add-a-foreign-key", statement: "AlterTableConstraintModificationStatement", fragment: "WITH CHECK CHECK CONSTRAINT [FK_Order_Customer_Cus"···) [11 ms]
+2026-10-21T06:35:33.2908986Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Temporal", change: "convert-to-temporal", statement: "AlterTableSetStatement", fragment: "SYSTEM_VERSIONING = ON") [16 ms]
+2026-10-21T06:35:33.2913176Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_statement_shape_the_Facsimile_s_vocabulary_names_is_in_its_sample_change_s_plan_on_both_DacFx_releases(kind: "Scan", change: "add-mandatory-with-default", statement: "AlterTableAddTableElementStatement", fragment: "DEFAULT (0) NOT NULL") [10 ms]
+2026-10-21T06:35:33.2916882Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "narrow-a-column") [280 ms]
+2026-10-21T06:35:34.7887834Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "add-mandatory-no-default") [346 ms]
+2026-10-21T06:35:34.7892049Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "add-a-column-and-make-another-mandatory") [330 ms]
+2026-10-21T06:35:34.7894794Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "retype-nvarchar-to-int") [398 ms]
+2026-10-21T06:35:34.7897727Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "retype-int-to-smallint") [410 ms]
+2026-10-21T06:35:36.3008948Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "cut-scale") [341 ms]
+2026-10-21T06:35:36.3010545Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "make-mandatory") [361 ms]
+2026-10-21T06:35:36.3012003Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "rename-a-column-without-the-refactorlog") [376 ms]
+2026-10-21T06:35:37.8212209Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "drop-a-column-and-narrow-another") [705 ms]
+2026-10-21T06:35:37.8216518Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "drop-a-column") [547 ms]
+2026-10-21T06:35:37.8219875Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "narrow-precision") [450 ms]
+2026-10-21T06:35:39.3125597Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Each_data_loss_check_s_predicate_answers_1_on_a_populated_copy_and_0_on_an_empty_one(change: "two-sites-on-one-table") [541 ms]
+2026-10-21T06:35:39.3128606Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.An_unset_Query_Store_is_OFF_to_DacFx_162_5_57_and_READ_WRITE_to_170_5_96_and_each_plans_it_on_the_other_s_copy [38 ms]
+2026-10-21T06:35:39.3131264Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.A_data_loss_check_whose_query_fails_against_a_real_environment_reports_only_its_number_and_its_site [212 ms]
+2026-10-21T06:35:40.8124119Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S11_on_DacFx_162_the_head_plans_agree_but_for_system_names_and_a_check_written_with_IN_is_dropped_and_created [1 m 17 s]
+2026-10-21T06:35:43.3727000Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.QST_95_removing_any_row_of_the_vocabulary_whose_case_is_a_sample_change_changes_what_that_change_s_plan_asserts [5 s]
+2026-10-21T06:35:44.8719982Z   Passed DbChange.Io.Tests.BlockOnPossibleDataLossCheckTests.Neither_the_rebuild_s_IF_EXISTS_copy_nor_the_constraint_verification_s_RAISERROR_at_state_127_is_a_data_loss_check [44 ms]
+2026-10-21T06:36:07.5910832Z   Passed DbChange.Io.Tests.SyntheticCopyTests.The_golden_project_with_a_view_over_two_tables_builds_its_synthetic_copy_and_the_view_reads_the_seeded_rows [41 s]
+2026-10-21T06:36:14.1188192Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S11_an_extract_of_the_environment_published_to_a_copy_keeps_none_of_its_system_names [34 s]
+2026-10-21T06:37:08.0526395Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S9_a_schema_read_keeps_a_disabled_check_and_an_untrusted_key_and_its_publish_reproduces_both [53 s]
+2026-10-21T06:37:23.4263509Z   Passed DbChange.Io.Tests.SyntheticCopyTests.A_copy_planted_at_an_environment_holding_each_of_R6_s_sites_answers_every_precondition_as_the_environment_does(declared: True) [1 m 15 s]
+2026-10-21T06:37:37.5140376Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S11_a_check_written_with_IN_is_dropped_and_created_again_by_every_plan_against_its_own_database [29 s]
+2026-10-21T06:37:56.0035718Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S10_an_orphan_the_seed_does_not_fix_fails_Msg_547_after_the_main_script_and_the_seed_have_landed [18 s]
+2026-10-21T06:38:47.5558752Z   Passed DbChange.Io.Tests.SyntheticCopyTests.A_copy_planted_at_an_environment_holding_each_of_R6_s_sites_answers_every_precondition_as_the_environment_does(declared: False) [1 m 24 s]
+2026-10-21T06:39:14.5643864Z   Passed DbChange.Io.Tests.SpikeReceiptTests.Spike_S9_on_DacFx_162_an_extract_keeps_both_states_and_its_publish_reproduces_them [1 m 17 s]
+2026-10-21T06:40:03.1643663Z   Passed DbChange.Io.Tests.SyntheticCopyTests.Two_child_rows_whose_leg_is_a_unique_key_link_to_the_lookup_s_seeded_row_and_one_planted_past_it_with_no_Msg_2601 [1 m 15 s]
+2026-10-21T06:41:15.1807517Z   Passed DbChange.Io.Tests.SyntheticCopyTests.A_copy_disables_a_key_the_environment_holds_disabled_before_its_plan_of_a_change_that_leaves_the_key_as_declared [1 m 12 s]
+2026-10-21T06:41:42.1729083Z   Passed DbChange.Io.Tests.SyntheticCopyTests.Up_on_a_local_server_linked_to_a_named_environment_s_host_is_refused_before_it_makes_or_plants_anything [26 s]
+2026-10-21T06:42:13.6522321Z   Passed DbChange.Io.Tests.SyntheticCopyTests.Two_ups_at_once_in_one_checkout_build_one_copy_and_the_one_that_waited_on_the_lock_answers_it_current [31 s]
+2026-10-21T06:43:23.2040666Z   Passed DbChange.Io.Tests.SyntheticCopyTests.A_planted_child_of_a_seeded_lookup_links_to_its_lowest_seeded_row_and_the_lookup_keeps_its_rows_and_hash [1 m 9 s]
+2026-10-21T06:44:49.0825333Z   Passed DbChange.Io.Tests.SyntheticCopyTests.A_declared_witness_SQL_Server_refuses_is_named_by_its_line_and_one_breaking_no_row_fails_acceptance [1 m 25 s]
+2026-10-21T06:45:55.0353862Z   Passed DbChange.Io.Tests.SyntheticCopyTests.A_planted_row_a_check_of_the_copy_refuses_is_a_need_naming_the_check_at_needs_input [1 m 5 s]
+2026-10-21T06:46:31.0164654Z   Passed DbChange.Io.Tests.SyntheticCopyTests.Check_drift_of_the_synthetic_copy_built_at_the_golden_base_exits_0_and_up_again_answers_it_current [35 s]
+2026-10-21T06:46:59.2136911Z   Passed DbChange.Io.Tests.SyntheticCopyTests.Up_on_the_host_a_named_environment_runs_on_is_refused_before_it_sends_a_statement_with_or_without_a_built_copy [27 s]
+2026-10-21T06:47:23.2145759Z   Passed DbChange.Io.Tests.SentinelTests.A_Permissive_publish_under_a_profile_naming_a_sentinel_server_reaches_the_copy_and_never_the_sentinel [23 s]
+2026-10-21T06:47:51.1189907Z   Passed DbChange.Io.Tests.ModelElementsTests.Unnamed_checks_beside_a_renamed_column_are_keyed_alike_in_a_package_and_the_database_it_was_published_to [24 s]
+2026-10-21T06:48:25.7308523Z   Passed DbChange.Io.Tests.ModelElementsTests.Unnamed_checks_are_keyed_alike_in_a_package_and_a_database_that_holds_its_columns_in_another_order(first: "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B"···, second: "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B"···) [34 s]
+2026-10-21T06:48:48.8031434Z   Passed DbChange.Io.Tests.ModelElementsTests.Unnamed_checks_are_keyed_alike_in_a_package_and_a_database_that_holds_its_columns_in_another_order(first: "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B"···, second: "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, A"···) [23 s]
+2026-10-21T06:49:24.3459646Z   Passed DbChange.Io.Tests.ModelElementsTests.The_package_to_package_plan_reports_the_operations_the_live_plan_reports [35 s]
+2026-10-21T06:49:45.4029406Z   Passed DbChange.Io.Tests.ModelElementsTests.A_package_and_the_database_it_was_published_to_key_every_object_alike_unnamed_constraints_included [21 s]
+2026-10-21T06:50:08.8123098Z   Passed DbChange.Io.Tests.ModelElementsTests.The_elements_of_an_extracted_copy_fingerprint_as_the_elements_LoadFromDatabase_read [23 s]
+2026-10-21T06:50:20.3399635Z   Passed DbChange.Io.Tests.ModelElementsTests.A_database_holding_a_user_whose_login_was_dropped_extracts_whole_and_reads_the_user_without_a_login [11 s]
+2026-10-21T06:50:51.8512766Z   Passed DbChange.Io.Tests.ModelElementsTests.A_package_s_grants_published_to_a_copy_read_back_as_the_same_Permission_keys [30 s]
+2026-10-21T06:50:53.3567252Z   Passed DbChange.Io.Tests.DriftTests.A_denied_login_prints_one_sentence_naming_the_environment_and_a_lead_s_prediction [59 ms]
+2026-10-21T06:51:23.8837124Z   Passed DbChange.Io.Tests.DriftTests.A_copy_holding_a_column_named_by_a_space_and_one_holding_a_tab_is_read_whole_and_each_output_escapes_the_tab [31 s]
+2026-10-21T06:51:42.2113252Z   Passed DbChange.Io.Tests.DriftTests.A_check_drift_whose_extract_is_refused_answers_the_refusal_and_no_column_lines [18 s]
+2026-10-21T06:52:09.6786738Z   Passed DbChange.Io.Tests.DriftTests.A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report [27 s]
+2026-10-21T06:52:41.5322923Z   Passed DbChange.Io.Tests.DriftTests.A_case_only_rename_of_a_table_on_a_copy_plans_nothing_under_either_collation_and_diff_reads_it_under_the_copy_s_collation(collation: "SQL_Latin1_General_CP1_CI_AS", caseInsensitive: True, driftExit: 0) [31 s]
+2026-10-21T06:53:12.9517851Z   Passed DbChange.Io.Tests.DriftTests.A_case_only_rename_of_a_table_on_a_copy_plans_nothing_under_either_collation_and_diff_reads_it_under_the_copy_s_collation(collation: "Latin1_General_CS_AS", caseInsensitive: False, driftExit: 6) [31 s]
+2026-10-21T06:53:37.9138419Z (drift.drop, warning, DefaultConstraint [dbo].[DF_Product_LegacyNote], The deploy plan against copy:dbchange_runnervm0xl3a_2916_c9fa8a02 would drop DefaultConstraint [dbo].[DF_Product_LegacyNote].)
+2026-10-21T06:53:37.9142313Z (drift.alter, warning, Table [dbo].[Product], The deploy plan against copy:dbchange_runnervm0xl3a_2916_c9fa8a02 would alter Table [dbo].[Product].)
+2026-10-21T06:53:37.9143512Z (drift.data-issue, warning, Table [dbo].[Product], The column [dbo].[Product].[LegacyNote] is being dropped, data loss could occur.)
+2026-10-21T06:53:37.9144319Z (drift.column, warning, Column [dbo].[Product].[LegacyNote], only on the target.)
+2026-10-21T06:53:37.9145787Z (toolchain.unpinned, note, dbchange/ledgers/toolchain.md, This answer stands on DacFx 170.5.96, UNPINNED: dbchange/ledgers/toolchain.md pins no DacFx release for dbchange 3.0.0.)
+2026-10-21T06:53:37.9147333Z (profile.unverified, note, project/profiles/pipeline.publish.xml, The SSDT repository commits no copy of the publish profile the Octopus step applies, so project/profiles/pipeline.publish.xml is not verified against it.)
+2026-10-21T06:53:42.4561338Z   Passed DbChange.Io.Tests.DriftTests.A_column_the_package_drops_is_named_with_DacFx_s_data_issue_and_a_dependent_s_refresh_is_a_note [29 s]
+2026-10-21T06:54:13.4560318Z   Passed DbChange.Io.Tests.DriftTests.A_published_copy_is_in_sync_with_its_package_and_one_column_altered_on_it_is_exit_5_naming_it [30 s]
+2026-10-21T06:54:54.0337362Z   Passed DbChange.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read [40 s]
+2026-10-21T06:55:30.0396289Z   Passed DbChange.Io.Tests.DriftTests.A_check_written_with_IN_differs_from_the_copy_it_was_published_to_and_check_drift_names_the_OR_form_SQL_Server_stores [35 s]
+2026-10-21T06:55:54.3888571Z   Passed DbChange.Io.Tests.DiffTests.A_read_of_a_database_scoped_identity_carries_the_scope_note_and_an_admin_read_does_not [23 s]
+2026-10-21T06:56:08.7535635Z [xUnit.net 00:29:44.86]   Finished:    DbChange.Io.Tests
+2026-10-21T06:56:08.8985729Z Data collector 'Blame' message: All tests finished running, Sequence file will not be generated.
+2026-10-21T06:56:08.9484676Z   Passed DbChange.Io.Tests.DiffTests.DbChange_read_of_a_database_holding_a_SQL_login_prints_no_password [14 s]
+2026-10-21T06:56:08.9534877Z 
+2026-10-21T06:56:08.9593832Z Test Run Successful.
+2026-10-21T06:56:08.9594486Z Total tests: 382
+2026-10-21T06:56:08.9594989Z      Passed: 382
+2026-10-21T06:56:08.9597124Z  Total time: 29.7737 Minutes
+2026-10-21T06:56:09.2011627Z ##[group]Run dotnet test tests/Io.Tests/Io.Tests.csproj --no-build --filter "Spike=S4" --logger "console;verbosity=detailed"
+2026-10-21T06:56:09.2013345Z [36;1mdotnet test tests/Io.Tests/Io.Tests.csproj --no-build --filter "Spike=S4" --logger "console;verbosity=detailed"[0m
+2026-10-21T06:56:09.2105810Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-10-21T06:56:09.2106243Z env:
+2026-10-21T06:56:09.2106502Z   DOTNET_CLI_TELEMETRY_OPTOUT: 1
+2026-10-21T06:56:09.2106814Z   DOTNET_NOLOGO: 1
+2026-10-21T06:56:09.2107077Z   DACFX_TELEMETRY_OPTOUT: 1
+2026-10-21T06:56:09.2107370Z   DBCHANGE_JOB_START: 1792563892
+2026-10-21T06:56:09.2107682Z   DOTNET_ROOT: C:\Program Files\dotnet
+2026-10-21T06:56:09.2108018Z ##[endgroup]
+2026-10-21T06:56:10.3050209Z Test run for D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Io.Tests\bin\Debug\net10.0\DbChange.Io.Tests.dll (.NETCoreApp,Version=v10.0)
+2026-10-21T06:56:10.5124758Z A total of 1 test files matched the specified pattern.
+2026-10-21T06:56:10.5126301Z D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter\tests\Io.Tests\bin\Debug\net10.0\DbChange.Io.Tests.dll
+2026-10-21T06:56:11.0144455Z [xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 10.0.13)
+2026-10-21T06:56:11.1472434Z [xUnit.net 00:00:00.16]   Discovering: DbChange.Io.Tests
+2026-10-21T06:56:11.7185739Z [xUnit.net 00:00:00.73]   Discovered:  DbChange.Io.Tests
+2026-10-21T06:56:11.7565715Z [xUnit.net 00:00:00.77]   Starting:    DbChange.Io.Tests
+2026-10-21T06:56:48.8819686Z [xUnit.net 00:00:37.90]   Finished:    DbChange.Io.Tests
+2026-10-21T06:56:48.9926839Z   Passed DbChange.Io.Tests.CopyTimingTests.S4_a_copy_of_three_hundred_tables_is_created_published_backed_up_restored_and_dropped_with_each_step_timed [37 s]
+2026-10-21T06:56:48.9929590Z   Standard Output Messages:
+2026-10-21T06:56:48.9931365Z  S4 | (localdb)\mssqllocaldb | SQL Server 17.0.4025.3 Express Edition (64-bit) | 300 tables | model and package 3581 ms | create 403 ms | publish 21771 ms | republish 9677 ms | backup 211 ms | restore 787 ms | drop restored 34 ms | drop published 46 ms
+2026-10-21T06:56:48.9932362Z 
+2026-10-21T06:56:48.9932368Z 
+2026-10-21T06:56:48.9951063Z 
+2026-10-21T06:56:48.9994718Z Test Run Successful.
+2026-10-21T06:56:48.9995298Z Total tests: 1
+2026-10-21T06:56:48.9995796Z      Passed: 1
+2026-10-21T06:56:48.9998588Z  Total time: 38.4839 Seconds
+2026-10-21T06:56:49.6940999Z ##[group]Run echo "elapsed $(( $(date +%s) - DBCHANGE_JOB_START )) s"
+2026-10-21T06:56:49.6941815Z [36;1mecho "elapsed $(( $(date +%s) - DBCHANGE_JOB_START )) s"[0m
+2026-10-21T06:56:49.6963975Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2026-10-21T06:56:49.6964649Z env:
+2026-10-21T06:56:49.6964976Z   DOTNET_CLI_TELEMETRY_OPTOUT: 1
+2026-10-21T06:56:49.6965393Z   DOTNET_NOLOGO: 1
+2026-10-21T06:56:49.6965739Z   DACFX_TELEMETRY_OPTOUT: 1
+2026-10-21T06:56:49.6966111Z   DBCHANGE_JOB_START: 1792563892
+2026-10-21T06:56:49.6966514Z   DOTNET_ROOT: C:\Program Files\dotnet
+2026-10-21T06:56:49.6966919Z ##[endgroup]
+2026-10-21T06:56:49.7612404Z elapsed 1917 s
+2026-10-21T06:56:49.7916581Z Post job cleanup.
+2026-10-21T06:56:49.9589806Z (node:5284) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-21T06:56:49.9591451Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-21T06:56:49.9969835Z Post job cleanup.
+2026-10-21T06:56:50.2454330Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-10-21T06:56:50.2872249Z git version 2.56.0.windows.2
+2026-10-21T06:56:50.2965060Z Temporarily overriding HOME='D:\a\_temp\0ee613ad-5151-4a00-b378-e5f261c04560' before making global git config changes
+2026-10-21T06:56:50.2966883Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-21T06:56:50.2979654Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\outsystems-ddl-exporter\outsystems-ddl-exporter
+2026-10-21T06:56:50.3610041Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-10-21T06:56:50.4180932Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-10-21T06:56:51.0429747Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-21T06:56:51.0774359Z http.https://github.com/.extraheader
+2026-10-21T06:56:51.0823483Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+2026-10-21T06:56:51.1227871Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-10-21T06:56:51.7599703Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-21T06:56:51.8003145Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-10-21T06:56:52.4219758Z Cleaning up orphan processes
+2026-10-21T06:56:52.4634283Z Terminate orphan process: pid (1908) (VBCSCompiler)
+2026-10-21T06:56:52.4882766Z Terminate orphan process: pid (3428) (conhost)
+2026-10-21T06:56:52.5180752Z Terminate orphan process: pid (8224) (sqlservr)
+2026-10-21T06:56:52.5510888Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-dotnet@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

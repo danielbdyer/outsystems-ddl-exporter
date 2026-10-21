@@ -1,0 +1,685 @@
+<title>Seen to Fail</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="The third of the v3 essays: what waves 5 to 7 built for prediction and for the synthetic copy, why its rules arrived with tests that had failed without them, and what that costs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the series' reading column on ledger paper, a red double margin rule down its left edge;
+   each idea closes with a framed ledger entry; the charts are inline SVG whose marks take the page's tokens. */
+:root {
+  --paper: #edf1ea;
+  --well: #e1e8dd;
+  --ink: #1a2420;
+  --ink-soft: #4a5952;
+  --rule: #c5d0c1;
+  --margin: #b23f37;
+  --accent: #1d4c82;
+  --held: #2f6a4c;
+  --partly: #82ab90;
+  --waiting: #c2cbbd;
+  --cutover: #a07f3a;
+  --retired: #7a8893;
+  --built: #2b4457;
+  --planned: #7f97a9;
+  --grown: #5b86ad;
+  --font-text: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-label: "IBM Plex Sans Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --step--1: 0.875rem;
+  --step-0: 1.1875rem;
+  --step-1: 1.5rem;
+  --step-2: 1.9rem;
+  --step-3: clamp(2.8rem, 9vw, 5rem);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111816;
+    --well: #1b2522;
+    --ink: #dbe4dd;
+    --ink-soft: #9aaaa1;
+    --rule: #2d3b36;
+    --margin: #d9675e;
+    --accent: #93b8ee;
+    --held: #6fb48d;
+    --partly: #3f6e55;
+    --waiting: #3b4944;
+    --cutover: #c9a55a;
+    --retired: #71818c;
+    --built: #a3bdd2;
+    --planned: #587083;
+    --grown: #5f8fbd;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111816;
+  --well: #1b2522;
+  --ink: #dbe4dd;
+  --ink-soft: #9aaaa1;
+  --rule: #2d3b36;
+  --margin: #d9675e;
+  --accent: #93b8ee;
+  --held: #6fb48d;
+  --partly: #3f6e55;
+  --waiting: #3b4944;
+  --cutover: #c9a55a;
+  --retired: #71818c;
+  --built: #a3bdd2;
+  --planned: #587083;
+  --grown: #5f8fbd;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: var(--step-0);
+  line-height: 1.6;
+  font-optical-sizing: auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: clamp(2rem, 6vw, 4.5rem);
+  -webkit-text-size-adjust: 100%;
+}
+.sheet {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 47rem;
+  margin-inline: auto;
+  border-left: 3px double var(--margin);
+  padding-left: clamp(14px, 4vw, 44px);
+  display: grid;
+  gap: 3.25rem;
+}
+.prose { max-width: 38rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.05rem; min-width: 0; }
+.prose p { margin: 0; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+header { display: grid; gap: 1.1rem; }
+.eyebrow {
+  font-family: var(--font-label);
+  font-weight: 500;
+  font-size: var(--step--1);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+h1 {
+  font-family: var(--font-text);
+  font-style: italic;
+  font-weight: 400;
+  font-size: var(--step-3);
+  line-height: 1;
+  letter-spacing: -0.015em;
+  margin: 0;
+  text-wrap: balance;
+}
+.dek { font-size: var(--step-1); line-height: 1.35; color: var(--ink-soft); margin: 0; max-width: 34rem; text-wrap: balance; }
+.at {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.figures li {
+  flex: 1 1 8rem;
+  padding: 0.7rem 0.9rem 0.75rem 0;
+  display: grid;
+  gap: 0.1rem;
+}
+.figures b {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.figures span { font-family: var(--font-label); font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+.figures span i { font-style: normal; font-family: var(--font-mono); letter-spacing: 0; text-transform: none; color: var(--grown); }
+
+section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.2rem; min-width: 0; }
+h2 {
+  font-family: var(--font-text);
+  font-weight: 600;
+  font-size: var(--step-2);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+.lede-head { display: grid; gap: 0.35rem; }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--well);
+  padding: 0.05em 0.3em;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+pre {
+  margin: 0;
+  min-width: 0;
+  background: var(--well);
+  border-left: 2px solid var(--accent);
+  padding: 0.8rem 1rem;
+  overflow-x: auto;
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  tab-size: 4;
+}
+pre code { background: none; padding: 0; font-size: 1em; overflow-wrap: normal; white-space: pre; }
+
+.entry {
+  margin: 0;
+  border: 1px solid var(--rule);
+  background: var(--well);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.entry > div {
+  display: grid;
+  grid-template-columns: 6.6rem minmax(0, 1fr);
+  gap: 0.9rem;
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid var(--rule);
+}
+.entry > div:first-child { border-top: 0; }
+.entry dt {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding-top: 0.2rem;
+}
+.entry dd { margin: 0; font-size: 1rem; line-height: 1.5; min-width: 0; }
+.entry dd code { background: transparent; padding: 0; font-size: 0.8em; }
+.entry dt.cost { color: var(--margin); }
+
+/* charts: each bar is an inline SVG; positions are percentages of its width, fills come from the tokens */
+.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.chart { display: grid; gap: 0.9rem; margin: 0; min-width: 0; }
+.chart figcaption { font-size: 1rem; color: var(--ink-soft); line-height: 1.45; }
+.bars { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); column-gap: 0.8rem; row-gap: 0.35rem; align-items: center; }
+.bars.steps { grid-template-columns: 4.4rem minmax(0, 1fr); }
+.bars .name { font-family: var(--font-mono); font-size: 0.85rem; }
+.bars .group {
+  grid-column: 1 / -1;
+  font-family: var(--font-label);
+  font-weight: 500;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  padding-top: 0.55rem;
+}
+.bars .group:first-child { padding-top: 0; }
+svg.track { display: block; width: 100%; height: 1.75rem; overflow: visible; }
+svg.tally { display: block; width: 100%; height: 1.6rem; overflow: visible; }
+.m-then { fill: var(--built); stroke: var(--paper); stroke-width: 1; }
+.m-grown { fill: var(--grown); stroke: var(--paper); stroke-width: 1; }
+.m-planned { fill: url(#hatch); stroke: var(--planned); stroke-width: 1; }
+.m-base { stroke: var(--rule); stroke-width: 1; }
+.m-ceiling { stroke: var(--margin); stroke-width: 2; }
+.m-frame { fill: none; stroke: var(--rule); stroke-width: 1; }
+.m-held { fill: var(--held); stroke: var(--paper); stroke-width: 1; }
+.m-partly { fill: var(--partly); stroke: var(--paper); stroke-width: 1; }
+.m-waiting { fill: var(--waiting); stroke: var(--paper); stroke-width: 1; }
+.m-cutover { fill: var(--cutover); stroke: var(--paper); stroke-width: 1; }
+.m-retired { fill: url(#stripes); stroke: var(--retired); stroke-width: 1; }
+.p-planned { fill: var(--planned); }
+.p-retired { fill: var(--retired); }
+.note {
+  grid-column: 2;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.55rem;
+}
+.axis { grid-column: 2; position: relative; height: 1.1rem; font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.axis span:first-child { transform: none; }
+.axis span:last-child { transform: translateX(-100%); }
+.key { display: flex; flex-wrap: wrap; gap: 0.5rem 1.2rem; margin: 0; padding: 0; list-style: none; font-family: var(--font-label); font-size: 0.85rem; color: var(--ink-soft); }
+.key li { display: inline-flex; align-items: center; gap: 0.45rem; }
+svg.sw { display: block; flex: none; }
+
+.tallies { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr); column-gap: 0.8rem; row-gap: 0.3rem; align-items: center; }
+.tallies .name { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink-soft); }
+.tallies .note { margin-bottom: 0.4rem; }
+.tally-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 0.45rem 1rem; margin: 0; padding: 0; list-style: none; }
+.tally-key li { display: grid; grid-template-columns: 0.9rem auto 1fr; align-items: baseline; gap: 0.45rem; font-family: var(--font-label); font-size: 0.88rem; color: var(--ink-soft); }
+.tally-key svg { align-self: center; }
+.tally-key b { font-family: var(--font-mono); font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+ul.waves { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.55rem; }
+ul.waves li::marker { color: var(--margin); }
+
+.closing p { font-style: italic; }
+footer { font-family: var(--font-label); font-size: 0.82rem; letter-spacing: 0.04em; color: var(--ink-soft); border-top: 1px solid var(--rule); padding-top: 0.9rem; }
+
+@media (max-width: 560px) {
+  body { font-size: 1.0625rem; }
+  .entry > div { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+  .bars { grid-template-columns: 3.1rem minmax(0, 1fr); column-gap: 0.55rem; }
+  .bars.steps { grid-template-columns: 3.9rem minmax(0, 1fr); }
+  .bars .name { font-size: 0.8rem; }
+  .tallies { grid-template-columns: minmax(0, 1fr); row-gap: 0.25rem; }
+  .tallies .note { grid-column: 1; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<svg class="defs" width="0" height="0" aria-hidden="true" focusable="false">
+  <defs>
+    <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect class="p-planned" x="0" y="0" width="3" height="7"/></pattern>
+    <pattern id="stripes" width="4" height="4" patternUnits="userSpaceOnUse"><rect class="p-retired" x="0" y="0" width="2" height="4"/></pattern>
+  </defs>
+</svg>
+
+<main class="sheet">
+  <header>
+    <p class="eyebrow">dbchange v3 · essay three · waves 5 to 7</p>
+    <h1>Seen to Fail</h1>
+    <p class="dek">What three waves built for prediction and for the synthetic copy, why its rules arrived with tests that had failed without them, and what that costs.</p>
+    <p class="at">read at 28d6bd7 on claude/v3-architecture-design-sl95mx, from 77544d6 · 21 October 2026</p>
+    <ul class="figures" aria-label="Lines of C# at 28d6bd7, with the growth since 77544d6">
+      <li><b>7,440</b><span>kernel/ <i>+2,883</i></span></li>
+      <li><b>12,071</b><span>io/ <i>+3,618</i></span></li>
+      <li><b>1,802</b><span>cli/ <i>+167</i></span></li>
+      <li><b>31,179</b><span>tests/ <i>+8,660</i></span></li>
+    </ul>
+  </header>
+
+  <section class="prose" aria-label="Opening">
+    <p>The second essay left v3 able to count, in queries that cannot quote a row, how many of an environment's rows break each of six kinds of rule, and to name a change's operation provisionally. The 50 commits from 77544d6 to 28d6bd7, on 20 and 21 October, hold waves 5, 6 and 7 of the build. They make every part of a prediction but the verb that runs it: io reads DacFx's script statement by statement, the BlockOnPossibleDataLoss checks among them; a vocabulary of 72 rows says what each statement asks of the rows; and every sample change of the corpus is predicted on an empty, a populated and a violating copy. They also build the copy a proof will run on: a plan of rows that reads no row, a local server whose copies are swept, cached and dropped one session at a time, and <code>synthetic-copy up</code>, which plants an environment's answers into a copy of the repository's schema and counts the copy again to see that it gives them back.</p>
+    <p>One habit holds across the three waves: a rule is trusted once a test has failed without it. A fix arrives with the test that fails on the code before it, and the commit says which. A review's finding is pinned by the mutation that restores the defect, and a table of rows by removing each row in turn. A race that 3,200 concurrent calls did not reproduce is pinned by a directory planted where DacFx writes its script. Where a test was not seen to fail, the commit says that too.</p>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">io · kernel · tests</p>
+      <h2>The check, matched on the parse</h2>
+    </div>
+    <div class="prose">
+      <p>Essay two quoted the sentence DacFx writes for BlockOnPossibleDataLoss, byte for byte the same in 162.5.57 and 170.5.96, and three lookalikes a text match would take: a table rebuild's copy step under the same <code>IF EXISTS</code>, the <code>RAISERROR</code> at state 127 that verifies a constraint added <code>WITH NOCHECK</code>, and the check quoted in the golden pre-deploy script's comment. WP 2.2's reader, <code>io/BlockOnPossibleDataLoss</code>, decides by the parse. It turns the plan's script to LF, empties each SQLCMD command line so that a line of the parse is a line of the script, substitutes each <code>$(var)</code> in memory, parses the rest with TSql160Parser, and keeps an <code>IF</code> of one shape alone:</p>
+    </div>
+    <pre><code>if (node is { Predicate: ExistsPredicate exists, ElseStatement: null }
+    &amp;&amp; node.ThenStatement is RaiseErrorStatement { ThirdParameter: IntegerLiteral { Value: State } })</code></pre>
+    <div class="prose">
+      <p>The copy step's <code>IF</code> holds a <code>BEGIN … END</code>, the verification's <code>IF</code> tests <code>@@ROWCOUNT</code>, and a comment is no statement, so none of the three matches. A check's sites, the statements it protects, are the paragraphs of the block comment DacFx writes just before it, since the script names those statements nowhere else (<code>DECISIONS.md:163</code>).</p>
+      <p>The predicate runs as <code>SELECT CASE WHEN EXISTS (…) THEN 1 ELSE 0 END</code> through <code>SqlServer.Measure</code>, written back by io's Sql160ScriptGenerator and admitted again by the allowlist, so the text that reaches <code>queries.log</code> is one the allowlist parsed. ScriptDom 180.102.0 writes a subquery's <code>QuerySpecification</code> on its own without its <code>WHERE</code> clause, so the query is written from the whole <code>ExistsPredicate</code>, and the comment above that line names the release. None of the checks in the twelve committed files of DacFx's checks has a <code>WHERE</code> clause, so the fixture test writes one: its check's <code>WHERE</code> converts a planted value and fails with Msg 245 against an environment classified real. Without the <code>WHERE</code> the query would answer 1 and raise nothing. With it, the failure reports Msg 245 and the check's site, and the planted value appears in neither the error nor <code>queries.log</code>.</p>
+      <p>A SQLCMD value that a reference resolved is marked sensitive. <code>SqlCmdVariable.Substituted</code> records where it placed each value, so the reader knows where a secret sits without searching the text for it. A check whose span holds one, from the first character of the comment before it to the end of the <code>IF</code>, is refused as <code>sqlcmd.sensitive</code>, naming <code>$(ServiceToken)</code> and never its value. The span starts at the comment because the comment's paragraphs become sites, and sites reach the prediction's output.</p>
+      <p>One fix landed before the reader, in 1f2a47e. On the windows-latest LocalDB job, run 39372494078, DacFx 170.5.96 returned a null script for one plan of S2's fixture. Given no path, DacFx writes <code>&lt;temp&gt;/&lt;database&gt;_Update&lt;n&gt;.publish.sql</code>, choosing <code>n</code> by <code>File.Exists</code> and then <code>File.Create</code>, and deletes the file once read; the fixture planned three times at once under one database name. <code>io/DacFx.Scripted</code> gives each call a folder of its own. 3,200 concurrent calls on Linux reproduced nothing, so the fast test plants a directory at <code>&lt;temp&gt;/&lt;database&gt;_Update1.publish.sql</code>, which DacFx cannot open as a file; before the change every plan failed there with <em>Access to the path … is denied</em>.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>io/BlockOnPossibleDataLoss.cs:50-77, :93-126, :135-169</code> · <code>kernel/SqlCmd.cs:57-121, :192-198</code> · <code>io/DacFx.Scripts.cs:19-39</code> · <code>tests/Io.Tests/BlockOnPossibleDataLossReaderTests.cs:65-82, :108-117, :139-152</code> · <code>tests/Io.Tests/DacFxTests.cs:205-220</code> · 26c9b75, 1f2a47e</dd></div>
+      <div><dt>Closes</dt><dd>A lookalike read as a check; a predicate run without its <code>WHERE</code>; a secret written to <code>queries.log</code>; one plan's script taken by another. WP 2.2's done-when: the checks S2 extracted, found exactly in the 12 committed files and in the live 170.5.96, package-to-package 170.5.96 and live 162.5.57 plans. Value X2; PAR-020, PAR-201 and PAR-222.</dd></div>
+      <div><dt>v2</dt><dd><code>classifyPublish</code> took a publish as blocked when sqlpackage printed <em>Could not deploy package</em>, under the comment "The block lives in the TEXT, never the exit code" (<code>archive/v2/ssdt-agent/scripts/prove.mjs:267-276</code>), and <code>deltaSignals</code> flagged the check by <code>/RAISERROR[^;]*data loss might occur/i</code> over the whole generated script (<code>:285</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>The shape is written twice: <code>io/PlanStatements.Read.cs:74-75</code> restates it for the vocabulary and shares only the constant 127. One statement TSql160Parser cannot read refuses every check of the plan (<code>plan.unparsed</code>). A comment separated from its <code>IF</code> by anything but white space gives no sites, and a check that reads a sensitive value cannot be predicted read-only.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">kernel · io</p>
+      <h2>Seventy-two rows</h2>
+    </div>
+    <div class="prose">
+      <p>The property read of essay two finds six kinds of rule in the change itself. Seven more show only in DacFx's statements: KeyLength, an index whose key can pass SQL Server's limit; Rebuild, a copy of a table through <code>tmp_ms_xx_</code>; Computed, a computed column; Temporal, a <code>PERIOD FOR SYSTEM_TIME</code> or <code>SYSTEM_VERSIONING = ON</code>; Scan, a statement that reads every row; and, from the change's own deploy scripts, Authored and SeedDrift. <code>V3_MILESTONES.md</code> §4 row 20 asks that they be matched by a vocabulary that is data, and WP 2.1's row (<code>V3_MILESTONES.md:524</code>) adds why: io hands the kernel statements, and the kernel references nothing but the BCL. <code>io/PlanStatements</code> lists DacFx's script as kernel <code>PlanStatement</code> records: each statement's ScriptDom type, the words read off its parse from a closed list (<code>RAISERROR 127</code>, <code>WITH CHECK</code>, <code>PERSISTED</code>, <code>SYSTEM_VERSIONING = ON</code>), its objects by role and its columns. <code>kernel/Vocabulary</code> holds the rows:</p>
+    </div>
+    <pre><code>R("IfStatement", Asks.TableEmpty, "QST-01", ["RAISERROR 127"]),
+R("AlterTableConstraintModificationStatement", Asks.ForeignKeyOrCheck, "QST-50", ["WITH CHECK", "CHECK CONSTRAINT"]),
+R("CreateIndexStatement", Asks.KeyLength, "QST-47", when: [When.KeyOverLimit]),</code></pre>
+    <div class="prose">
+      <p>Each row names its case: a question of the Facsimile's catalog for 48 rows, one of spike S2's sample changes for 21, and for three KeyLength rows a case named by what it plants, such as <em>a unique constraint over the key limit</em>. Of the 72, 49 ask nothing: DacFx's frame around its statements, statements that write no existing value, and objects that hold no rows. A statement no row matches is <code>Unknown</code>, and the reading carries the warning <code>plan.unclassified-statement</code>, whose remedy reads <em>Prove the change on a copy with dbchange prove, or add a row for the statement's shape with its case.</em> The list is closed: a shape DacFx has not been seen to write goes to proof.</p>
+      <p>Two tests hold the table to its cases. QST-95's test removes each row in turn, by reference, and requires the case the row names to read differently: fewer preconditions, other ones, or a new unclassified line. A row whose removal no case notices fails the test by its type and words, so no row stays without a case that depends on it, and the rows whose case is a sample change are held the same way against DacFx's own plan in the fixture lane. QST-93 reads every statement of every sample change's plan three ways, live and package to package on 170.5.96 and live on 162.5.57, 177 plans for 59 sample changes, and requires none unclassified.</p>
+      <p>The vocabulary uses the reader's shape too: TableEmpty stands only where a BlockOnPossibleDataLoss check is among DacFx's own statements, so the same <code>IF EXISTS … RAISERROR</code> written in a deploy script is that script's Authored statement (QST-81). A ForeignKey or a Check the property read finds stands only where a statement validates it, by <code>WITH CHECK CHECK CONSTRAINT</code> or by the verification cursor, because a constraint added <code>WITH NOCHECK</code> and never checked reads no row (QST-56, QST-57; <code>DECISIONS.md:187</code>).</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>kernel/Vocabulary.cs:107-186</code> (the rows), <code>:197-236</code> (<code>Read</code>), <code>:255-270</code> · <code>kernel/PlanStatement.cs:63-111</code> · <code>io/PlanStatements.cs</code>, <code>io/PlanStatements.Read.cs</code> · <code>tests/Io.Tests/VocabularyCases.cs:50-125, :209-220</code> · <code>tests/Io.Tests/BlockOnPossibleDataLossCheckTests.cs:184-210</code> · 4a50942</dd></div>
+      <div><dt>Closes</dt><dd>A statement read as asking nothing because no rule named it; a row no case depends on; a developer's guard read as DacFx's check; a constraint added <code>WITH NOCHECK</code> read as validated. The Facsimile's F4, E1 and M1; WP 2.1's done-when over the 63 cases of the pure-case theory.</dd></div>
+      <div><dt>v2</dt><dd>The Facsimile wrote the kinds as a table of shapes "matched per batch", with HasRows, Orphan and CheckFalse where v3 has TableEmpty, ForeignKey and Check (<code>tests/Cases/ARCHITECTURE.md:164-192</code>), and its M1 as a mutation pass that deletes each vocabulary row and runs the suite (<code>tests/Cases/INVARIANTS.md:352-355</code>); at 77544d6 neither had code. v2's running code matched five regular expressions over the whole generated script (<code>archive/v2/ssdt-agent/scripts/prove.mjs:283-291</code>) and knew no unknown statement.</dd></div>
+      <div><dt class="cost">Cost</dt><dd>A DacFx release that writes a shape no row matches turns each prediction over it into <code>plan.unclassified-statement</code>, a change to prove, until the shape has a row. <code>kernel/Vocabulary.cs</code> holds 396 of its 500 lines, <code>tests/Io.Tests/VocabularyCases.Plans.cs</code> 651 of 800. QST-95 reads each case once more for each of its rows, and its S2 half needs a SQL Server. The statements inside a <code>WHILE</code> are not listed: the verification cursor's <code>WHILE</code> is read whole.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">kernel · io</p>
+      <h2>A count, a person, or neither</h2>
+    </div>
+    <div class="prose">
+      <p>The seven kinds differ in who can answer them, and <code>kernel/Preconditions.Kinds.cs</code> gives each kind two facts. <code>Declared</code> is true for Computed and Authored, whose state a person declares and no count gives. <code>Breakable</code> is false for Scan and Rebuild, which read every row and fail on none. <code>Outcome.Predict</code> blocks only on a breakable kind that is violating, and refuses a declared kind with no state as <code>plan.undeclared</code>, whose remedy is <em>Look at the rows the statement reads in the environment, and declare a witness row for each shape it meets, or that it meets none.</em> Every <code>Match</code> over the kinds now takes thirteen cases.</p>
+      <p>KeyLength is the one new kind whose violations io counts: the rows whose key passes 900 bytes under a clustered index or 1,700 under another, on which <code>CREATE INDEX</code> fails with Msg 1946. <code>io/AggregateQueries.Length.cs</code> counts the <code>DATALENGTH</code> of the key's one column of varying width against what its fixed columns leave of the limit, converted by <code>TRY_CONVERT</code> first where the change retypes it. The fixture test holds that count to SQL Server's own. On an <code>nvarchar(1000)</code> column it plants rows of 850 characters (1,700 bytes) and 851, a NULL and an empty string; the count reads one violating row of four, <code>CREATE NONCLUSTERED INDEX</code> fails with Msg 1946, and once the row of 851 is deleted the index builds over the rest. A key of two varying columns, whose rows pass the limit by two values together, and a key whose fixed columns alone pass it, which SQL Server refuses even on an empty table (Msg 1944), read <em>not predictable read-only</em>; so do Temporal, whose count compares two columns of one row, the period's start and end, and SeedDrift, whose count would send the seed's own values; no form of the allowlist holds either.</p>
+      <p>Authored and SeedDrift are read from the change's deploy scripts. <code>io/PlanStatements</code> finds the pre-deploy script where its text first occurs in DacFx's script, and the post-deploy script where its text last occurs, since both releases write each verbatim with no marker (<code>DECISIONS.md:185</code>), and lists the scripts of the model before the change beside them. A statement the old script held has run in every environment and asks nothing (QST-79). A changed <code>MERGE</code> whose source is a list of rows is SeedDrift on its key; any other changed statement is Authored on the first table it writes or reads. The old script's statements are counted as a multiset, so a statement the change writes twice where the old script held it once leaves its second copy Authored (<code>kernel/Vocabulary.Scripts.cs:28, :39-42</code>). And since both releases validate new constraints after the post-deploy script, a ForeignKey validated after a changed post-deploy <code>INSERT</code> into its table or its parent is answered by that statement's Authored (QST-59).</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>kernel/Preconditions.Kinds.cs:12-75</code> · <code>kernel/Preconditions.cs:43-61</code> · <code>kernel/Outcome.cs:39-75</code> · <code>io/AggregateQueries.Length.cs:19-61</code> · <code>tests/Io.Tests/AggregateQueriesKindsTests.cs:84-105</code> · <code>kernel/Vocabulary.Scripts.cs:25-98</code> · <code>io/PlanStatements.cs:65-95</code></dd></div>
+      <div><dt>Closes</dt><dd>A Scan or a Rebuild that blocks; a Computed or an Authored taken as clean because nothing counted it; a KeyLength count that disagrees with <code>CREATE INDEX</code>; an unchanged seed read as the change's own. The kinds of WP 2.1's row that only a plan's statements show (<code>V3_MILESTONES.md:524</code>); PAR-215, v2's F15, in which a post-deploy seed undid a pre-deploy repoint, held but for its <code>blockedBy: authored-script</code>, which waits on WP 4.1.</dd></div>
+      <div><dt>v2</dt><dd>The Facsimile's table gave KeyLength a "<code>DATALENGTH</code> sum over the key" and Authored "a pre- or post-deploy statement in head that is not in the merge-base", answered by a <code>shape</code> verb that was never built (<code>tests/Cases/ARCHITECTURE.md:185, :190</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>A prediction can now wait on a person: until a state is declared, predict refuses. Whether a statement changed is judged by the text Sql160ScriptGenerator writes back, so a seed rewritten with its <code>VALUES</code> reordered reads as changed. Each kind added widens every <code>Match</code> over the kinds in the kernel and io. Not checked (4a50942): a plan whose deploy scripts use a SQLCMD variable the plan's own <code>:setvar</code> lines lack.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">kernel · io · tests</p>
+      <h2>Four wrong answers</h2>
+    </div>
+    <div class="prose">
+      <p>Four wrong answers were found in WP 2.1's second slice, WP 2.1b, after its first commit. One, fixed in 30a1d03, depended on the order of a key's columns. The other three were among the six defects the slice's verification found, which b04a203 fixes; its message lists the tests, under the line <em>Each fails with the old rule restored.</em></p>
+      <p><code>SortedArray</code> orders a key's columns by name, so in <code>CREATE INDEX [IX_N_Big_Id]</code> the <code>nvarchar(max)</code> column <code>[Big]</code> came before the int <code>[Id]</code>. <code>KeyBytes</code> stood for the max column with <code>long.MaxValue</code> and then added the int's 4 bytes. C#'s <code>+</code> is unchecked unless a project sets <code>CheckForOverflowUnderflow</code>, which none of v3's does, so the total wrapped negative, no KeyLength was raised, and the index read as a Scan. The planter summed the same sizes with <code>Enumerable.Sum</code>, which is checked, and threw <code>OverflowException</code>. The one overflow was silent in one place and an exception in the other. <code>KeyBytes</code> now stays at <code>long.MaxValue</code> once a max column is counted, in either order of the columns:</p>
+    </div>
+    <pre><code>total = bytes == long.MaxValue || total == long.MaxValue ? long.MaxValue : total + bytes;</code></pre>
+    <div class="prose">
+      <p>A Computed or an Authored on a table the change creates was answered by <code>Coordinates.Of</code> as a count of no rows, which <code>ExistingData.Of</code> rejects with an <code>ArgumentException</code>: the chain WP 2.5 assembles ended in an exception where an error with a remedy belongs. Such a precondition is now <code>Coordinates.Declared</code> wherever its table stands, and the prediction refuses it as <code>plan.undeclared</code>; an empty table was the wrong answer in any case, since a changed post-deploy <code>INSERT</code> can fill a new table before DacFx validates its foreign key. The other two were statements io did not read. DacFx redefines a clustered primary key by a rebuild whose <code>tmp_ms_xx_</code> table declares the key inline, and io read no key off a <code>CREATE TABLE</code>, so <code>PK_D</code> moved onto an <code>nvarchar(460)</code> column, 920 bytes, read as Unique and Rebuild while the <code>INSERT … SELECT</code> fails with Msg 1946. And io read no <code>INCLUDE</code> column, so an index that includes a computed column it does not persist read as a Scan, while SQL Server computes that column over every row as it builds the index and fails on a value that does not convert (Msg 245).</p>
+      <p>The verification's other three findings were tests. QST-83, a program of releases, had been left to WP 4.4 with no decision line and is ported (<code>Vocabulary.Program</code>). No test read <code>plan.unclassified-statement</code>, the warning that sends a change to proof, and QST-94's theory now asserts it for ten statement shapes. QST-93 and QST-95 now stand in the names of the tests that hold them.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>kernel/Vocabulary.Models.cs:70-85</code> · <code>kernel/Witness.Kinds.cs:20-40</code> · <code>kernel/Coordinates.cs:56, :108, :148</code> · <code>io/PlanStatements.Read.cs:33, :139-153</code> · <code>kernel/Vocabulary.Scripts.cs:76-78</code> · <code>tests/Io.Tests/VocabularyCases.cs:128-167</code> · 30a1d03, b04a203</dd></div>
+      <div><dt>Closes</dt><dd>The six defects of WP 2.1b's verification, merged as 59d4da6, and the overflow before them. The chain WP 2.5 assembles, <code>Coordinates.Of</code>, <code>ExistingData.Of</code> and <code>Outcome.Predict</code>, ends in an error with a remedy and never in an exception.</dd></div>
+      <div><dt>v2</dt><dd>The Facsimile listed KeyLength for a <code>CREATE … INDEX</code> alone (<code>tests/Cases/ARCHITECTURE.md:185</code>) and named no <code>INCLUDE</code> column.</dd></div>
+      <div><dt class="cost">Cost</dt><dd>The fix round inserted 468 lines and deleted 57; 339 of the insertions are tests. Not checked (b04a203): DacFx 162.5.57's plans of the new shapes, which were planned package to package on 170.5.96 alone; a column-level <code>PRIMARY KEY</code> written without <code>CLUSTERED</code> reads as nonclustered. Not checked (30a1d03): <code>CREATE INDEX</code> over a max column fails with Msg 1919 whatever the rows hold, and no row names that apart from KeyLength.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">tests · kernel</p>
+      <h2>Every change on three copies</h2>
+    </div>
+    <div class="prose">
+      <p>WP 2.6 makes the corpus the place where these pieces meet. Each of the 59 sample changes under <code>tests/Golden/changes/</code> now carries a <code>predict.txt</code>: its preconditions, then the outcome <code>Outcome.Predict</code> gives on three copies of the golden project's base. One fixture theory, <code>SampleChangePredictionTests</code>, publishes the base once with DacFx 170.5.96 under the pipeline profile and reaches it as <code>env:corpus</code>, classified real, through a connection file only its owner can read. For each change it deletes every row and predicts, runs <code>tests/Golden/copies/populated.sql</code> and predicts, then runs the change's <code>violating.sql</code>, where it has one, and predicts again. make-mandatory's file reads:</p>
+    </div>
+    <pre><code>precondition TableEmpty on [dbo].[Customer]
+precondition NotNull on [dbo].[Customer] ([Email])
+empty: applies
+populated: blocks by TableEmpty on [dbo].[Customer]; ships in two releases
+violating: blocks by TableEmpty on [dbo].[Customer], NotNull on [dbo].[Customer] ([Email]); ships in two releases</code></pre>
+    <div class="prose">
+      <p>The populated copy's one Customer row holds an Email, and the change blocks all the same: law 9 and v2's finding F1, from DacFx's own plan of the change, package to package, with the copy's rows counted. Across the corpus the empty copy applies 59 times of 59, the populated copy blocks 12 and the violating copy 24, and no change holds a precondition that no read-only query counts. Of the 59, essay two counted 40; three came with spikes S9 to S11, and sixteen with WP 2.6 for v2 proof-lane facts no sample change held. Running the theory over them showed a defect: redefine-the-primary-key's rebuild of OrderLine was reported as baseline drift, because DacFx rebuilds a table whose clustered primary key moves to other columns even where the change alters nothing else of it. <code>Preconditions.BaselineDrift</code> now counts a <code>TableRebuild</code> of a table on which the change creates or drops a key, an index or a constraint as the change's own.</p>
+      <p>On a missing or a differing <code>predict.txt</code> the test fails and prints the prediction it computed, so a changed prediction reaches review as a changed line of a committed file. A change with no <code>violating.sql</code> is predicted a third time on the populated rows, and <code>Assert.True(File.Exists(violating) || populated.Outcome == broken.Outcome)</code> requires the same outcome both times.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>tests/Io.Tests/SampleChangePredictionTests.cs:36-66, :83-128, :134-182</code> · <code>tests/Golden/changes/*/predict.txt</code>, <code>*/violating.sql</code> · <code>tests/Golden/copies/populated.sql</code> · <code>kernel/Preconditions.cs:345-385</code> · <code>tests/Io.Tests/BaselineDriftTests.cs:92</code> · a2f37e1</dd></div>
+      <div><dt>Closes</dt><dd>WP 2.6's first done-when, the sample changes run in one parameterized test; the prediction half of PAR-101 to PAR-147; a rebuild the change causes reported as drift.</dd></div>
+      <div><dt>v2</dt><dd>v2 held these facts in thirteen <code>SamplePr*Tests.fs</code> classes and <code>SamplePrSupport.fs</code>, 5,935 lines and 47 facts under <code>archive/v2/tests/Twin.Tests.Integration/</code>, each class on a Docker container and port of its own (21833 to 21846), each fact publishing the change and asserting on DacFx's report text: <code>Contains("Msg 50000")</code>, <code>Contains("Rows were detected")</code> (<code>SamplePrMakeMandatoryTests.fs:208-215</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd><code>tests/Golden/</code> holds 2,616 of its 3,000 lines. The copies are plain <code>INSERT</code> scripts, which a fast test enforces, so a violation that needs a row changed or deleted cannot be written; the planter replaces them in M3. One copy is emptied and refilled per change, so the theory runs in sequence. At 28d6bd7 that fast test sits in the class of the <code>CorpusCopy</code> fixture, which xUnit starts before any of the class's tests, so on ubuntu-latest's fast job, which has no SQL Server, it failed; ae9db10 moved it to a class of its own.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">tests · DacFx</p>
+      <h2>What an extract keeps</h2>
+    </div>
+    <div class="prose">
+      <p>A copy can stand in for an environment only where DacFx treats the two alike, and the Facsimile left three questions about that open, its §11 questions 1, 9 and 10. Spikes S9 to S11 answer them in <code>Io.Tests: SpikeReceiptTests</code>, on 170.5.96 in process and on 162.5.57 through <code>tests/DacFx162/</code>, which gained the verbs <code>extract</code> and <code>constraints</code>.</p>
+      <p>S9 asks whether an extract keeps a constraint's trust. A helper folds the catalog's two bits into one number, <code>is_disabled</code> × 2 + <code>is_not_trusted</code>, and −1 for a constraint the database lacks; a disabled constraint is untrusted too, so it reads 3. <code>LoadFromDatabase</code> and <code>Extract</code> keep <code>Disabled</code> as a public property. Untrusted survives only as <code>model.xml</code>'s <code>IsNotTrustedPropertyAnnotation</code>, which no public property exposes, and io's own element reader reads the untrusted key exactly as the trusted key add-a-foreign-key builds. No plan of the repository touches the untrusted key, and no publish trusts it again. A project cannot declare a key untrusted either: its build warns SQL70588 at <code>OrderStatusText.sql(30,1)</code>, <em>WITH CHECK | NOCHECK option for existing data check enforcement is ignored</em>, and its package holds the key trusted. So trust has to come from the environment's catalog (<code>DECISIONS.md:175</code>). The test names its own weak point: it asserts on the internal annotation's name, so a DacFx release that renames it fails the test, which runs again on every bump of the pin.</p>
+      <p>S10 asks when validation runs. The plan of add-a-foreign-key-whose-parent-the-seed-adds must hold, in this order, the key added <code>WITH NOCHECK</code>, <code>COMMIT TRANSACTION</code>, the post-deploy script's header, the seed's row for Customer 999, the post-deploy script's last line, DacFx's <em>Checking existing data against newly created constraints</em>, and <code>WITH CHECK CHECK CONSTRAINT [FK_Order_Customer_CustomerId]</code>. A lookup row the post-deploy script seeds therefore satisfies a new key. With a second orphan that no seed fixes, the publish fails with Msg 547 and leaves Customer 999 seeded and the key added and untrusted: a block at validation is not atomic, and a proof reads the state after it.</p>
+      <p>S11 asks whether system names survive. SQL Server names an unnamed default after its object id, and two fresh databases allocate the same ids, so the test gives the environment a history of two tables created and dropped. SQL Server Express and LocalDB create a database with <code>AUTO_CLOSE ON</code>, and the publish that sets it <code>OFF</code> restarts the database, after which it allocates object ids as if the dropped tables had never existed; the helper sets <code>AUTO_CLOSE OFF</code> first, as an environment's is. With history the <code>DF__Note__Body__</code> names differ, the plans' operations are equal, and the scripts are equal once each system name's hex suffix is replaced by a placeholder. Spike S11 also found that every plan drops and re-creates a check written with <code>IN</code>, which SQL Server stores as a chain of <code>OR</code>s and DacFx compares as text. Check drift stays strict at exit 5 and now names the cause, with the <code>OR</code> form as its remedy (<code>drift.check-written-with-in</code>).</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>tests/Io.Tests/SpikeReceiptTests.cs:99-320, :363-378, :385-390, :415-421, :473-477</code> · <code>tests/Io.Tests/SpikeReceiptTests.DacFx162.cs:18-108</code> · <code>tests/DacFx162/Program.cs</code> · <code>kernel/Plan.cs:159-218</code> · <code>cli/Check.cs:171-178</code> · ca68da9, 7c4f5e4, a6f773c</dd></div>
+      <div><dt>Closes</dt><dd>§6's S9, S10 and S11 in <code>V3_MILESTONES.md</code>; PAR-034's evidence; the catalog read that WP 3.5's trust step makes, and the check written with <code>IN</code> that its identity step names.</dd></div>
+      <div><dt>v2</dt><dd>The Facsimile's question 1 named the alternative, "If not, trust state needs metadata witnesses" (<code>tests/Cases/ARCHITECTURE.md:524-525</code>). v2's FK-trust law recorded the <code>WITH NOCHECK ADD</code> and <code>WITH CHECK CHECK</code> pair, from databases it built and compared on sqlpackage 170.4.83.3 (F9, confirmed again on 170.5.76 as F19), as prose, warning that "a blocked publish is non-atomic and can leave the key half-applied and untrusted" (<code>archive/v2/ssdt-agent/FINDINGS_AND_CHANGES.md:352-367</code>); the Facsimile recorded validation after the post-deploy script as observed on 170.5.96 (<code>tests/Cases/ARCHITECTURE.md:203</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>Fourteen tests, thirteen of them in the fixture lane. Not checked (7c4f5e4): an enabled key the project does not declare; SQL70588 under the 162.5.57 build task; LocalDB on Windows. The placeholder covers DF, CK, FK, UQ and PK names with an upper-case hexadecimal suffix of 8 to 16 digits, and no other system name.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">io · ci</p>
+      <h2>A copy's lifetime</h2>
+    </div>
+    <div class="prose">
+      <p>A synthetic copy needs a local server that makes, caches and drops databases without leaving them behind and without two runs meeting. WP 3.4 completes <code>io/LocalServer</code>.</p>
+      <p>The sweep runs before each copy is made. It picks the rows of <code>.dbchange/copies.json</code> that name a copy of this machine, on the local server as this machine names it now, made more than a day before a clock its caller passes; a row with no readable time counts as old, and nothing the registry does not hold is chosen. The day stands in for a liveness check across processes: a copy younger than a day may still be held. The test kills a child process holding its copy, plants three rows beside it, another machine's, another server's and one made a day later, and makes the next copy by a clock set a day and a minute past the killed one. The killed copy goes; the three planted rows and the new copy remain.</p>
+      <p>Two drops of one copy at once, by two sweeps or by a sweep and a Drop, failed in 1 to 10 of 20 rounds through sqlcmd on SQL Server 2022 Express: one session's <code>SET SINGLE_USER WITH ROLLBACK IMMEDIATE</code> killed the other's at severity 21 (Msg 596), which closes the connection before a <code>CATCH</code> runs. A kill at severity 21 cannot be caught, so the drops are kept apart. One batch, sent to <code>master</code> on an unpooled connection, takes a lock its session owns and drops under it:</p>
+    </div>
+    <pre><code>EXEC @held = sp_getapplock @Resource = @lock, @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = -1;</code></pre>
+    <div class="prose">
+      <p>The session owns the lock because <code>DROP DATABASE</code> cannot run inside a user transaction, and the second drop then finds <code>DB_ID</code> null. A database a failed or killed <code>RESTORE</code> left RESTORING takes <code>DROP DATABASE</code> alone, since SQL Server refuses <code>ALTER DATABASE</code> on it (Msg 5052). The test runs two Drops and two sweeps on one <code>Barrier</code> in each of 12 rounds; it was red against the earlier DROP. A statement to a copy is sent once more after two seconds only when its connection never opened, and only while the server has not yet answered this process once, since a failure after the connection opened may have run a <code>CREATE</code> or a <code>DROP</code>. Against a TCP listener that accepts each connection and closes it, the build test counts two connections and a run that fails as <code>server.unreachable</code>, with no row left in the registry.</p>
+      <p>A fresh copy of a base is restored from a backup or published from scratch. The plan put the backup in <code>.dbchange/cache/</code>, which SQL Server 2022 Express, running as the mssql user, cannot write; only LocalDB runs as the caller. So LocalDB writes there; a SQL Server on this machine writes into <code>SERVERPROPERTY('InstanceDefaultBackupPath')</code>, under a name carrying 8 hex digits of the checkout's path, so two checkouts at one base never share a file; and a server on another machine has no cache and publishes its base each time, with the note <code>cache.unavailable</code> (<code>DECISIONS.md:180</code>). Spike S4 timed the choice in CI on 300 generated tables, <code>OSUSR_S4_T001</code> to <code>OSUSR_S4_T300</code>, each with an IDENTITY key, two defaults and a reference to the table before it, and a CHECK on every tenth. The test asserts no time, so a slow runner cannot turn it red; the decision is a line of <code>DECISIONS.md</code> taken from one run, 39451326153:</p>
+    </div>
+    <figure class="chart">
+      <div class="bars steps" role="img" aria-label="Spike S4, 300 tables. SQL Server 2022 Express on Ubuntu: publish from scratch 18,187 ms, restore 563 ms. LocalDB 17.0 on Windows: publish from scratch 25,239 ms, restore 1,550 ms.">
+        <span class="group">SQL Server 2022 Express 16.0.4305.5 · Ubuntu</span>
+        <span class="name">publish</span>
+        <svg class="track" aria-hidden="true" focusable="false"><line class="m-base" x1="0" x2="100%" y1="24.5" y2="24.5"/><rect class="m-then" x="0" y="7" width="60.623%" height="14"><title>Express: publish from scratch, 18,187 ms</title></rect></svg>
+        <span class="note">18,187 ms</span>
+        <span class="name">restore</span>
+        <svg class="track" aria-hidden="true" focusable="false"><line class="m-base" x1="0" x2="100%" y1="24.5" y2="24.5"/><rect class="m-grown" x="0" y="7" width="1.877%" height="14"><title>Express: restore from the backup, 563 ms</title></rect></svg>
+        <span class="note">563 ms · 32.3 × faster · backup 152 ms · the empty copy's CREATE DATABASE 387 ms</span>
+        <span class="group">LocalDB 17.0.4025.3 · Windows</span>
+        <span class="name">publish</span>
+        <svg class="track" aria-hidden="true" focusable="false"><line class="m-base" x1="0" x2="100%" y1="24.5" y2="24.5"/><rect class="m-then" x="0" y="7" width="84.130%" height="14"><title>LocalDB: publish from scratch, 25,239 ms</title></rect></svg>
+        <span class="note">25,239 ms</span>
+        <span class="name">restore</span>
+        <svg class="track" aria-hidden="true" focusable="false"><line class="m-base" x1="0" x2="100%" y1="24.5" y2="24.5"/><rect class="m-grown" x="0" y="7" width="5.167%" height="14"><title>LocalDB: restore from the backup, 1,550 ms</title></rect></svg>
+        <span class="note">1,550 ms · 16.3 × faster · backup 402 ms · the empty copy's CREATE DATABASE 1,107 ms</span>
+        <div class="axis" aria-hidden="true"><span style="left:0">0</span><span style="left:33.333%">10,000</span><span style="left:66.667%">20,000</span><span style="left:100%">30,000</span></div>
+      </div>
+      <ul class="key">
+        <li><svg class="sw" width="18" height="11" aria-hidden="true" focusable="false"><rect class="m-then" width="18" height="11"/></svg>publish from scratch</li>
+        <li><svg class="sw" width="18" height="11" aria-hidden="true" focusable="false"><rect class="m-grown" width="18" height="11"/></svg>restore from the cached backup</li>
+      </ul>
+      <figcaption>Spike S4 on 012dc02: one copy published, backed up and restored into a second, each step timed. M3's <em>Watch for</em> paragraph in <code>V3_MILESTONES.md</code> had assumed a restore under twenty seconds.</figcaption>
+    </figure>
+    <div class="prose">
+      <p>A proof's fresh copy is therefore restored from the cached base, never published from scratch (<code>DECISIONS.md:182</code>). The restore reads <code>RESTORE FILELISTONLY</code> and moves each file under the copy's name and the file's id, never its logical name, and <code>FromBase</code> holds a lock from its look at the cache to its backup, so two runs that reach one base at once publish it once and the second restores it.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>io/LocalServer.Sweep.cs:29-60, :69-108</code> · <code>io/LocalServer.cs:34-73, :113-117</code> · <code>io/LocalServer.Cache.cs:68-76, :132-191, :209-210</code> · <code>tests/Io.Tests/CopyLifetimeTests.cs:37-73, :129-166, :168-230</code> · <code>tests/Io.Tests/LocalServerTests.cs:39-108</code> · <code>tests/Io.Tests/CopyTimingTests.cs</code> · 8dc64d4, 8000828, bb1360c</dd></div>
+      <div><dt>Closes</dt><dd>VALUES.md O5, Cleanup is guaranteed, which was not held yet at 77544d6, and the drops of O6; WP 3.4's done-when, a killed run swept by the next and two concurrent runs sharing nothing; spike S4, the Facsimile's §11 question 6.</dd></div>
+      <div><dt>v2</dt><dd>v2 swept nothing and discarded every failed drop: <code>reapDatabase</code> ends in <code>with _ -&gt; ()</code>, "A failure is swallowed — the scratch is discarded either way" (<code>archive/v2/src/Projection.Pipeline/Deploy.fs:780-810</code>), and <code>bake.mjs</code> left each copy to be "dropped at leisure" (<code>archive/v2/ssdt-agent/scripts/bake.mjs:15</code>). v3 keeps v2's <code>ClearPool</code> before a drop, which v2 measured at about 3 s against about 50 ms (<code>Deploy.fs:772-774</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>A killed run's copy stays at least a day: the first copy this machine makes more than a day later sweeps it. A copy on a server this machine no longer names is never swept from here. Drops of one name wait on each other with no limit but the 180-second statement timeout. Nothing evicts a backup, and a <code>DBCHANGE_SQL</code> server on another machine has no cache. One CI run is S4's evidence: the laptop half, with the SSDT repository's schema and seeds, waits on S6.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">kernel</p>
+      <h2>A plan of rows that reads no row</h2>
+    </div>
+    <div class="prose">
+      <p>The synthetic copy must answer each precondition as the environment did, every no included, and hold nothing more. WP 3.8 ports the Facsimile's planter into kernel <code>Witness</code>, test-first from its catalog. <code>Witness.Plan</code> takes the copy's <code>Schema</code>, the change's preconditions and an <code>ExistingData</code>, which holds booleans and no values, and gives each table's rows in <code>Order</code>'s order and the needs only a person can meet, as data with no <code>Error</code> and no exit of their own (<code>DECISIONS.md:165</code>). A cell holds one of seven closed cases: <code>Omitted</code> where SQL Server fills the column, <code>Null</code>, <code>Number</code>, <code>Text</code>, <code>Bytes</code>, <code>Linked</code> and <code>AfterMax</code>. The kernel reads no row of the copy, so the values that depend on the copy stay symbolic, and the plan prints them. PLT-50, as <code>PlanterCases.Catalog.cs</code> states it:</p>
+    </div>
+    <pre><code>[dbo].[Status] at 5
+  row 1 (presence): [Id] the largest [Id] of [dbo].[Status] plus 1, [Code] N'w1', [IsActive] 1
+[dbo].[Order] at 6
+  row 1 (presence): [Id] omitted, [CustomerId] the [Id] of row 1 of [dbo].[Customer], [StatusId] the [Id] of row 1 of [dbo].[Status], …</code></pre>
+    <div class="prose">
+      <p>WP 3.5 resolves the symbols as it plants. A literal comes from the column's type and width, the row's ordinal and its class, and nothing else, and <code>kernel/BannedSymbols.txt</code> already keeps <code>System.Random</code>, <code>Guid.NewGuid</code> and the clock out of the kernel. A number is <i>n</i> wrapped to its type, mod 2 for bit and mod 256 for tinyint; a date is 2000-01-01 plus <i>n</i> days; a string is <code>w</code> and <i>n</i>, the <code>w</code> being the mark <code>io/Witnesses</code> admits as synthetic; a uniqueidentifier is <code>77777777-0000-4000-8000-</code> and <i>n</i> in twelve hexadecimal digits. The Facsimile's D3 made a literal "a pure function of (table, column, ordinal, type, width, value class)"; v3's reads no name, so renaming a column changes no literal.</p>
+      <p>The demands come from one <code>Match</code> over the kinds: a NULL row for NotNull, a row of each value class for Fits, an orphan past every parent row for ForeignKey, two rows of each collation class for Unique, and for Check a need, since the planter parses no predicate. A violating row is valid in every other column, so it serves as presence too, and demands on different columns share rows: a table takes as many rows as its largest need (PLT-86). In PLT-104 one Product row serves presence, a NotNull on <code>[Name]</code> and a Fits on <code>[Code]</code>, holding <code>[Code] N'w1wwwwwwwww'</code> and <code>[Name] NULL</code>. Three properties hold the plan as a whole: the Facsimile's D1 rebuilds the inputs with tables, columns, keys, references, checks, preconditions and states in reverse order and requires the same plan and the same text; its D3 adds, drops or retypes a column no key, reference or precondition reads and requires every other cell unchanged; and the test of VALUES.md P1, no environment's value in a copy, plants from counts of 739,517,284,613 and requires that number nowhere in the plan.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>kernel/Witness.cs:27-73, :144-198, :217-325</code> · <code>kernel/Witness.Demands.cs:44-71, :183-212</code> · <code>kernel/Witness.Literals.cs:10-43</code> · <code>tests/Kernel.Tests/WitnessProperties.cs:64-120, :205-245</code> · <code>tests/Kernel.Tests/PlanterCases.cs:117-131</code> · <code>tests/Kernel.Tests/PlanterCases.Catalog.cs</code> · 3655e03 to ac2f5b7</dd></div>
+      <div><dt>Closes</dt><dd>WP 3.8's done-when: every pure case of <code>tests/Cases/20-planter.md</code>, PLT-78, PLT-104 and PLT-120, ported with 74 more of its cases by identifier; D1 and D3. VALUES.md D6 and P1 to P3 for the plan; PAR-032 held, and PAR-030 and PAR-031 partly, their law 11′ waiting on WP 3.6.</dd></div>
+      <div><dt>v2</dt><dd>v2's synthetic copy generated its rows with a seeded splitmix64 generator over the distributions its profiler measured (<code>archive/v2/src/Projection.Core/SyntheticData.fs:4-13</code>, 824 lines). Its own successor notes record that it cannot plant a violation, and that "a violator rarer than 1/volume vanishes" (<code>archive/v2/TWIN_SUCCESSION.md:120, :125</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>Witness's five files measured 1,589 lines at the merge where Appendix F had planned 500 (<code>DECISIONS.md:168</code>), and 1,734 at 28d6bd7 with <code>Witness.Kinds.cs</code>. A literal ignores the column's name, so a planted Customer row holds <code>N'w1'</code> in Name, Email, ContactPhone and Region alike, and a check such as <code>Name &lt;&gt; Email</code> refuses it; only WP 3.5's <code>INSERT</code> finds that.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">kernel · io</p>
+      <h2>Keys, NULLs and what only a person writes</h2>
+    </div>
+    <div class="prose">
+      <p>A <code>Linked</code> key of row <i>r</i> resolves to the parent's <i>r</i>-th row, cycling: the rows the copy was restored with first, in the order of the referenced columns, then the planted rows by ordinal. WP 3.5 reads the parent's keys with <code>SELECT … ORDER BY</code>, and skips presence row <i>r</i> of a table where the copy already holds <i>r</i> rows. Together the two rules mean that a child of row <i>r</i> always finds a parent there, and that a lookup seeded with three rows takes no planted row for three children (PLT-50, PLT-53). The rule they replaced resolved every <code>Linked</code> key to the lowest seeded row; every child of a seeded lookup then took one key, and a unique key over the foreign key's column refused the second <code>INSERT</code> with Msg 2601 (ac2f5b7). The numeric orphan changed for the same reason, from 1000 past the parent's largest key in every row to 999 + <i>r</i>, PLT-75's 1000 at row 1.</p>
+      <p>A ForeignKey the environment answered clean over a parent that holds no row says that each of its rows holds NULL in a column of the key, the one way MATCH SIMPLE passes a row with no parent. The first planner put an orphan there, so the copy read violating, or failed the change's <code>WITH CHECK</code> with Msg 547, where the environment applies (15a1da8). Witness now writes NULL in each column of the key that admits one, and where none does it refuses the existing data as <code>plan.contradictory-answers</code>: no declared row can meet acceptance against such answers, so one count is wrong, "as a row count read from sys.partitions can be", and the remedy is to predict again. A nullable foreign-key column that is by itself a unique key with no filter links each row to a parent of its own, since such a key holds one NULL at most (Msg 2627 for a constraint, 2601 for an index).</p>
+      <p>What the planter cannot write is a <code>NeedsRow</code>, ten closed reasons from <code>FalseCheck</code> to <code>Repeated</code>, every one the plan can know of named in one pass, so a developer meets them all at once. <code>synthetic-copy up</code> stops at exit 8 <code>needs-input</code> before it plants a row; <code>cli/exits.frozen</code> gained that line in this span, its one change, with its first user (<code>DECISIONS.md:204</code>). The second verification held to the habit: the tests of two findings failed on the branch before the fix and those of the third under the mutations that finding named, and restoring the earlier planting failed the orphan property and the refusal property in five runs of five (15a1da8).</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>kernel/Witness.Rows.cs:66-72, :123-143, :291-318, :356-374, :398-403</code> · <code>kernel/Witness.Keys.cs:24-52</code> · <code>io/SyntheticCopy.Plant.cs:56-75, :152-180</code> · <code>tests/Kernel.Tests/WitnessTests.cs</code> · <code>tests/Io.Tests/SyntheticCopyTests.Lookups.cs:24-62</code> · <code>cli/exits.frozen</code> · <code>DECISIONS.md:169-174, :204</code></dd></div>
+      <div><dt>Closes</dt><dd>An orphan the environment lacks; a NULL a unique key refuses twice; a copy built on answers that cannot all hold; exit 8 <code>needs-input</code>. The Facsimile's answers-invalid (PLT-60) and planter-needs-row.</dd></div>
+      <div><dt>v2</dt><dd>v2's generator drew each foreign key "from the already-generated parent kind's PK pool (zero orphans by construction)", gave NULL "when the parent pool is empty" and gave a unique column "a distinct value", with no rule for a NULL in a unique key (<code>archive/v2/src/Projection.Core/SyntheticData.fs:18-23</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>The plan reads no filter's predicate, so a filtered unique key is taken to leave NULLs out and a filter over other columns is not checked (<code>DECISIONS.md:173</code>). Every check the environment answered violating costs a person one declared row. The plan lists every ancestor and presence row and leaves the skip to io, which counts every table before it plants.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">io · cli</p>
+      <h2>A copy that gives the answers back</h2>
+    </div>
+    <div class="prose">
+      <p><code>synthetic-copy up</code> runs the Facsimile's copy build, steps 1 to 8. Step 1 builds the base at <code>--at</code> and, given an existing data, HEAD beside it, reads <code>dbchange/witnesses.sql</code> before anything connects, and names the copy from fingerprints, <code>dbchange_synthetic_&lt;16 hex&gt;_existing-data[_&lt;16 hex&gt;]</code>: the first over the package's elements, the profile, DacFx and the server, the second over the existing data's canonical file. The name has no random part and names no machine and no process, so no sweep chooses it, and a run's copy name matches <code>[a-z0-9_]</code> alone while this one holds the hyphen of <code>existing-data</code>, so neither grammar takes the other's names. Under <code>.dbchange/synthetic-copy.lock</code>, a registry row of the same inputs built to its end answers current, and a row of other inputs, or a copy left half built, is dropped and built again.</p>
+      <p>A database of that name that this checkout's registry does not hold is another checkout's, built from the same inputs. The first version found it by one <code>DB_ID</code> read that nothing tied to the <code>CREATE</code> after it, and a <code>RESTORE</code> refused over it was followed by a <code>DROP</code> of it (50b6b3a). Now the synthetic copy's <code>CREATE DATABASE</code> carries no <code>IF DB_ID</code> guard and its <code>RESTORE</code> no <code>REPLACE</code>, so SQL Server's own refusal is the signal: Msg 1801, 3154, 3159 or 1834, as measured on Express, reads as <code>copy.foreign</code> at exit 9, and no <code>DROP</code> follows. The same round moved R15, the refusal of a run on a host an environment runs on, ahead of the first statement: <code>synthetic-copy up</code> had asked <code>master</code> for <code>DB_ID</code> before it checked the host, so on an environment's host it could answer a copy current or send <code>DROP DATABASE</code> there.</p>
+      <p>Step 4 applies spike S9's finding that an extract keeps a constraint's disabled state and not its trust. Each constraint the environment holds disabled is set <code>NOCHECK</code> before the copy is read, since a disabled key changes the plan and the copy's own plan of the change must be the environment's. The constraints the trust list names, the foreign keys a planted row breaks and the foreign keys of a table a block plants are suspended from the first row to the last block, restored to the environment's state (<code>NOCHECK</code>, <code>WITH NOCHECK CHECK</code> or <code>WITH CHECK CHECK</code>) and read back through <code>SqlServer.Measure</code>. A constraint the rows break that is to end trusted is refused by SQL Server <code>WITH CHECK</code> and becomes <code>witness.trust</code> at exit 8, whose message says dbchange "never forces a constraint's trust". The fixture test plants an orphan under a key the environment holds disabled and a check it holds enabled and untrusted, and reads (1, 1) and (0, 1) back from <code>sys.foreign_keys</code> and <code>sys.check_constraints</code>; given the same existing data with its trust list emptied, up exits 8.</p>
+      <p>Step 6 hashes every table that held a row as restored and every table a row or a block touched, each value converted to <code>varbinary(max)</code>, a NULL written apart from an empty value, the rows' digests sorted so their order changes nothing. Step 7 counts the copy again over its own plan's preconditions and requires every answer the environment gave, every no included; a difference is <code>witness.acceptance</code>; where the copy misses a violation the environment holds, its remedy names the <code>-- witness:</code> header to plant the row under. Step 8 plans the base against the copy and requires an empty plan, with two operations named apart. The drop and add of a constraint kept disabled, which every plan makes, is a note. The drop and create of a check written with <code>IN</code>, which S11 found every plan makes, is the warning <code>synthetic-copy.check-written-with-in</code> with the <code>OR</code> form SQL Server stores, and up answers <code>differs</code> at exit 5 with the copy still ready and still the target. M3's exit 3 is the one exit of M2 or M3 a test declares at 28d6bd7: a copy planted at an environment holding R6's five sites, the kinds of row a precondition reads (rows, a NULL, an orphan, a duplicate and a value over the new length) and a foreign key no row breaks answers all six states as the environment did, and <code>check drift --target synthetic-copy</code> exits 0.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>io/SyntheticCopy.cs:67-197</code> · <code>kernel/Target.cs:101-160</code> · <code>io/LocalServer.cs:41-49, :270-280</code> · <code>io/SyntheticCopy.Check.cs:28-114, :169-263</code> · <code>io/SyntheticCopy.Plant.cs:81-148</code> · <code>tests/Io.Tests/SyntheticCopyTests.cs:148-195, :243-310</code> · 67e2845, 50b6b3a, ce722e9, 8f2f710</dd></div>
+      <div><dt>Closes</dt><dd>WP 3.5's eight steps and its done-when; M3's exit 3; VALUES.md O6 for the synthetic copy; PAR-033, PAR-034 and PAR-148, held.</dd></div>
+      <div><dt>v2</dt><dd>v2's trust gate ran after its synthetic copy was filled and re-validated every user check and foreign key, refusing by constraint name where one failed, so that no constraint ended untrusted (<code>archive/v2/src/Twin.Runtime/Runs.fs:252-258</code>). The Facsimile named its copies <code>fx_base_&lt;hash12&gt;_&lt;rand4&gt;</code>, with a random part, and "Nothing is ever wiped (S5)" (<code>tests/Cases/ARCHITECTURE.md:230, :237</code>).</dd></div>
+      <div><dt class="cost">Cost</dt><dd>The copy is counted twice and extracted twice, and step 6 reads every row of every touched table; the 300-table timing moved to WP 3.6 (<code>DECISIONS.md:209</code>). The lock serialises ups within one checkout. VALUES.md O6's mechanism cell still names the copy's inputs as "schema, evidence, seed, tier and existing data", words the re-cut of 19 October retired.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">io · tests</p>
+      <h2>What a declared row may reach</h2>
+    </div>
+    <div class="prose">
+      <p>Step 5 runs the change's own rows, <code>dbchange/witnesses.sql</code> at HEAD: blocks under <code>-- plants: [dbo].[T]</code>, which owns that table's rows, or under <code>-- witness:</code> and a precondition as dbchange writes it, which supplies its violating row. A block runs as one batch on the copy's connection with triggers firing, so the grammar is held to what such a batch can reach. A statement other than <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, <code>MERGE</code> or <code>SET IDENTITY_INSERT</code> is <code>witness.not-dml</code>, and so are a name in three or four parts, <code>OPENQUERY</code>, <code>OPENROWSET</code>, <code>OPENDATASOURCE</code>, <code>INSERT … EXEC</code>, and a synonym of the repository, which can stand for a table on a linked server.</p>
+      <p>A literal must be synthetic or the repository's own: VALUES.md P1, no environment's value in a copy or a committed file. The rule has had three versions, the second and the third each written after a review of WP 3.5. The first admitted any string of digits. The second refused a string of digits the model does not define (50b6b3a). The next review found that the LIKE exception admitted <code>N'Owen Jones'</code> on the strength of the <code>'O'</code> a check lists, and that a phone or card number written without its quotes entered a character column (ce722e9). The LIKE exception is now a LIKE pattern's own text before its first wildcard, and a number is followed through an <code>INSERT</code>'s column list, <code>VALUES</code> lists, derived tables and common table expressions to the column it fills:</p>
+    </div>
+    <pre><code>[InlineData("INSERT INTO dbo.T (N) VALUES (2065550101);", true)]
+[InlineData("INSERT INTO dbo.T (C) VALUES (2065550101);", false)]
+[InlineData("INSERT INTO dbo.T (C) VALUES (98101);", true)]</code></pre>
+    <div class="prose">
+      <p><code>N</code> is an int column and <code>C</code> an nvarchar one, and 98101 enters <code>C</code> because the test's model holds it in a post-deploy seed.</p>
+      <p>The third review's must-fix was a block that reaches another server through an object of the repository: it could read a repository view written over <code>OPENQUERY</code>, or write a table whose trigger reaches a linked server, and nothing read the local server's own linked servers, which a seed the base's publish runs also reaches (8f2f710). <code>Witnesses.Remote</code> reads every view, function, procedure and DML trigger of both models and follows names and writes to a fixed point: a module that names a remote one is remote, and so is a module that writes a table whose trigger is. A script TSql160Parser cannot read counts as remote, after each <code>$(Name)</code> is replaced by <code>x</code> repeated to its length, so that <code>$(LinkedServer).db.dbo.T</code> still parses with its four parts. Before any other statement, up reads <code>SELECT name, data_source, provider_string FROM sys.servers WHERE server_id &lt;&gt; 0</code> on <code>master</code> and refuses the run as <code>copy.named-host</code> where a linked server names a host an environment runs on, by its data source or by the Server, Data Source, Address, Addr or Network Address of its provider string. A provider string can hold a password, so no message quotes it; the test appends a planted password to every provider string and requires it absent from the error. With <code>LocalServer.Unlinked</code> mutated to clear every server, the eight refusal cases failed. The fixture test of the linked server was first run on the fix, and the mutation run of the trust step was refused by the session's permission check and not run; the commit says both.</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>io/Witnesses.cs:13-29, :101-215</code> · <code>io/Witnesses.Numbers.cs</code> · <code>io/Witnesses.Remote.cs:39-159</code> · <code>io/LocalServer.Linked.cs:20-78</code> · <code>tests/Io.Tests/SyntheticCopyInputTests.cs:146-285</code> · <code>tests/Io.Tests/TargetTests.LinkedServers.cs:23-69</code> · <code>tests/Io.Tests/SyntheticCopyTests.Stops.cs:185-241</code> · 50b6b3a, ce722e9, 8f2f710</dd></div>
+      <div><dt>Closes</dt><dd>VALUES.md P1's refusal half: a declared literal of any other kind, reach through the repository's views, functions or triggers, and a local server linked to an environment's host. R15 over linked servers, under the law that a named environment cannot be written.</dd></div>
+      <div><dt>v2</dt><dd>The Facsimile wrote step 5's refusals in two lines, "A failing row stops <code>witness-failed</code>" and "A literal that is neither synthetic nor repository-defined stops <code>witness-not-synthetic</code>" (<code>tests/Cases/ARCHITECTURE.md:262-263</code>). v2's synthetic copy ran in a Docker container v2 started itself, reached at <code>localhost</code> with <code>sa</code> (<code>archive/v2/TWIN_SUCCESSION.md:121</code>); v3's runs on the local server this machine names, which can hold linked servers.</dd></div>
+      <div><dt class="cost">Cost</dt><dd><code>io/Witnesses.cs</code>, <code>Witnesses.Numbers.cs</code> and <code>Witnesses.Remote.cs</code> come to 838 lines. Not read: a number made by arithmetic, a <code>CASE</code> or <code>CHAR</code>'s codes; a server named by an ODBC data source name alone; an ad hoc <code>OPENROWSET</code> in a seed; dynamic SQL; <code>sys.linked_logins</code>. An unparseable module refuses every block that names it. P1's scan of planted values waits on WP 3.7.</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">tests · ci</p>
+      <h2>The catalog and the citations</h2>
+    </div>
+    <div class="prose">
+      <p>WP 2.6's second part moves the Facsimile's case catalog into v3. Its twelve family files, with <code>README.md</code>, <code>90-traceability.md</code>, <code>ARCHITECTURE.md</code> and <code>INVARIANTS.md</code>, move from <code>archive/v2/ssdt-agent/facsimile/</code> to <code>tests/Cases/</code> by <code>git mv</code>, keeping their identifiers and text but for the paths each cites and the counts its prose restated: 1,123 cases in 20,552 lines, under a budget of their own set from that measure at 21,000, where the milestone row had estimated about 19,500. The Python lint, <code>catalog_lint.py</code> at 235 lines, becomes <code>Budgets.Tests: CaseCatalog</code> at 593: the grammar of a case block, the laws of nine families from F1 to T4, two cases for each law, each of 45 operations in its five situations, each of 28 stops and each of the 36 responsibilities of v2's synthetic copy. Its law, operation, question-kind, stop and Twin tables, the five the Python lint wrote, are byte-equal to that output on the same cases, down to its truncations (40 identifiers a law, 25 a question kind and 20 a stop) and to its ordinal sort, which matches Python's <code>sorted(set(...))</code>. The banner, the table of cases by file, kind and source, and the open <code>verify</code> cases are new. The old file said it was generated "then annotated by hand with the audit record"; the new one is generated in full, and the test that compares it writes the file again when it is stale and then fails: <em>was stale against the cases and is written again: commit it</em>.</p>
+      <p>WP 7.1 found that the rewrite its row names has no target yet: v2's skills sit under <code>archive/</code>, which no agent edits, until WP 7.2 moves each into <code>knowledge/</code>. What landed is the rule each moved file must pass in its own commit. <code>Citations</code> gains a table of nine of v2's citation forms, each with what it cites and the form v3 cites it in: a finding by <code>FINDINGS_AND_CHANGES.md</code> or a bare <em>Part n</em>, a sample by <code>sample-prs/</code>, the handbook by number or by v2's offset table ("<code>13</code> = §16", <code>archive/v2/ssdt-agent/skills/operations/columns.md:39</code>), a ledger by <code>estate/</code>, a skill by its v2 path or name, and a step by a v2 script. Each form added to the table named a block of v2's skills or agents that the earlier forms passed. f7c62a6 reports 834 blocks refused and 2,155 passed. Of the 2,155, one still cites v2 in a form neither <code>Citations</code> nor <code>Register.Prose</code> catches: add-index's line 29, a bare §19, which <code>NEXT.md</code> leaves to WP 7.2. A bare §<i>n</i> passes alone, because v3 cites <code>V3_MILESTONES.md</code> §13. Value O3, one command per intent, has a test that refuses a backticked or fenced <code>sqlpackage</code>, <code>sqlcmd</code> or <code>docker</code> command line outside the handbook; its first version read one physical line at a time, so the <code>sqlcmd</code> invocation <code>NEXT.md</code> had wrapped over two lines passed (8d5da03).</p>
+    </div>
+    <dl class="entry">
+      <div><dt>Where</dt><dd><code>tests/Budgets.Tests/CaseCatalog.cs:21-69, :95-142, :450-547</code> · <code>tests/Cases/</code> · <code>ci/budgets.json</code> <code>budgets.cases</code> · <code>tests/Budgets.Tests/Citations.cs:91-131, :136-144</code> · <code>tests/Budgets.Tests/OneCommandPerIntent.cs</code> · 8ec85f1, c431036 to f7c62a6</dd></div>
+      <div><dt>Closes</dt><dd>WP 2.6's second done-when, the catalog's lint green as a C# test, and the last Python step of v2's gates for the catalog; WP 7.1's rule ahead of WP 7.2's moves; value O3, which was not held yet at 77544d6; VALUES.md G5's mechanism, which named <code>dbchange measure</code>, a verb the contract does not hold, and now names <code>dbchange profile --env prod --counts</code>.</dd></div>
+      <div><dt>v2</dt><dd><code>catalog_lint.py</code> ran as a step of v2's ssdt-agent gates (<code>archive/v2/ssdt-agent/facsimile/tests/catalog_lint.py</code> at 77544d6). v2's skills and agents cite <code>FINDINGS_AND_CHANGES</code> 25 times in 21 files.</dd></div>
+      <div><dt class="cost">Cost</dt><dd>The C# lint is 593 lines where the Python was 235, and the catalog has 448 lines of headroom. It is exempt from <code>Register.Prose</code> and <code>Citations</code>, so its prose keeps v2's HasRows, Orphan and CheckFalse beside v3's kind names. The scan over v2's 79 files was run by hand and is no test, and <code>Register.Prose</code> was not run over them (ae6a283).</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">the budget · the ledger</p>
+      <h2>Where the weight sits</h2>
+    </div>
+    <figure class="chart">
+      <div class="bars" role="img" aria-label="Lines of C# per package. kernel: 4,557 at 77544d6, 2,883 new, 1,040 planned for M4 to M7, Outcome.cs's 120 for M4 among them, ceiling 9,700. io: 8,453 at 77544d6, 3,618 new, 1,990 planned for M4 to M7, ceiling 13,500. cli: 1,635 at 77544d6, 167 new, 540 planned for M4 to M7, ceiling 3,400.">
+        <span class="name">kernel</span>
+        <svg class="track" aria-hidden="true" focusable="false"><line class="m-base" x1="0" x2="100%" y1="24.5" y2="24.5"/><rect class="m-then" x="0" y="7" width="30.380%" height="14"><title>kernel: 4,557 lines at 77544d6</title></rect><rect class="m-grown" x="30.380%" y="7" width="19.220%" height="14"><title>kernel: 2,883 lines new since 77544d6</title></rect><rect class="m-planned" x="49.600%" y="7" width="6.933%" height="14"><title>kernel: Appendix F's rows for M4 to M7, 1,040 lines</title></rect><line class="m-ceiling" x1="64.667%" x2="64.667%" y1="1" y2="27"><title>kernel: ceiling 9,700</title></line></svg>
+        <span class="note">4,557 · +2,883 · M4–M7 1,040 · ceiling 9,700</span>
+        <span class="name">io</span>
+        <svg class="track" aria-hidden="true" focusable="false"><line class="m-base" x1="0" x2="100%" y1="24.5" y2="24.5"/><rect class="m-then" x="0" y="7" width="56.353%" height="14"><title>io: 8,453 lines at 77544d6</title></rect><rect class="m-grown" x="56.353%" y="7" width="24.120%" height="14"><title>io: 3,618 lines new since 77544d6</title></rect><rect class="m-planned" x="80.473%" y="7" width="13.267%" height="14"><title>io: Appendix F's rows for M4 to M7, 1,990 lines</title></rect><line class="m-ceiling" x1="90%" x2="90%" y1="1" y2="27"><title>io: ceiling 13,500</title></line></svg>
+        <span class="note">8,453 · +3,618 · M4–M7 1,990 · ceiling 13,500</span>
+        <span class="name">cli</span>
+        <svg class="track" aria-hidden="true" focusable="false"><line class="m-base" x1="0" x2="100%" y1="24.5" y2="24.5"/><rect class="m-then" x="0" y="7" width="10.900%" height="14"><title>cli: 1,635 lines at 77544d6</title></rect><rect class="m-grown" x="10.900%" y="7" width="1.113%" height="14"><title>cli: 167 lines new since 77544d6</title></rect><rect class="m-planned" x="12.013%" y="7" width="3.600%" height="14"><title>cli: Appendix F's rows for M4 to M7, 540 lines</title></rect><line class="m-ceiling" x1="22.667%" x2="22.667%" y1="1" y2="27"><title>cli: ceiling 3,400</title></line></svg>
+        <span class="note">1,635 · +167 · M4–M7 540 · ceiling 3,400</span>
+        <div class="axis" aria-hidden="true"><span style="left:0">0</span><span style="left:33.333%">5,000</span><span style="left:66.667%">10,000</span><span style="left:100%">15,000</span></div>
+      </div>
+      <ul class="key">
+        <li><svg class="sw" width="18" height="11" aria-hidden="true" focusable="false"><rect class="m-then" width="18" height="11"/></svg>at 77544d6</li>
+        <li><svg class="sw" width="18" height="11" aria-hidden="true" focusable="false"><rect class="m-grown" width="18" height="11"/></svg>new in waves 5 to 7</li>
+        <li><svg class="sw" width="18" height="11" aria-hidden="true" focusable="false"><rect class="m-planned" x="0.5" y="0.5" width="17" height="10"/></svg>Appendix F's rows for M4 to M7</li>
+        <li><svg class="sw" width="6" height="16" aria-hidden="true" focusable="false"><line class="m-ceiling" x1="3" x2="3" y1="0" y2="16"/></svg>ceiling, <code>ci/budgets.json</code></li>
+      </ul>
+      <figcaption>Lines of C# at 28d6bd7. The ceilings did not move. At the plan's own figures for M4 to M7, io's hatched length passes its ceiling, before wave 8 writes io/Predict and io/Profile.</figcaption>
+    </figure>
+    <div class="prose">
+      <p>In these waves io grew by 3,618 lines, 12 short of the 3,630 Appendix F still planned at 77544d6 for all of io's remaining work, and built from that plan the BlockOnPossibleDataLoss reader, LocalServer's completion and the copy build, with <code>io/PlanStatements</code>, which no row of Appendix F names, beside them. The copy build alone measures 2,337 lines where the plan had 950 for it, LocalServer.cs's completion and Profile.cs together (<code>DECISIONS.md:206</code>), and kernel Witness measured 1,589 at its merge where the plan had 500 (<code>DECISIONS.md:168</code>). Each time Appendix F took the measured figure into its row, and the ceiling held. io's ceiling now has 1,429 lines of room, and Appendix F's io rows for M4 to M7 plan 1,990: <code>Prove.cs</code> and <code>RefactorLog.cs</code> 550, <code>Gate.cs</code>, <code>Vendor.cs</code> and <code>Json.cs</code>'s additions 670, <code>Ossys.cs</code> 370, <code>Knowledge.cs</code> 400. At those figures io passes its ceiling by 561 lines. The kernel, at 7,440 of 9,700, and the cli, at 1,802 of 3,400, have room for their rows.</p>
+      <p>The tests hold 31,179 lines of C# under 43,100, <code>tests/Cases/</code> 20,552 under 21,000, and <code>tests/Golden/</code> 2,616 under 3,000. The fast and build lanes run 674 tests of <code>Kernel.Tests</code>, 753 of <code>Budgets.Tests</code> and 1,186 of <code>Io.Tests</code>, and the fixture lane 383 of <code>Io.Tests</code>.</p>
+    </div>
+    <figure class="chart">
+      <div class="tallies" role="img" aria-label="Parity ledger, 127 rows. At 77544d6, as ParityResolves counts them: 24 held, 22 partly held, 72 not held yet, 3 on the cutover tools, 6 retired. After wave 5: 24 held, 25 partly held, 69 not held yet, 3 on the cutover tools, 6 retired. After wave 6: 25 held, 27 partly held, 66 not held yet, 3 on the cutover tools, 6 retired. After wave 7: 28 held, 52 partly held, 38 not held yet, 3 on the cutover tools, 6 retired.">
+        <span class="name">77544d6</span>
+        <svg class="tally" aria-hidden="true" focusable="false"><rect class="m-held" x="0" y="1" width="18.898%" height="24"><title>held 24</title></rect><rect class="m-partly" x="18.898%" y="1" width="17.323%" height="24"><title>partly held 22</title></rect><rect class="m-waiting" x="36.221%" y="1" width="56.693%" height="24"><title>not held yet 72</title></rect><rect class="m-cutover" x="92.913%" y="1" width="2.362%" height="24"><title>the cutover tools 3</title></rect><rect class="m-retired" x="95.276%" y="1" width="4.724%" height="24"><title>retired 6</title></rect><rect class="m-frame" x="0" y="0.5" width="100%" height="25"/></svg>
+        <span class="note">24 held · 22 partly · 72 not yet · 3 cutover · 6 retired</span>
+        <span class="name">wave 5</span>
+        <svg class="tally" aria-hidden="true" focusable="false"><rect class="m-held" x="0" y="1" width="18.898%" height="24"><title>held 24</title></rect><rect class="m-partly" x="18.898%" y="1" width="19.685%" height="24"><title>partly held 25</title></rect><rect class="m-waiting" x="38.583%" y="1" width="54.331%" height="24"><title>not held yet 69</title></rect><rect class="m-cutover" x="92.913%" y="1" width="2.362%" height="24"><title>the cutover tools 3</title></rect><rect class="m-retired" x="95.276%" y="1" width="4.724%" height="24"><title>retired 6</title></rect><rect class="m-frame" x="0" y="0.5" width="100%" height="25"/></svg>
+        <span class="note">24 held · 25 partly · 69 not yet · 3 cutover · 6 retired</span>
+        <span class="name">wave 6</span>
+        <svg class="tally" aria-hidden="true" focusable="false"><rect class="m-held" x="0" y="1" width="19.685%" height="24"><title>held 25</title></rect><rect class="m-partly" x="19.685%" y="1" width="21.260%" height="24"><title>partly held 27</title></rect><rect class="m-waiting" x="40.945%" y="1" width="51.969%" height="24"><title>not held yet 66</title></rect><rect class="m-cutover" x="92.913%" y="1" width="2.362%" height="24"><title>the cutover tools 3</title></rect><rect class="m-retired" x="95.276%" y="1" width="4.724%" height="24"><title>retired 6</title></rect><rect class="m-frame" x="0" y="0.5" width="100%" height="25"/></svg>
+        <span class="note">25 held · 27 partly · 66 not yet · 3 cutover · 6 retired</span>
+        <span class="name">wave 7</span>
+        <svg class="tally" aria-hidden="true" focusable="false"><rect class="m-held" x="0" y="1" width="22.047%" height="24"><title>held 28</title></rect><rect class="m-partly" x="22.047%" y="1" width="40.945%" height="24"><title>partly held 52</title></rect><rect class="m-waiting" x="62.992%" y="1" width="29.921%" height="24"><title>not held yet 38</title></rect><rect class="m-cutover" x="92.913%" y="1" width="2.362%" height="24"><title>the cutover tools 3</title></rect><rect class="m-retired" x="95.276%" y="1" width="4.724%" height="24"><title>retired 6</title></rect><rect class="m-frame" x="0" y="0.5" width="100%" height="25"/></svg>
+        <span class="note">28 held · 52 partly · 38 not yet · 3 cutover · 6 retired</span>
+      </div>
+      <ul class="tally-key">
+        <li><svg width="14" height="11" aria-hidden="true" focusable="false"><rect class="m-held" width="14" height="11"/></svg><b>28</b>held</li>
+        <li><svg width="14" height="11" aria-hidden="true" focusable="false"><rect class="m-partly" width="14" height="11"/></svg><b>52</b>partly held</li>
+        <li><svg width="14" height="11" aria-hidden="true" focusable="false"><rect class="m-waiting" width="14" height="11"/></svg><b>38</b>not held yet</li>
+        <li><svg width="14" height="11" aria-hidden="true" focusable="false"><rect class="m-cutover" width="14" height="11"/></svg><b>3</b>the cutover tools</li>
+        <li><svg width="14" height="11" aria-hidden="true" focusable="false"><rect class="m-retired" x="0.5" y="0.5" width="13" height="10"/></svg><b>6</b>retired</li>
+      </ul>
+      <figcaption>The parity ledger's 127 rows as <code>ParityResolves</code> counts them at 77544d6 and as §0 of <code>V3_PARITY.md</code> records them after waves 5, 6 and 7; the key gives the count after wave 7.</figcaption>
+    </figure>
+    <div class="prose">
+      <p>At 77544d6 §0 still carried its count of 19 October, 21, 22 and 75; <code>ParityResolves</code> printed 24, 22 and 72 at that commit, the count essay two drew and the chart's first row, and wave 5's housekeeping package, H5, wrote it into §0 (017b177). Spikes S9 to S11 moved three rows from not held yet to partly held (ca68da9). WP 3.8 moved PAR-032 to held and PAR-030 and PAR-031 to partly held, their law 11′ waiting on WP 3.6. In wave 7 WP 3.5 moved PAR-033 and PAR-148 from not held yet, and PAR-034 from partly held, to held, and PAR-029 to partly held, where it waits on WP 3.6; WP 2.1b moved PAR-215 to partly held; and WP 2.6 moved 24 rows from not held yet to partly held, all of them v2's proof-lane facts among PAR-101 to PAR-147, which now name the sample change and the test that hold each prediction while the outcome of a publish waits on WP 4.4.</p>
+      <p>WP 3.8's first verification found seven defects and its second three; WP 2.1b's found six; WP 3.5's first review found four defects, its second six findings, and its third five, one of them a must-fix; 8f2f710 closes four and finds the fifth already met on ce722e9. Two costs essay two listed are closed: <code>io/ServerProbe</code>'s refusal fails as <code>dacfx.failed</code> naming <code>xp_msver</code> wherever DacFx's exception chain carries it, with the remedy to keep the DacFx pin at 170.5.96, and an <code>ISNULL</code> whose second argument is a literal is counted over a column the environment holds (9eddf44).</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="lede-head">
+      <p class="eyebrow">the next wave</p>
+      <h2>What wave 8 adds</h2>
+    </div>
+    <div class="prose">
+      <p>Wave 8 builds four packages of the plan:</p>
+      <ul class="waves">
+        <li>WP 2.5, <code>io/Predict</code> and the verbs <code>predict</code>, <code>classify</code> and <code>check cdc</code>. For each environment the caller can reach, predict builds head, plans against it, reads the checks with <code>BlockOnPossibleDataLoss.Read</code> and the statements with <code>Vocabulary.Read</code>, places each precondition by <code>Coordinates.Of</code>, a declared one taking a person's state, counts the rest, and writes <code>dbchange.predict/1</code> and a Markdown block that ends in a fenced machine block; WP 2.5 builds the block's parser, and the gate reuses it. It also writes the trust list <code>synthetic-copy up</code> reproduces (<code>DECISIONS.md:217</code>). M2's five exits all run through predict or classify, and at 28d6bd7 no test declares any of them; the first is a branch that makes a populated column NOT NULL, on which predict prints that Dev blocks, that BlockOnPossibleDataLoss fires on <code>dbo.Customer</code>, how many rows would violate NOT NULL on <code>Email</code>, and that the change ships in two releases.</li>
+        <li>WP 3.6, <code>synthetic-copy check</code>, <code>status</code> and <code>down</code>: two plantings from the same inputs give identical hashes, law 11′ in its planted form; status verifies the full fingerprints behind the name's 16 hexadecimal digits; down <code>--if-idle</code> drops this host's synthetic copies only when no dbchange process holds the lock, and stops no server, since io starts none (the plan's row said it stopped the LocalDB instance; wave 8 corrects the row with a decision line); and the 300-table scale test that VALUES.md O8 and O9 name moves here from WP 3.5.</li>
+        <li>WP 3.7, <code>io/Profile</code> and <code>profile</code>, narrowed to reading the value-free shape of one column an authored script reads, and none of its values: its signatures (<code>TRANSLATE</code> to character classes) with their counts, those seen fewer than five times folded into one count, and distinct-as-collated beside distinct-binary. The allowlist gains one form for the signature, with its negative case, and a privacy case must show no value reconstructable from what the form returns. With WP 3.5's refusal of a declared literal, it completes M3's exit 4.</li>
+        <li>WP 7.2's first files: <code>knowledge/description.md</code>, which WP 5.1 reads, then <code>README.md</code>, <code>authoring.md</code>, whose steps S0 to S8 each name their verb, and <code>reviewing.md</code>, each passing <code>Citations</code> in the commit that moves it.</li>
+      </ul>
+      <p><code>io/Predict</code> and <code>io/Profile</code> go into io's 1,429 lines of room.</p>
+    </div>
+  </section>
+
+  <section class="prose closing" aria-label="Closing">
+    <p>After these waves v3 reads DacFx's plan one statement at a time and builds a copy that gives an environment's answers back. The rules arrived with tests that had failed without them: a vocabulary row removed, an old rule restored, a directory planted where DacFx writes its script, a listener that closes every connection, a linked-server check made to clear every server. Where a test was not seen to fail, the commit says so, as 8f2f710 says of the trust step's mutation run. Wave 8 reads the environments themselves, and io enters it with 1,429 lines of room against the 1,990 Appendix F plans for its M4 to M7 alone.</p>
+  </section>
+
+  <footer>Read from the code at 28d6bd7 on 21 October 2026; the lane counts are the same at ae9db10, which moves one test to a class of its own. The next essay follows wave 8.</footer>
+</main>

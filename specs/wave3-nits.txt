@@ -1,0 +1,115 @@
+[H3] WHERE: ci/sql.sh:119-131 (up: the refusal before install) and the absence of a test for it
+EVIDENCE: The refusal works. `ci/sql.sh up` run with a HOME that holds no sql.env, on this machine (mssql-server 16.0.4305.5-1 installed, sqlservr running), exited 1 in 0 s with the DBCHANGE_SQL remedy and wrote no sql.env. However, sql.env is written only after install() returns (line 132). If a first run is killed after apt-get has configured mssql-server, the rerun refuses that server as 'set up by something else', although this script installed it. No test pins the refusal or the fingerprint check, and the implementer checked both with copies of the script.
+FIX: Write sql.env's password and port before install(), so a server this script installs always has its password on record. Optionally add a Linux fixture test that runs ci/sql.sh up with HOME pointing at an empty folder while sqlservr runs, and asserts exit 1 within seconds, the DBCHANGE_SQL remedy and no sql.env written.
+
+[H3] WHERE: ci/publish.sh:23; ci/publish.ps1:26
+EVIDENCE: Both scripts still say 'The restore that publish ran put both packages in the global packages folder'. They now copy from four packages: DacFx, the reference assemblies, Microsoft.SqlServer.Dacpacs.Master and Microsoft.SqlServer.Dacpacs.Msdb.
+FIX: Write 'put every package it copies from in the global packages folder', or name the four packages.
+
+[H3] WHERE: V3_BLUEPRINT_PROMPT.md:85
+EVIDENCE: This branch edits the file (its ceilings) but leaves 'M3 is re-cut around its planter, pending the operator (§17 item 20)'. The branch changes the same claim in V3_ARCHITECTURE.md to 'confirmed by the operator on 2026-10-19'.
+FIX: Replace 'pending the operator' with 'confirmed by the operator on 2026-10-19'.
+
+[H3] WHERE: V3_MILESTONES.md:752 (M7's order sentence); commit b6ccabc's message
+EVIDENCE: The wave-2 nit objected to joining physical lines to keep the 1,163-line budget. This branch restores those breaks, then joins 'Work runs in the order ... deletions' and 'last.' into one 102-character line, wider than the paragraph's wrap of at most 97. The text is unchanged. The commit message lists this sentence among 'four lines shortened elsewhere' and calls the shortened §6 paragraph 'M1's Watch for.', although it is M0's (line 447).
+FIX: Shorten a sentence instead of joining lines, so the file stays at 1,163 lines. Correct the commit message's description of what was shortened.
+
+[H3] WHERE: io/Doctor.cs:349-352 (Endpoint)
+EVIDENCE: The new `if (source.Length == 0) return ("localhost", 1433);` repeats what the rest of the method already returns. With `source.Length == 0 ||` dropped from the old condition, "".Split(',') gives [""], `written` is "", host maps to "localhost", and the port defaults to 1433. The published doctor run with DBCHANGE_SQL='Server=;...' now reads DEGRADED with 'accepting no connection on localhost,1433', so the behaviour is correct.
+FIX: Optionally remove the separate branch and only drop `source.Length == 0 ||` from the null condition; the InlineData "Server=" case still pins the result.
+
+[H3] WHERE: io/Ssdt.cs:396-401 (Inputs), io/Ssdt.cs:28-37 (Built and BuildTargets summaries)
+EVIDENCE: A build's cache key covers the project folder plus the SqlTasks targets and the build task's assembly. A project that references master.dacpac now also reads dist/dbchange/Extensions/.../160/SqlSchemas/master.dacpac and msdb.dacpac. After a change to either PackageDownload pin, an unchanged project reuses the package built against the old dacpac.
+FIX: Add the SqlSchemas dacpacs to BuildTargets' fingerprint, or record the limit beside DF-10's in the Build summary.
+
+[H3] WHERE: kernel/Environments.cs:45-46 (LocalServerKind summary)
+EVIDENCE: The summary still reads 'Docker, the dbchange-sql container; or LocalDb, where Docker cannot run'. DECISIONS.md 2026-10-19 says there is no Docker and no SQL Server image anywhere in v3. The wave-2 nit listed only four test comments, so this line is outside the brief's literal list.
+FIX: Add a NEXT.md line or a later work package to retire or redefine the environments file's localServer preference 'docker', and its summary with it.
+
+[H3] WHERE: ci/sql.sh:121-130 (up(), the new refusal)
+EVIDENCE: The refusal fires whenever mssql-server is installed and sql.env holds no SA password. This script can leave that state itself: install() runs one `apt-get install mssql-server=16.0.4305.5-1 mssql-tools18`. If mssql-tools18's configure step fails, or the run is killed after dpkg installs mssql-server and before up() writes sql.env, the next `ci/sql.sh up` says 'this script did not set that server up'. That statement is false, and the remedy offered is to purge the server. I confirmed the refusal itself with a copy of the script whose sql.env folder is empty: exit 1 at once, naming mssql-server 16.0.4305.5-1. The real `ci/sql.sh up` still answers on 127.0.0.1,11434.
+FIX: Write sql.env (password and port) before install() when the refusal check passes, so an interrupted first run leaves the password for the next. Alternatively, word the message as what is known: '... is installed and sql.env holds no SA password for it'.
+
+[H3] WHERE: kernel/Coordinates.cs:29-31 (the three-argument Of)
+EVIDENCE: The ordinal overload stays public, and its summary says 'with names compared ordinally, as the kernel compares them'. Change.Between and Preconditions.BaselineDrift compare under the collation they are given, so 'as the kernel compares them' is inaccurate. No production code calls either overload yet. When WP 2.5 adds a caller, the shorter overload is the one that refuses a case-insensitive environment with plan.missing-object, which is the defect the nit fixed.
+FIX: State it as a case-sensitive comparison ('with names compared under a case-sensitive collation'). Or remove the overload and pass Collation.CaseSensitive at its three test callers (CoordinatesTests, ErrorPaths, BaselineDriftTests).
+
+[H3] WHERE: ci/publish.sh:23; ci/publish.ps1:26
+EVIDENCE: The comment still reads 'The restore that publish ran put both packages in the global packages folder', but the script now copies from four: DacFx, the reference assemblies, Microsoft.SqlServer.Dacpacs.Master and Microsoft.SqlServer.Dacpacs.Msdb.
+FIX: Write 'put every package this script copies from in the global packages folder'.
+
+[H3] WHERE: V3_MILESTONES.md:69-73 (§1 preamble) and :451 (M1 'Watch for.')
+EVIDENCE: The lines shortened to stay within the 1,163-line budget change two statements. 'on DacFx 162.5.57 and again on 170.5.96 with the same results' became 'on DacFx 162.5.57 and on 170.5.96 alike', which drops the measured outcome, 'with the same results'. 'cannot build the committed way' became 'cannot build this way', which no longer says the build uses the committed tool folder.
+FIX: Keep 'with the same results' and 'the committed way', and recover the lines elsewhere, such as from the rewrapped M7 sentence or a shorter WP row clause.
+
+[H3] WHERE: V3_MILESTONES.md:416 (WP 0.7) and :684 (WP 5.4)
+EVIDENCE: Both rows list the tool folder's contents as the net10.0 SqlTasks targets and the reference assemblies. After DF-5 the folder also holds Extensions/Microsoft/SQLDB/Extensions/SqlServer/160/SqlSchemas/master.dacpac and msdb.dacpac, which the SSDT repository will vendor under WP 5.4. The DF-5 DECISIONS.md line records the change, but the plan's description of the folder is now incomplete.
+FIX: Optional: add 'and SQL Server 2022's master.dacpac and msdb.dacpac (DF-5)' to both rows, citing the DF-5 decision line, if the manifest budget allows.
+
+[2.4] WHERE: kernel/Classify.cs:335-336 (InPlaceOf summary); tests/Kernel.Tests/ClassifyTests.cs:80-82; commit 042ca67 message
+EVIDENCE: These texts say that columns put in another order is an alteration 'which DacFx plans as a rebuild of the table'. tests/Golden/project/profiles/pipeline.publish.xml sets <IgnoreColumnOrder>True</IgnoreColumnOrder>. Under that profile DacFx plans nothing for a column reorder. Returning 'unclassified change: prove it' is still right under §2.1 rule 1 (a change no pattern recognizes goes to proof rather than vanishing), but the stated reason is false under the pipeline's own profile.
+FIX: Write 'which DacFx plans as a rebuild of the table unless the profile sets IgnoreColumnOrder, as the pipeline's does; Classify does not read the profile, so the change goes to proof'.
+
+[2.4] WHERE: tests/Kernel.Tests/ClassifyTests.cs:14-15
+EVIDENCE: The class summary says the seeded blocks 'are held to the golden sample changes by Io.Tests' ClassifyTests'. The Io test class is SampleClassificationTests (tests/Io.Tests/SampleClassificationTests.cs:18).
+FIX: Name Io.Tests' SampleClassificationTests.
+
+[2.4] WHERE: tests/Kernel.Tests/ClassifyTests.cs:116
+EVIDENCE: A_clause_recognizes_an_alteration_only_when_it_accounts_for_every_property_the_alteration_changes compares only `.Lines.First()`. A second line, for example a second block that also recognizes the alteration, would pass unseen. The test's own claim is that exactly one clause accounts for the alteration.
+FIX: Assert `Assert.Equal([line], Classified(Base, Base.With(column)).Lines)`, and assert the narrow case the same way.
+
+[2.4] WHERE: V3_MILESTONES.md:523 (WP 2.4's row)
+EVIDENCE: The row still says Classify is 'a matcher over the change set and the committed evidence ... and evidence from tests/Golden/evidence/ until M3 produces the real file', and that 'a sample change proves on a copy what DacFx does to that capture instance'. tests/Golden/evidence/ does not exist. Classify reads no evidence (§4 row 6 moved the evidence-based prediction to predict, and §17 item 20's re-cut M3 has no evidence file). PAR-026 says no local server runs SQL Server Agent. Commit 6acd9c5's 'Not checked' names both gaps, but the row is not kept true. The brief left both out, so this is outside the implementer's required scope.
+FIX: Correct the WP 2.4 row in one paragraph with a decision line: no evidence input, and the CDC capture-instance proof is a principal's check on a server with SQL Server Agent. Or add a NEXT.md line naming who corrects it.
+
+[2.4] WHERE: tests/Io.Tests/DriftTests.cs:349 (fixture lane, not changed by this branch)
+EVIDENCE: I ran the fixture lane on wp/2.4-r1, which changes io/Patterns.cs and tests/Io.Tests. The first run went 54/55: The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read failed on 'exec xp_msver @optname=N'Platform',...'. The same test passed when run alone, and a full rerun after a rebuild went 55/55. The branch touches neither io/SqlServer, DacFx, check drift nor read, so the red is intermittent and not caused by this branch. Other results: dotnet build DbChange.sln succeeded with 0 warnings. The fast and build lanes match the report: Kernel 455, Budgets 531, Io 709, all passed. Mutation checks: 12 of 14 mutants of kernel/Classify.cs were killed. Restoring the first commit's InPlaceOf, ignoring target order, ignoring the keyed-under condition and dropping the moved-element exception each turn the named test red, as the implementer reported. The 2 survivors are the two should-fix items above.
+FIX: No change on this branch. Record the intermittent xp_msver EXEC from the read-only principal against the drift test if it recurs in CI.
+
+[3.1] WHERE: tests/Kernel.Tests/OrderTests.cs:125-131 (Order_is_a_function_of_the_schema_alone)
+EVIDENCE: `again` is rebuilt with SortedArray.Of, which sorts (kernel/SortedArray.cs:82-85). So `again` equals g.Schema value for value, and the assertion compares Order.Of with itself on equal input. No deterministic implementation can fail it, and kernel/BannedSymbols.txt already keeps randomness and the clock out of the kernel. The D1 property it claims to hold is never exercised.
+FIX: Remove it, or replace it with a fact that pins Order.Of of a fixed schema with ties (several ready components) to a literal expected Tables and Deferred list, so that a change in tie-breaking, which changes WP 3.8's planted rows, fails.
+
+[3.1] WHERE: tests/Io.Tests/ReadSideFacts.cs:141 (Committed) and tests/Io.Tests/ReadSideTests.cs:42
+EVIDENCE: The brief says the Ubuntu lane 'regenerates and checks byte for byte' the committed facts. Committed() drops every '#' line and blank line and sorts what is left, and the test compares the result with v2's facts as a SortedArray. The committed header can therefore drift from ReadSideFacts.Header, and lines can be reordered or blank lines added, without a red test. The facts themselves cannot go stale.
+FIX: Where v2 ran, also assert File.ReadAllText(read-side.txt) == string.Join('\n', Header.Concat(v2)) + "\n", the exact bytes Bless writes.
+
+[3.1] WHERE: kernel/Order.cs:76-84 (Order.Cycle.Error)
+EVIDENCE: v2's PLT-57 stop (archive/v2/ssdt-agent/facsimile/cases/20-planter.md:751) names the foreign key: 'dbo.Employee (NOT NULL self-reference FK_Employee_Manager)'. v3's error names only the tables: '[dbo].[Employee] references itself through a NOT NULL foreign key ([dbo].[Employee] → [dbo].[Employee])'. When a table has two NOT NULL self-references, or a pair of tables is joined by several NOT NULL foreign keys, the reader cannot tell which key to make nullable, yet the remedy asks them to make 'a column of one of those foreign keys' nullable.
+FIX: Carry each path edge's reference key in Cycle (alongside Path) and name the keys in the message, as PLT-57 does.
+
+[3.1] WHERE: V3_PARITY.md:90 (PAR-002)
+EVIDENCE: The last cell now cites 'Schema of a published copy equals the catalog v2's read side writes for it'. That test reads the copy through DacFx.Extract (io/DacFx.cs:111, R1 of 2026-09-25). The row's 'How v3 does it' cell still says 'io/SqlServer.Model: TSqlModel.LoadFromDatabase', so the row names a read path the new proof does not exercise.
+FIX: Add DacFx.Extract (io/DacFx.cs) to PAR-002's 'How v3 does it' cell, with a decision line if the ledger rule requires one, or say in the row which path each cited test holds.
+
+[3.1] WHERE: DECISIONS.md:120
+EVIDENCE: The line records two separate choices about Order. The first is that every optional reference inside a strongly connected component is deferred, with no minimal feedback set. The second, after the semicolon, is that a mandatory cycle is reported as the whole component, with the shortest cycle through its first table as the path. AGENTS.md asks for one line per decision, and the Decisions test's summary describes the line's middle part as 'the decision in one sentence'. The format test (Decisions.Every_line_under_the_heading_is_one_dated_decision_with_its_pull_request) passes.
+FIX: Split the line in two, one for the deferral rule and one for how a mandatory cycle is reported, both dated 2026-10-19 and ending '· #705'. Alternatively, merge them into one sentence that states a single decision.
+
+[3.1] WHERE: DECISIONS.md:119
+EVIDENCE: This line is the decision behind the change to V3_MILESTONES.md §9, which replaces 'v2's CLI, run from the archive' with the library pair and ci/readside.sh in WP 3.1's done-when. The line never says that it corrects V3_MILESTONES.md. The earlier correction at DECISIONS.md:117 opens 'V3_MILESTONES.md §4 row 13 is corrected: ...'. AGENTS.md: 'V3_MILESTONES.md only to keep it true, one paragraph at a time, each correction with a decision line.'
+FIX: Open the line with 'V3_MILESTONES.md §9's done-when for WP 3.1 is corrected: its oracle is v2's read side as a library pair, ...' and keep the rest as it is.
+
+[3.1] WHERE: tests/Io.Tests/ReadSideFacts.cs:141-142 (Committed) and tests/Io.Tests/ReadSideTests.cs:39-43
+EVIDENCE: Committed(change) drops every line that is empty or starts with '#', then sorts the rest. The Ubuntu lane therefore compares v2's facts with the committed facts as a set. The brief asked that lane to 'regenerate and check byte for byte'. A committed read-side.txt with a stale header, lines out of order or extra blank lines stays green. I confirmed that the fact comparison itself can fail: with one fact changed ('[Total]>=(0)' to '[Total]>(0)'), Schema_of_a_published_copy_equals_the_catalog_v2_s_read_side_writes_for_it failed. I then restored the file.
+FIX: When v2's facts are present, also assert that File.ReadAllText(read-side.txt) equals what Bless would write: string.Join('\n', Header.Concat(v2)) + "\n". That makes the Ubuntu lane check the committed file byte for byte, header included.
+
+[S2] WHERE: DECISIONS.md:119 ("so the 162 half runs on Ubuntu and on Windows LocalDB alike"); .github/workflows/dbchange.yml:104 (sql-windows runs Category=fixture unfiltered)
+EVIDENCE: windows-latest's LocalDB is 17.0 (SQL Server 2025). I read DacFx 162.5.57's IL with Mono.Cecil: SqlDatabaseSchemaProviderFamily.DetermineSqlPlatform maps server major versions 9 to 16 and sends any other value, 17 included, through an InvalidSqlVersion trace warning to 1024 (Sql160). So the child starts there, but it plans a 17.x server as Sql160 while 170.5.96 knows Sql170. The theory 'Both DacFx releases plan each sample change as the same statements but the Query Store block 162.5.57 adds' and the fact 'An unset Query Store is OFF to DacFx 162.5.57 and READ_WRITE to 170.5.96 ...', which asserts actual_state (2, 0), have never run on that server. The lane's time is also unmeasured (11 min 18 s of 20 at the base; the S2 class adds about 2 min 50 s on Linux). The implementer's notes list both as not checked, but the decision line states the Windows run as settled.
+FIX: Run the branch's sql-windows job before merge. If the plans differ, or the job passes 20 minutes, exclude the 162 half from the Windows filter as the brief prescribes, with a decision line, or record the difference as a receipt. Until then, change DECISIONS.md:119 to say that LocalDB 17.0 is not measured.
+
+[S2] WHERE: DECISIONS.md:120 ('one per table under a block comment naming each site on it'); the WP 2.2 notes ('The protected sites are named in the /* */ comment just before each IF ... two-sites-on-one-table pins that')
+EVIDENCE: No test asserts the comment. The committed two-sites-on-one-table.sql holds the IF and the RAISERROR and nothing else. Together with the Theory 'Each sample change's plan writes the data loss checks committed for it on both DacFx releases', it pins one check for two sites on [dbo].[Customer]. It does not pin that the comment before that check names both [Email] and [ContactPhone], and WP 2.2's reader will rely on that comment to find the protected statements.
+FIX: In BlockOnPossibleDataLossCheckTests, add a fixture assertion that the comment token before the Customer check in two-sites-on-one-table names both Email and ContactPhone in Live170 and Live162. Otherwise, drop the comment clause from the decision line and from the WP 2.2 note.
+
+[S2] WHERE: V3_MILESTONES.md:516
+EVIDENCE: It still reads 'WP 2.2 waits on spike S2 run on both DacFx releases'. V3_PARITY.md §0's M2 row on this branch now reads 'spike S2 ran on both DacFx releases, so WP 2.2 can start', so the two documents disagree.
+FIX: Correct the one sentence in V3_MILESTONES.md:516 and add a decision line, as AGENTS.md requires for a V3_MILESTONES.md correction. If S2 counts as done only once CI has run it, leave the sentence and say so in V3_PARITY.md §0.
+
+[S2] WHERE: tests/Io.Tests/BlockOnPossibleDataLossCheckTests.cs:105
+EVIDENCE: The Unique receipt row for redefine-the-primary-key asserts a CreateTableStatement containing '[tmp_ms_xx_OrderLine]'. That pins the table rebuild. It does not pin the primary key inside the rebuild, which is the shape the Unique row of the vocabulary must read. The decision line and the WP 2.1 notes say the key arrives as PRIMARY KEY CLUSTERED inside CREATE TABLE [tmp_ms_xx_OrderLine].
+FIX: Make the fragment include the key, for example 'PRIMARY KEY CLUSTERED', as Sql160ScriptGenerator writes it back. Alternatively, add a second row for the same change that asserts it.
+
+[S2] WHERE: tests/Budgets.Tests/PackagesAllowlist.cs:213-219 (Only_the_DacFx_162_runner_overrides_a_central_package_version)
+EVIDENCE: The guard reads Repository.MsBuildFiles, which holds .csproj files and the Directory.* files at the root only (tests/Budgets.Tests/Repository.cs:23-25). A VersionOverride in tests/Golden/Directory.Packages.props, tests/Golden/Directory.Build.props, or any nested .props or .targets file would pass the test.
+FIX: Widen the guard to every *.props and *.targets file outside archive/, or state the narrower scope in the test's summary.
