@@ -228,8 +228,9 @@ public sealed class OrderTests
             ("Person", "BadgeId", "Badge", false))).Cycles);
 
         Assert.Equal([ForeignKey("Employee", "ManagerId"), ForeignKey("Employee", "MentorId")], self.Keys);
-        Assert.Contains("([dbo].[Employee] → [dbo].[Employee]; foreign keys [dbo].[FK_Employee_ManagerId] and "
-            + "[dbo].[FK_Employee_MentorId])", self.Error.Message, System.StringComparison.Ordinal);
+        Assert.StartsWith("[dbo].[Employee] references itself through NOT NULL foreign keys ([dbo].[Employee] → [dbo].[Employee]; "
+            + "foreign keys [dbo].[FK_Employee_ManagerId] and [dbo].[FK_Employee_MentorId])", self.Error.Message,
+            System.StringComparison.Ordinal);
         Assert.Equal([ForeignKey("Dept", "HeadId"), ForeignKey("Person", "DeptId")], pair.Keys);
         Assert.Contains("([dbo].[Dept] → [dbo].[Person] → [dbo].[Dept]; foreign keys [dbo].[FK_Dept_HeadId] and "
             + "[dbo].[FK_Person_DeptId])", pair.Error.Message, System.StringComparison.Ordinal);

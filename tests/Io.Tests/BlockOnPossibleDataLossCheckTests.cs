@@ -63,6 +63,23 @@ public sealed class BlockOnPossibleDataLossCheckTests(PlannedOnBothDacFxReleases
     }
 
     /// <summary>
+    /// Spike S2's decision line (DECISIONS.md, 2026-10-19): DacFx writes one check per table under a block comment naming each site on
+    /// it. two-sites-on-one-table makes [Email] NOT NULL and narrows [ContactPhone] on [dbo].[Customer], and each release's live plan
+    /// writes one check on [dbo].[Customer] whose comment names both columns, which the reader gives as the check's two sites.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public void The_one_check_of_a_table_changed_at_two_sites_names_both_in_its_block_comment_on_both_DacFx_releases() =>
+        Assert.All(plans.Live, r =>
+        {
+            var check = Assert.Single(Expect.Value(BlockOnPossibleDataLoss.Read(r.Scripts["two-sites-on-one-table"], [])),
+                c => c.Table.ToString() == "[dbo].[Customer]");
+            Assert.Equal(2, check.Sites.Count);
+            Assert.Contains(check.Sites, s => s.Statement.Contains("Email", StringComparison.Ordinal));
+            Assert.Contains(check.Sites, s => s.Statement.Contains("ContactPhone", StringComparison.Ordinal));
+        });
+
+    /// <summary>
     /// WP 1.4's rule on the reader: a check's query that fails against an environment classified real reports its error number and its
     /// site alone. The check reads a planted string as a number, which SQL Server refuses with Msg 245 quoting the value.
     /// </summary>
@@ -155,6 +172,7 @@ public sealed class BlockOnPossibleDataLossCheckTests(PlannedOnBothDacFxReleases
     [InlineData("Unique", "add-unique-index", "CreateIndexStatement", "CREATE UNIQUE NONCLUSTERED INDEX [UIX_Product_Code]")]
     [InlineData("Unique", "add-unique-constraint", "AlterTableAddTableElementStatement", "UNIQUE NONCLUSTERED")]
     [InlineData("Unique", "redefine-the-primary-key", "CreateTableStatement", "[tmp_ms_xx_OrderLine]")]
+    [InlineData("Unique", "redefine-the-primary-key", "CreateTableStatement", "PRIMARY KEY CLUSTERED")]
     [InlineData("Orphan", "add-a-foreign-key", "AlterTableConstraintModificationStatement",
         "WITH CHECK CHECK CONSTRAINT [FK_Order_Customer_CustomerId]")]
     [InlineData("Orphan", "add-an-unnamed-foreign-key-to-a-populated-table", "AlterTableAddTableElementStatement",

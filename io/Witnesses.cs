@@ -68,7 +68,7 @@ public static partial class Witnesses
         /// script and text of the elements (a seed's MERGE, a default's, a check's); the LIKE patterns and the CREATE SYNONYM statements of
         /// each script that names either and that TSql160Parser reads as a predicate, an expression or a batch (a check's, a module's, a
         /// deploy script's), a script it reads as none giving neither; each Synonym element; and the views, functions, procedures, DML
-        /// triggers and synonyms that reach another server.
+        /// triggers and synonyms, of the models or created by their deploy scripts, that reach another server.
         /// </summary>
         public static Repository Of(IEnumerable<Element> models, Schema copy)
         {

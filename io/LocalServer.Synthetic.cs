@@ -31,9 +31,7 @@ public static partial class LocalServer
     {
         var (copy, resolve) = (new SqlServer.Copy(name, server, repositoryRoot), Once(Resolved));
         return ServerName(server).Bind(named => EnvironmentsFile.Read(repositoryRoot)
-            .Bind(environments => Unnamed(environments, repositoryRoot, named, resolve)
-                .Bind(cleared => environments.All.Count == 0 ? Result.Ok(cleared)
-                    : Linked(copy, log).Bind(linked => Unlinked(environments, cleared, linked, resolve)))))
+            .Bind(environments => Cleared(environments, repositoryRoot, named, copy, log, resolve)))
             .Bind(cleared => Rows(repositoryRoot).Bind(rows => Run(copy, "DB_ID",
                     "SELECT CASE WHEN DB_ID(@name) IS NULL THEN 0 ELSE 1 END;", log, found => found is [[1]])
                 .Map(exists => (copy, rows.LastOrDefault(r => (string?)r["name"] == name.ToString()
@@ -70,15 +68,17 @@ public static partial class LocalServer
 
     /// <summary>synthetic-copy resolved against the registry: the synthetic copy whose build ended last on this machine's local
     /// server.</summary>
-    internal static Result<SqlServer.Copy> Synthetic(string repositoryRoot, Result<Environments> environmentsFile) =>
-        Synthetic(repositoryRoot, environmentsFile, Server, Resolved);
+    internal static Result<SqlServer.Copy> Synthetic(string repositoryRoot, Result<Environments> environmentsFile,
+        SqlServer.QueryLog? log = null) =>
+        Synthetic(repositoryRoot, environmentsFile, Server, Resolved, log);
 
     /// <summary>
     /// synthetic-copy against the registry: the last row whose name is the synthetic form and whose build ended, made on the local server
-    /// this machine names now, which R15 clears against the environments file as Registered does; copy.synthetic-absent where none is.
+    /// this machine names now, which R15 clears against the environments file, its linked servers included, as Registered does;
+    /// copy.synthetic-absent where none is.
     /// </summary>
     internal static Result<SqlServer.Copy> Synthetic(string repositoryRoot, Result<Environments> environmentsFile,
-        Func<Result<string>> chosen, Func<string, IPAddress[]> resolve) =>
+        Func<Result<string>> chosen, Func<string, IPAddress[]> resolve, SqlServer.QueryLog? log = null) =>
         chosen().Bind(server => ServerName(server).Bind(now => Rows(repositoryRoot).Bind(rows =>
             rows.Where(r => (string?)r["server"] == now.ToString() && r["ready"] is JsonValue ready
                     && ready.TryGetValue(out bool built) && built)
@@ -88,6 +88,7 @@ public static partial class LocalServer
                     "synthetic-copy names the synthetic copy, and " + LocalState.CopiesName + " holds none built on " + now
                         + ", the local server this machine names.",
                     "Run dbchange synthetic-copy up, then name synthetic-copy again.")
-                : environmentsFile.Bind(environments => Unnamed(environments, repositoryRoot, now, resolve))
+                : environmentsFile.Bind(environments => Cleared(environments, repositoryRoot, now,
+                    new SqlServer.Copy(name, server, repositoryRoot), log ?? SqlServer.QueryLog.Start(repositoryRoot), resolve))
                     .Map(_ => new SqlServer.Copy(name, server, repositoryRoot)))));
 }

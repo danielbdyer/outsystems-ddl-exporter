@@ -240,6 +240,31 @@ public sealed class AggregateQueriesCountTests : IDisposable
     }
 
     /// <summary>
+    /// Check reads ISNULL with a literal second argument as written, since SQL Server converts the literal to the first argument's type
+    /// with no error a row could cause (DECISIONS.md, 2026-10-20, the ISNULL line): over Tiny tinyint and Flag bit planted 1, 0 and
+    /// NULL, ISNULL([Tiny],(0))&gt;(0), ISNULL([Flag],(0))=(1) and ISNULL([Tiny],'0')&gt;(0) each count 2 of the 3 rows violating, as
+    /// SQL Server 2022 counts them, and no query fails.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task Check_counts_ISNULL_with_a_literal_second_argument_and_raises_nothing()
+    {
+        (string Expression, string Column)[] checks = [("ISNULL([Tiny],(0))>(0)", "Tiny"), ("ISNULL([Flag],(0))=(1)", "Flag"),
+            ("ISNULL([Tiny],'0')>(0)", "Tiny")];
+        var environment = Model.Of("L.Id int NOT NULL", "L.Tiny tinyint NULL", "L.Flag bit NULL");
+        var head = checks.Select((c, at) => (c, at))
+            .Aggregate(environment, (model, c) => model.Check("CK_L_" + c.at, "L", c.c.Expression, [c.c.Column]));
+
+        var (_, counts, log) = await Counted(new Case(environment, head),
+            "INSERT dbo.L (Id, Tiny, Flag) VALUES (1, 1, 1), (2, 0, 0), (3, NULL, NULL);");
+
+        Assert.Equal(checks.Select(c => (c.Expression, 3L, 2L)), checks.Select(c => counts.Counted
+            .Single(n => n.Precondition.Kind is PreconditionKind.Check k && k.Expression == c.Expression))
+            .Select(n => (((PreconditionKind.Check)n.Precondition.Kind).Expression, n.Rows, n.Violating)));
+        Assert.DoesNotContain(Entries(log), e => e.Outcome.StartsWith("failed", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Check compares under the collation its expression names: in a Latin1_General_CI_AS column holding abc, ABC and NULL, the check
     /// [Ref] COLLATE Latin1_General_CS_AS='ABC' is false for abc alone, as is the same COLLATE on a CONVERT, and [Ref]='ABC' is false for
     /// no row, NULL being unknown in each.

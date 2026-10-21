@@ -50,14 +50,21 @@ public static partial class SqlServer
     /// serves two statements, so a pooled connection the server broke fails that statement alone and is mapped once. A statement is
     /// logged once the connection opened, since only then was it sent, its parameters declared before it, so the log runs as a script.
     /// A statement to a copy whose connection fails to open is sent once more while the local server has not yet answered this process
-    /// (LocalServer.FirstConnect).
+    /// (LocalServer.FirstConnect). <paramref name="opened"/> hears whether the last attempt's connection opened.
     /// </summary>
     internal static Result<T> Query<T>(Database target, Statement statement, QueryLog log,
         Func<IReadOnlyList<IReadOnlyList<object?>>, T> answer,
-        Func<StatementFailure, T>? failed = null) =>
-        target is Copy
-            ? LocalServer.FirstConnect.OfProcess.Attempt(() => Sent(target, statement, log, answer, failed), LocalServer.FirstConnect.Pause)
-            : Sent(target, statement, log, answer, failed).Answer;
+        Func<StatementFailure, T>? failed = null, Action<bool>? opened = null)
+    {
+        (Result<T> Answer, bool Opened) Attempt()
+        {
+            var sent = Sent(target, statement, log, answer, failed);
+            opened?.Invoke(sent.Opened);
+            return sent;
+        }
+
+        return target is Copy ? LocalServer.FirstConnect.OfProcess.Attempt(Attempt, LocalServer.FirstConnect.Pause) : Attempt().Answer;
+    }
 
     /// <summary>The statement's answer, and whether its connection opened.</summary>
     private static (Result<T> Answer, bool Opened) Sent<T>(Database target, Statement statement, QueryLog log,

@@ -87,7 +87,8 @@ public sealed record Order(SortedArray<Order.Step> Tables, SortedArray<Order.Def
 
         /// <summary>The error the planter stops with, naming the tables and the path, the first table repeated at its end.</summary>
         public Error Error => new("synthetic-copy.cycle",
-            (Members.Count == 1 ? Members[0] + " references itself through a NOT NULL foreign key"
+            (Members.Count == 1
+                ? Members[0] + " references itself through " + (Keys.Count > 1 ? "NOT NULL foreign keys" : "a NOT NULL foreign key")
                 : string.Join(", ", Members.Take(Members.Count - 1)) + " and " + Members[^1]
                     + " reference one another through NOT NULL foreign keys")
                 + " (" + string.Join(" → ", Path.Select(s => s.Table).Append(Path[0].Table)) + Named(Keys)

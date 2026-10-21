@@ -2,17 +2,19 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Text.RegularExpressions;
 using DbChange.Kernel;
 
 namespace DbChange.Io;
 
 /// <summary>
 /// R15 over the local server's linked servers (DECISIONS.md, 2026-10-21). A statement on a copy reaches every server the copy's local
-/// server links to: a seed or a trigger the base's publish runs, and a declared witness, which runs as one batch with triggers firing,
-/// through a four-part name, OPENQUERY or a view or a function written over either. So before synthetic-copy up makes or plants anything,
-/// it reads each server sys.servers lists beside the local one (server_id 0), a linked server or a remote server an older SQL Server
-/// keeps, and refuses the run as copy.named-host where one names a host an environment runs on, compared as R15 compares the local
-/// server's own host: by spelling, then by address.
+/// server links to: a seed or a trigger a publish runs, and a declared witness, which runs as one batch with triggers firing, through a
+/// four-part name, OPENQUERY or a view or a function written over either. So every path that makes a copy or resolves one (Create,
+/// Restore and FromBase through Made; copy: through Registered; synthetic-copy; synthetic-copy up's Standing) reads each server
+/// sys.servers lists beside the local one (server_id 0), a linked server or a remote server an older SQL Server keeps, and refuses the
+/// copy as copy.named-host where one names a host an environment runs on, compared as R15 compares the local server's own host: by
+/// spelling, then by address.
 /// </summary>
 public static partial class LocalServer
 {
@@ -35,6 +37,25 @@ public static partial class LocalServer
     private static Result<IReadOnlyList<LinkedServer>> Linked(SqlServer.Copy copy, SqlServer.QueryLog log) =>
         Run(copy, "linked servers", LinkedServers, log, rows => (IReadOnlyList<LinkedServer>)
             [.. rows.Select(r => new LinkedServer(r[0] as string ?? "", r[1] as string, r[2] as string))]);
+
+    /// <summary>
+    /// R15 on every path that makes a copy or resolves one (Made, Registered, Synthetic, Standing): the copy's server is none an
+    /// environment runs on (Unnamed), checked before anything connects, and then none of its linked servers names such a host
+    /// (<see cref="Linked(Environments, Kernel.ServerName, SqlServer.Copy, SqlServer.QueryLog, Func{string, IPAddress[]})"/>).
+    /// </summary>
+    internal static Result<Kernel.ServerName> Cleared(Environments environments, string repositoryRoot, Kernel.ServerName server,
+        SqlServer.Copy copy, SqlServer.QueryLog log, Func<string, IPAddress[]> resolve) =>
+        Unnamed(environments, repositoryRoot, server, resolve)
+            .Bind(cleared => Linked(environments, cleared, copy, log, resolve).Map(_ => cleared));
+
+    /// <summary>
+    /// The copy, once its local server's linked servers, read from master, name no host an environment runs on (Unlinked); none are read
+    /// where the environments file names no environment, since no host is then compared.
+    /// </summary>
+    private static Result<SqlServer.Copy> Linked(Environments environments, Kernel.ServerName server, SqlServer.Copy copy,
+        SqlServer.QueryLog log, Func<string, IPAddress[]> resolve) =>
+        environments.All.Count == 0 ? copy
+        : Linked(copy, log).Bind(linked => Unlinked(environments, server, linked, resolve)).Map(_ => copy);
 
     /// <summary>
     /// The local server cleared where no linked server of it names a host an environment of the environments file runs on: by its data
@@ -61,13 +82,20 @@ public static partial class LocalServer
         return host => answered.TryGetValue(host, out var found) ? found : answered[host] = resolve(host);
     }
 
-    /// <summary>The hosts a linked server names: its data source's, and the server's of each key of its provider string that names one.
+    /// <summary>
+    /// The hosts a linked server names: its data source's, and the server's of each key of its provider string that names one, its value
+    /// read without the braces, double quotes or single quotes around it. A host written with one trailing dot, a fully qualified DNS
+    /// name, is compared without it.
     /// </summary>
     private static IEnumerable<Host> HostsOf(LinkedServer linked) =>
         new[] { linked.DataSource }.Concat((linked.ProviderString ?? "").Split(';').Select(pair => pair.Split('=', 2))
-                .Where(pair => pair.Length == 2 && ServerKeys.Contains(pair[0].Trim())).Select(pair => pair[1].Trim().Trim('{', '}', '"')))
+                .Where(pair => pair.Length == 2 && ServerKeys.Contains(pair[0].Trim()))
+                .Select(pair => pair[1].Trim().Trim('{', '}', '"', '\'')))
             .Where(source => !string.IsNullOrWhiteSpace(source))
-            .Select(source => Kernel.ServerName.Of(source!, Environment.MachineName).Host);
+            .Select(source => Kernel.ServerName.Of(RootDot.Replace(source!.Trim(), "", 1), Environment.MachineName).Host);
+
+    /// <summary>The one dot that can end a host name, before its port or instance or at the end.</summary>
+    private static readonly Regex RootDot = new(@"(?<=[^.\\:])\.(?=\s*(?:[,\\]|\z))", RegexOptions.CultureInvariant);
 
     /// <summary>The first environment that runs on <paramref name="host"/>, by spelling, then by address; null where none does.</summary>
     private static NamedEnvironment? On(IEnumerable<NamedEnvironment> environments, Host host, Func<string, IPAddress[]> resolve)

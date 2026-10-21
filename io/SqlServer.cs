@@ -229,16 +229,18 @@ public static partial class SqlServer
     }
 
     /// <summary>A target as a database, dbchange/environments.json read under the repository root for it.</summary>
-    public static Result<Database> Resolve(Target target, string repositoryRoot) =>
-        Resolve(target, EnvironmentsFile.Read(repositoryRoot), repositoryRoot);
+    public static Result<Database> Resolve(Target target, string repositoryRoot, QueryLog? log = null) =>
+        Resolve(target, EnvironmentsFile.Read(repositoryRoot), repositoryRoot, log);
 
     /// <summary>
     /// A target as a database, against dbchange/environments.json as the verb read it once (<paramref name="environmentsFile"/>, whose
     /// error counts only for a target that needs the environments file): env: through the environment's connection reference; copy: through
     /// .dbchange/copies.json alone, on a server R15 clears against the environments file (io/LocalServer); synthetic-copy, the synthetic
-    /// copy whose build ended last in the registry on this machine's local server. A git ref and a package are read as packages.
+    /// copy whose build ended last in the registry on this machine's local server. A copy's local server's linked servers are read into
+    /// <paramref name="log"/>, the run's, or a log of their own where none is given. A git ref and a package are read as packages.
     /// </summary>
-    public static Result<Database> Resolve(Target target, Result<Environments> environmentsFile, string repositoryRoot) =>
+    public static Result<Database> Resolve(Target target, Result<Environments> environmentsFile, string repositoryRoot,
+        QueryLog? log = null) =>
         target.Match<Result<Database>>(
         environment => environmentsFile.Bind(environments => environments.Named(environment.Name) is { } named
             ? EnvironmentDatabase.Of(named, repositoryRoot).Map(n => (Database)n)
@@ -246,8 +248,9 @@ public static partial class SqlServer
                 environments.All.Count == 0
                 ? "Add the environment to " + EnvironmentsFile.Json + " with its host, connection reference and profile."
                 : "Name one it holds: " + string.Join(", ", environments.All.Select(e => e.Target)) + ".")),
-        copy => LocalServer.Registered(repositoryRoot, copy.Name, environmentsFile).Map(c => (Database)c),
-        () => LocalServer.Synthetic(repositoryRoot, environmentsFile).Map(c => (Database)c),
+        copy => LocalServer.Registered(repositoryRoot, copy.Name, environmentsFile, log ?? QueryLog.Start(repositoryRoot))
+            .Map(c => (Database)c),
+        () => LocalServer.Synthetic(repositoryRoot, environmentsFile, log ?? QueryLog.Start(repositoryRoot)).Map(c => (Database)c),
         reference => NotADatabase(reference),
         dacpac => NotADatabase(dacpac));
 

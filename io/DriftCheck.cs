@@ -45,7 +45,7 @@ public static class DriftCheck
 
         var stamp = standing.Stamp!;
         var environmentsFile = EnvironmentsFile.Read(checkout.Root);
-        var reached = SqlServer.Resolve(request.Target, environmentsFile, checkout.Root)
+        var reached = SqlServer.Resolve(request.Target, environmentsFile, checkout.Root, log)
             .Bind(database => Profile(checkout.Root, database, environmentsFile, request.Profile)
                 .Map(profile => (Database: database, Profile: profile)))
             .Bind(chosen => SqlServer.Reach(chosen.Database, log).Map(readable => (chosen.Database, chosen.Profile, Readable: readable)))

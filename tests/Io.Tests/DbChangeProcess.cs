@@ -167,7 +167,8 @@ internal static class DbChangeProcess
     {
         var start = new ProcessStartInfo("dotnet", [typeof(DbChangeProcess).Assembly.Location, .. arguments])
         {
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8,
+            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
         };
         foreach (var (name, value) in environment)
         {

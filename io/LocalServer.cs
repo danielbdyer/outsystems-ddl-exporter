@@ -30,15 +30,12 @@ namespace DbChange.Io;
 /// </summary>
 public static partial class LocalServer
 {
-    /// <summary>The copy's database made, where it is absent: a CREATE sent again after a connection broke makes nothing twice.</summary>
-    private const string Make = "IF DB_ID(@name) IS NULL BEGIN DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; "
-        + "EXEC (@sql); END";
-
     /// <summary>
-    /// The synthetic copy's database made with no guard: its name is the same in every checkout of the same inputs, so a database of the
-    /// name already standing is another checkout's, which SQL Server refuses with Msg 1801 and this checkout never takes over.
+    /// The copy's database made with no guard: a database of the name already standing is one this registry did not make (for the
+    /// synthetic copy's name, which is the same in every checkout of the same inputs, another checkout's), which SQL Server refuses with
+    /// Msg 1801, so the copy never takes it over and no later Drop or sweep drops it.
     /// </summary>
-    private const string MakeNamed = "DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql);";
+    private const string Make = "DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql);";
 
     /// <summary>
     /// SQL Server's refusals of a make because a database of the copy's name already stands, measured on SQL Server 2022 Express on
@@ -51,8 +48,9 @@ public static partial class LocalServer
     /// <summary>
     /// The copy's database dropped, its sessions ended first, under an application lock in master that this session alone holds
     /// (sp_getapplock, 'dbchange drop ' and the name), so two drops of one copy at once, by two runs' sweeps or by two Drop calls, run one
-    /// after the other and the second finds the database gone. Without the lock the second's ALTER DATABASE is killed by the first's
-    /// ROLLBACK IMMEDIATE at severity 21 (Msg 596), which closes its connection before its CATCH runs. A database left RESTORING by a
+    /// after the other and the second finds the database gone. Without the lock the second fails in two ways: its ALTER DATABASE or DROP
+    /// DATABASE reaches a database the first dropped after the second's DB_ID check (Msg 3701, 5011, 5069), or the first's ROLLBACK
+    /// IMMEDIATE kills it at severity 21 (Msg 596), which closes its connection before its CATCH runs. A database left RESTORING by a
     /// RESTORE that failed or whose run was killed takes DROP DATABASE alone, since SQL Server refuses ALTER DATABASE on it (Msg 5052).
     /// </summary>
     private const string Unmake = "DECLARE @lock nvarchar(255) = N'dbchange drop ' + @name, @held int; "
@@ -228,25 +226,27 @@ public static partial class LocalServer
     /// is it, and a run's copy takes a name of its own.
     /// </summary>
     internal static Result<SqlServer.Copy> Create(string repositoryRoot, string server, SqlServer.QueryLog log,
-        Func<string, IPAddress[]>? resolve = null, DateTimeOffset? now = null, CopyName? named = null) =>
-        Made(repositoryRoot, server, log, resolve ?? Resolved, now ?? DateTimeOffset.UtcNow,
-            copy => Making(copy, "CREATE DATABASE", copy.Name.IsSynthetic ? MakeNamed : Make, log), leavesDatabase: false, named);
+        Func<string, IPAddress[]>? resolve = null, DateTimeOffset? now = null, CopyName? named = null)
+    {
+        var standing = false;
+        return Made(repositoryRoot, server, log, resolve ?? Resolved, now ?? DateTimeOffset.UtcNow,
+            copy => Making(copy, "CREATE DATABASE", Make, log, [], made => standing = made), _ => standing, named);
+    }
 
     /// <summary>
     /// A copy on the server given, refused on a named environment's host (R15 against dbchange/environments.json, read here once); this
     /// host's copies registered on that server more than a day before <paramref name="now"/> swept first; recorded with its server before
     /// <paramref name="make"/> makes its database, so a crash leaves a row to follow. A failed make removes the row; where the failure can
-    /// have left a database (<paramref name="leavesDatabase"/>, a RESTORE), the database is dropped first, and a row whose database could
-    /// not be dropped stays for the sweep; but a make refused as copy.foreign leaves the database standing, since another checkout made
-    /// it. The copy takes <paramref name="named"/> where it is given, the synthetic copy's name, and else a name of its own; its row names
-    /// this machine either way.
+    /// have left a database (<paramref name="leaves"/>: a RESTORE not refused as copy.foreign, or a CREATE whose connection opened and
+    /// that SQL Server did not refuse), the database is dropped first, and a row whose database could not be dropped stays for the sweep;
+    /// a make SQL Server refused, copy.foreign among them, leaves standing a database of the name that another checkout or no registry
+    /// made. The copy takes <paramref name="named"/> where it is given, the synthetic copy's name, and else a name of its own; its row
+    /// names this machine either way. The local server's linked servers are held to R15 before anything is swept or made (Cleared).
     /// </summary>
     private static Result<SqlServer.Copy> Made(string repositoryRoot, string server, SqlServer.QueryLog log,
-        Func<string, IPAddress[]> resolve, DateTimeOffset now, Func<SqlServer.Copy, Result<SqlServer.Copy>> make, bool leavesDatabase,
+        Func<string, IPAddress[]> resolve, DateTimeOffset now, Func<SqlServer.Copy, Result<SqlServer.Copy>> make, Func<Error, bool> leaves,
         CopyName? named = null) =>
-        ServerName(server).Bind(name => EnvironmentsFile.Read(repositoryRoot)
-            .Bind(environments => Unnamed(environments, repositoryRoot, name, resolve)))
-            .Bind(name => Swept(repositoryRoot, server, name, now, log).Map(_ => name)).Bind(name =>
+        ServerName(server).Bind(name =>
         {
             var copy = new SqlServer.Copy(named ?? CopyName.Make(Environment.MachineName, Environment.ProcessId,
                 BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, repositoryRoot);
@@ -256,51 +256,66 @@ public static partial class LocalServer
                 ["machine"] = CopyName.Make(Environment.MachineName, 0, 0).Machine, ["pid"] = Environment.ProcessId,
                 ["created"] = now.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
             };
-            return Change(repositoryRoot, rows => [.. rows, row]).Bind(_ => make(copy).Match(
-                made => Result.Ok(made),
-                error => (leavesDatabase && error.Code != "copy.foreign" ? Run(copy, "DROP DATABASE", Unmake, log) : Result.Ok(copy))
-                    .Match(Unregistered, _ => Result.Ok(copy)).Bind(_ => Result.Fail<SqlServer.Copy>(error))));
+            return EnvironmentsFile.Read(repositoryRoot)
+                .Bind(environments => Cleared(environments, repositoryRoot, name, copy, log, resolve))
+                .Bind(_ => Swept(repositoryRoot, server, name, now, log))
+                .Bind(_ => Change(repositoryRoot, rows => [.. rows, row])).Bind(_ => make(copy).Match(
+                    made => Result.Ok(made),
+                    error => (leaves(error) ? Run(copy, "DROP DATABASE", Unmake, log) : Result.Ok(copy))
+                        .Match(Unregistered, _ => Result.Ok(copy)).Bind(_ => Result.Fail<SqlServer.Copy>(error))));
         });
 
     /// <summary>
     /// A statement that makes the copy's database, sent as <see cref="Run{T}"/> sends one. Where the copy takes the synthetic copy's name,
     /// a refusal SQL Server gives because a database of that name already stands (<see cref="Taken"/>) is copy.foreign: another checkout
     /// made it between up's look at master and this statement. Any other refusal is the error its number maps to, as Run maps it.
+    /// <paramref name="standing"/> hears, once the statement ended, whether a failure can have left the database: its connection opened,
+    /// and SQL Server neither refused the statement below severity 20 nor ran it to the end; a timeout or a broken connection may have.
     /// </summary>
     private static Result<SqlServer.Copy> Making(SqlServer.Copy copy, string site, string statement, SqlServer.QueryLog log,
-        params (string Name, string Value)[] parameters) =>
-        SqlServer.Query(copy, new SqlServer.Statement(site, statement)
+        IReadOnlyList<(string Name, string Value)> parameters, Action<bool>? standing = null)
+    {
+        var (opened, refused) = (false, false);
+        var made = SqlServer.Query(copy, new SqlServer.Statement(site, statement)
         {
             Timeout = DatabaseStatementTimeout, Catalog = "master", Pooled = false,
             Parameters = [("@name", copy.Name.ToString()), .. parameters],
-        }, log, _ => Result.Ok(copy), failed => copy.Name.IsSynthetic && Taken.Contains(failed.Number)
-            ? Foreign(copy.Name, ConnectionString.ServerOf(new SqlConnectionStringBuilder(copy.Connection)))
-            : Result.Fail<SqlServer.Copy>(copy.ErrorOf(failed.Number, failed.Message ?? "", fatal: false, opened: true)))
-        .Bind(made => made);
+        }, log, _ => Result.Ok(copy), failed =>
+        {
+            refused = !failed.TimedOut;
+            return copy.Name.IsSynthetic && Taken.Contains(failed.Number)
+                ? Foreign(copy.Name, ConnectionString.ServerOf(new SqlConnectionStringBuilder(copy.Connection)))
+                : Result.Fail<SqlServer.Copy>(copy.ErrorOf(failed.Number, failed.Message ?? "", fatal: false, opened: true));
+        }, sent => opened = sent).Bind(made => made);
+        standing?.Invoke(made is Result<SqlServer.Copy>.Failed && opened && !refused);
+        return made;
+    }
 
     /// <summary>
     /// copy: resolved against .dbchange/copies.json alone: the row holding the name, on a server R15 clears against the environments file
-    /// as the verb read it, which the local server this machine names must still be. A name the registry does not hold is refused before
-    /// the environments file is consulted.
+    /// as the verb read it, which the local server this machine names must still be, and whose linked servers R15 then clears (Cleared),
+    /// read into <paramref name="log"/>. A name the registry does not hold is refused before the environments file is consulted.
     /// </summary>
-    internal static Result<SqlServer.Copy> Registered(string repositoryRoot, CopyName name, Result<Environments> environmentsFile) =>
-        Registered(repositoryRoot, name, environmentsFile, Server, Resolved);
+    internal static Result<SqlServer.Copy> Registered(string repositoryRoot, CopyName name, Result<Environments> environmentsFile,
+        SqlServer.QueryLog? log = null) =>
+        Registered(repositoryRoot, name, environmentsFile, Server, Resolved, log);
 
     internal static Result<SqlServer.Copy> Registered(string repositoryRoot, CopyName name, Result<Environments> environmentsFile,
-        Func<Result<string>> chosen, Func<string, IPAddress[]> resolve) =>
+        Func<Result<string>> chosen, Func<string, IPAddress[]> resolve, SqlServer.QueryLog? log = null) =>
         Rows(repositoryRoot).Bind(rows => rows.FirstOrDefault(r => (string?)r["name"] == name.ToString()) is not { } row
             ? new Error("copy.unregistered",
                 new Target.RegisteredCopy(name) + " is no copy " + LocalState.CopiesName
                 + " holds, and copy: names only a database dbchange made and recorded there.",
                 "Name a copy that " + LocalState.CopiesName + " holds on this machine.")
             : environmentsFile.Bind(environments =>
-                Unnamed(environments, repositoryRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve))
+                Unnamed(environments, repositoryRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve)
                 .Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
-                ? Result.Ok(new SqlServer.Copy(name, server, repositoryRoot))
+                ? Linked(environments, now, new SqlServer.Copy(name, server, repositoryRoot),
+                    log ?? SqlServer.QueryLog.Start(repositoryRoot), resolve)
                 : new Error("copy.unregistered",
                     new Target.RegisteredCopy(name) + " was made on another server than the local server this machine names now, so "
                     + LocalState.CopiesName + " holds no such copy here.",
-                    "Set DBCHANGE_SQL back to the server that made the copy, or make a new copy on this one.")))));
+                    "Set DBCHANGE_SQL back to the server that made the copy, or make a new copy on this one."))))));
 
     /// <summary>
     /// R15: the server's host is none an environment of the environments file names as its host (DECISIONS.md, 2026-09-25), compared by

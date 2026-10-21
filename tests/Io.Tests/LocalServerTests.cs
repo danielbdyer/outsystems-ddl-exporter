@@ -57,7 +57,7 @@ public sealed class LocalServerTests : IDisposable
     /// The retry on the statement path itself (io/SqlServer.Query): a fresh dbchange process whose DBCHANGE_SQL names a TCP listener that
     /// accepts each connection and closes it at once makes a copy, so its first statement, the CREATE DATABASE, never reaches a server.
     /// The listener counts two connections, the first connect and its one retry, and the run fails as server.unreachable with no row
-    /// left in .dbchange/copies.json.
+    /// left in .dbchange/copies.json, printing nothing of the password DBCHANGE_SQL carries.
     /// </summary>
     [Fact]
     [Trait("Category", "build")]
@@ -88,13 +88,15 @@ public sealed class LocalServerTests : IDisposable
             var port = ((IPEndPoint)listener.LocalEndpoint).Port.ToString(CultureInfo.InvariantCulture);
             using var run = DbChangeProcess.Start(new Dictionary<string, string>
             {
-                ["DBCHANGE_SQL"] = "Server=127.0.0.1," + port + ";User ID=sa;Password=unused;Connect Timeout=5;TrustServerCertificate=true",
+                ["DBCHANGE_SQL"] = "Server=127.0.0.1," + port + ";User ID=sa;Password=" + PlantedValue.Password
+                    + ";Connect Timeout=5;TrustServerCertificate=true",
             }, "copy", root);
             var errors = run.StandardError.ReadToEndAsync();
             var printed = run.StandardOutput.ReadToEnd();
             Assert.True(run.WaitForExit(TimeSpan.FromMinutes(1)), "the run did not end");
 
             Assert.True(printed.StartsWith("server.unreachable: ", StringComparison.Ordinal), printed + await errors);
+            PlantedValue.Password.AbsentFrom(printed + await errors);
             Assert.Equal((1, 2), (run.ExitCode, Volatile.Read(ref accepted)));
             Assert.DoesNotContain("dbchange_", File.ReadAllText(Path.Combine(root, ".dbchange", "copies.json")), StringComparison.Ordinal);
         }

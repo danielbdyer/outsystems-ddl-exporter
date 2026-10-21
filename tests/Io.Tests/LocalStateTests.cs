@@ -39,10 +39,10 @@ public sealed class LocalStateTests : IDisposable
 
     /// <summary>
     /// M3 of the pre-M2 review: a run's query log, the whole answer written beside it, the copy registry and the copy cache each make
-    /// their folder through Made, so a run that reads a database, and one that makes a copy, leave git listing nothing under .dbchange/ though no
-    /// worktree was made first. Each once created its folder directly, and a repository whose .gitignore did not name .dbchange/ listed
-    /// queries.log. Each writer runs alone in a repository of its own, so no other writer's .gitignore hides its own. The copy is refused
-    /// at CREATE DATABASE, by a server on a port nothing listens on, so no SQL Server is needed.
+    /// their folder through Made, so a run that reads a database, and one that makes a copy, leave git listing nothing under .dbchange/
+    /// though no worktree was made first. Each once created its folder directly, and a repository whose .gitignore did not name
+    /// .dbchange/ listed queries.log. Each writer runs alone in a repository of its own, so no other writer's .gitignore hides its own.
+    /// The copy is refused at CREATE DATABASE, by a server on a port nothing listens on, so no SQL Server is needed.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]

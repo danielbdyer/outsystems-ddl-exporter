@@ -151,10 +151,13 @@ public sealed class BlockOnPossibleDataLossReaderTests
         Token.AbsentFrom(refused);
     }
 
+    /// <summary>A script that lacks a variable's value and also holds a statement TSql160Parser does not read is sqlcmd.undefined, not
+    /// plan.unparsed: the values are substituted before the script is parsed.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_variable_the_script_uses_with_no_value_is_sqlcmd_undefined_before_anything_is_parsed() =>
-        Assert.Contains("$(ServiceToken)", Failed(BlockOnPossibleDataLoss.Read(Script(Checks), Values[..2]), "sqlcmd.undefined").Message,
+        Assert.Contains("$(ServiceToken)", Failed(BlockOnPossibleDataLoss.Read(
+            Script(Checks + "INSERT INTO [dbo].[Customer] VALUES (,,);\r\nGO\r\n"), Values[..2]), "sqlcmd.undefined").Message,
             StringComparison.Ordinal);
 
     /// <summary>A script TSql160Parser does not read is refused by the line and column the parser names, quoting none of it, since a

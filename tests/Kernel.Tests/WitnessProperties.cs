@@ -58,6 +58,19 @@ public sealed class WitnessProperties
         "nvarchar(max)",
     }.Select(Model.Type)];
 
+    /// <summary>
+    /// The Targets each integer type converts into without an error or a loss, written out apart from Witness.Literals.Widens: tinyint's
+    /// 0 to 255 fits decimal(5,2) and five characters; smallint's -32768 takes six characters and int's -2147483648 eleven, and bigint's
+    /// twenty only nvarchar(max). A key column retyped into one of these takes a value past the copy's largest, so no need names it.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> WidensInto = new(StringComparer.Ordinal)
+    {
+        ["tinyint"] = ["smallint", "int", "bigint", "nvarchar(10)", "varchar(5)", "decimal(5,2)", "nvarchar(max)"],
+        ["smallint"] = ["int", "bigint", "nvarchar(10)", "nvarchar(max)"],
+        ["int"] = ["bigint", "nvarchar(max)"],
+        ["bigint"] = ["nvarchar(max)"],
+    };
+
     internal static readonly Gen<Inputs> Plans = Gen.Select(SchemaProperties.Schemas, Gen.Int[0, 999].Array[96]).Select(Build);
 
     /// <summary>D1: the plan reads its inputs and nothing else, so inputs built again from their parts given in the opposite order plan
@@ -319,7 +332,8 @@ public sealed class WitnessProperties
             literal => Witness.Literal(literal.Type, 1) is null,
             _ => false,
             clean => i.Preconditions.Any(p => p.Table == table.Name && p.Kind is PreconditionKind.Fits && p.Columns.Contains(clean.Column))
-                && (!clean.Key || (clean.Before.Type.Base is "tinyint" or "smallint" or "int" or "bigint"
+                && (!clean.Key || (WidensInto.TryGetValue(clean.Before.Type.Base, out var widened)
+                    && !widened.Any(t => Model.Type(t) == clean.After)
                     && (table.Key?.Columns.Any(k => k.Column == clean.Column) == true
                         || table.Uniques.Any(u => !u.Disabled && u.Columns.Any(k => k.Column == clean.Column))))),
             _ => false,

@@ -64,7 +64,7 @@ public static class ModelRead
     /// the identity could read.
     /// </summary>
     private static Result<Source> Modelled(Checkout checkout, Target target, SqlServer.QueryLog log) =>
-        SqlServer.Resolve(target, checkout.Root).Bind(database =>
+        SqlServer.Resolve(target, checkout.Root, log).Bind(database =>
         SqlServer.Reach(database, log).Bind(readable => DacFx.Extract(database).Bind(package =>
         {
             using (package)

@@ -15,8 +15,9 @@ public sealed partial class TargetTests
 {
     /// <summary>
     /// A local server holding a linked server whose data source names the host env:dev runs on, by its spelling in any case, with an
-    /// instance, a port or a protocol, or by an address of the host, is copy.named-host; so is one whose data source is empty and whose
-    /// provider string names the host under Server, Data Source or Addr, as an OLE DB or an ODBC linked server names its server. The
+    /// instance, a port, a protocol or the one trailing dot of a fully qualified name, or by an address of the host, is copy.named-host;
+    /// so is one whose data source is empty and whose provider string names the host under Server, Data Source or Addr, in quotes or
+    /// none, as an OLE DB or an ODBC linked server names its server. The
     /// refusal names the linked server and the environment, and quotes neither the provider string nor the password it carries; a
     /// linked server to an Access file beside it changes nothing.
     /// </summary>
@@ -31,6 +32,10 @@ public sealed partial class TargetTests
     [InlineData("", "Driver={ODBC Driver 18 for SQL Server};Server=tcp:dev-sql.corp.example,1433;UID=reader;PWD=")]
     [InlineData(null, "Data Source = 192.0.2.10,1433;Password=")]
     [InlineData(null, "addr=DEV-SQL;pwd=")]
+    [InlineData(null, "Server='dev-sql';UID=reader;PWD=")]
+    [InlineData("dev-sql.", null)]
+    [InlineData("DEV-SQL.\\INST01", null)]
+    [InlineData("tcp:dev-sql.corp.example.,1433", null)]
     public void A_local_server_holding_a_linked_server_to_the_host_an_environment_runs_on_is_refused(string? dataSource,
         string? providerString)
     {

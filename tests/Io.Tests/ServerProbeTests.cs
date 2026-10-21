@@ -20,8 +20,8 @@ public sealed class ServerProbeTests : IDisposable
 
     /// <summary>
     /// DacFx 170.5.96's call (ReliableConnectionHelper.GetServerPropertiesFromConnection) and the other ways a command calls xp_msver
-    /// alone, a batch's first statement without EXEC among them, are refused; xp_instance_regread, sp_executesql, a SELECT that quotes the name,
-    /// a procedure whose name merely contains it and a batch that holds a second statement pass unchanged.
+    /// alone, a batch's first statement without EXEC among them, are refused; xp_instance_regread, sp_executesql,
+    /// a SELECT that quotes the name, a procedure whose name merely contains it and a batch that holds a second statement pass unchanged.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]

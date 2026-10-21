@@ -31,7 +31,8 @@ public static class SqlServerFixture
     private const string Drop =
         // A database a killed RESTORE left RESTORING takes DROP DATABASE alone: SQL Server refuses ALTER DATABASE on it (Msg 5052).
         "DECLARE @sql nvarchar(max) = CASE WHEN DATABASEPROPERTYEX(@name, 'Status') = N'RESTORING' THEN N'' "
-        + "ELSE N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; ' END + N'DROP DATABASE ' + QUOTENAME(@name) + N';'; "
+        + "ELSE N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; ' END "
+        + "+ N'DROP DATABASE ' + QUOTENAME(@name) + N';'; "
         + "IF DB_ID(@name) IS NOT NULL EXEC (@sql); "
         + "DECLARE @login sysname, @wait int; DECLARE logins CURSOR LOCAL FAST_FORWARD FOR SELECT name FROM sys.server_principals WHERE name LIKE @name + N'[_]%' AND type = 'S'; "
         + "OPEN logins; FETCH NEXT FROM logins INTO @login; WHILE @@FETCH_STATUS = 0 BEGIN "

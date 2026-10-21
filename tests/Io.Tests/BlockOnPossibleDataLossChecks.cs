@@ -11,7 +11,8 @@ namespace DbChange.Io.Tests;
 /// <summary>
 /// A deployment script DacFx wrote, read as spike S2 reads it (V3_MILESTONES.md §6): its line endings turned to LF, each SQLCMD
 /// directive line (<c>:setvar</c>, <c>:on error exit</c>) dropped, and the rest parsed by io's TSql160Parser, which must report no
-/// error. WP 2.2's reader in io/SqlServer.Plan replaces <see cref="In"/> and is held to the same committed files.
+/// error. <see cref="In"/> stays as S2's extraction, and WP 2.2's reader, io/BlockOnPossibleDataLoss, is held to the same committed
+/// files.
 /// </summary>
 internal static class BlockOnPossibleDataLossChecks
 {

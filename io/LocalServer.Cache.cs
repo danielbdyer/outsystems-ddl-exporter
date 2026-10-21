@@ -110,7 +110,7 @@ public static partial class LocalServer
                 LocalState.Name + "/cache/backups.json holds no backup of the base " + Short(key) + " on " + name + ".",
                 "Publish the base to a new copy and back it up, which records the backup in " + LocalState.Name + "/cache/backups.json.")
             : Made(repositoryRoot, server, log, Resolved, now ?? DateTimeOffset.UtcNow, copy => Restored(copy, backup.Path, log),
-                leavesDatabase: true, named)));
+                error => error.Code != "copy.foreign", named)));
 
     /// <summary>A fresh copy of the base <paramref name="key"/> names on this machine's local server (<see cref="FromBase(string, string,
     /// Fingerprint, Func{SqlServer.Copy, Result{SqlServer.Copy}}, SqlServer.QueryLog, Func{Kernel.ServerName, Result{BackupFolder}}?,
