@@ -6,6 +6,7 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 
 | Law | The test, in English | The test |
 |---|---|---|
+| 11′ a planted set repeats itself, replants only the touched tables and holds no orphan its existing data lacks | Two plantings from the same inputs are byte identical and synthetic copy check passes on each | `DbChange.Io.Tests.SyntheticCopyTests.Two_plantings_from_the_same_inputs_are_byte_identical_and_synthetic_copy_check_passes_on_each` |
 | 11′ a planted set repeats itself, replants only the touched tables and holds no orphan its existing data lacks | A planted row links each reference it meets to a parent or holds an orphan its existing data holds | `DbChange.Kernel.Tests.WitnessProperties.A_planted_row_links_each_reference_it_meets_to_a_parent_or_holds_an_orphan_its_existing_data_holds` |
 | 11′ a planted set repeats itself, replants only the touched tables and holds no orphan its existing data lacks | A schema edit changes only the rows of the tables it touches | `DbChange.Kernel.Tests.WitnessProperties.A_schema_edit_changes_only_the_rows_of_the_tables_it_touches` |
 | 11′ a planted set repeats itself, replants only the touched tables and holds no orphan its existing data lacks | Two plans from the same inputs are identical | `DbChange.Kernel.Tests.WitnessProperties.Two_plans_from_the_same_inputs_are_identical` |
@@ -114,6 +115,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | O6 | Two concurrent runs share nothing | `DbChange.Io.Tests.CopyLifetimeTests.Two_concurrent_runs_share_nothing` |
 | O6 | Two drops and two sweeps of one copy at once all succeed and leave neither its database nor its row | `DbChange.Io.Tests.CopyLifetimeTests.Two_drops_and_two_sweeps_of_one_copy_at_once_all_succeed_and_leave_neither_its_database_nor_its_row` |
 | O6 | Check drift of the synthetic copy built at the golden base exits 0 and up again answers it current | `DbChange.Io.Tests.SyntheticCopyTests.Check_drift_of_the_synthetic_copy_built_at_the_golden_base_exits_0_and_up_again_answers_it_current` |
+| O6 | Status verifies each copy against its row and down drops only this checkout's copies and only while idle | `DbChange.Io.Tests.SyntheticCopyTests.Status_verifies_each_copy_against_its_row_and_down_drops_only_this_checkout_s_copies_and_only_while_idle` |
 | O6 | Two ups at once in one checkout build one copy and the one that waited on the lock answers it current | `DbChange.Io.Tests.SyntheticCopyTests.Two_ups_at_once_in_one_checkout_build_one_copy_and_the_one_that_waited_on_the_lock_answers_it_current` |
 | O7 | A publish whose token is cancelled publishes nothing and throws | `DbChange.Io.Tests.CopyTests.A_publish_whose_token_is_cancelled_publishes_nothing_and_throws` |
 | O7 | A signal or a timeout stops a waiting dbchange with exit 130 and an interrupted answer | `DbChange.Io.Tests.InterruptedProcessTests.A_signal_or_a_timeout_stops_a_waiting_dbchange_with_exit_130_and_an_interrupted_answer` |
@@ -257,6 +259,8 @@ One row per test that runs an exit of `V3_MILESTONES.md`, from its `[Trait("Exit
 | M1.7 | A named environment's error is withheld and a copy's is kept | `DbChange.Io.Tests.TargetTests.A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept` |
 | M1.7 | A literal connection string as a target is exit 6 and printed nowhere | `DbChange.Io.Tests.VerbExitTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
 | M1.8 | The read only principal sends no DML no DDL and no EXEC through check drift and read | `DbChange.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read` |
+| M3.2 | Two plantings from the same inputs are byte identical and synthetic copy check passes on each | `DbChange.Io.Tests.SyntheticCopyTests.Two_plantings_from_the_same_inputs_are_byte_identical_and_synthetic_copy_check_passes_on_each` |
 | M3.3 | A copy planted at an environment holding each of R6's sites answers every precondition as the environment does | `DbChange.Io.Tests.SyntheticCopyTests.A_copy_planted_at_an_environment_holding_each_of_R6_s_sites_answers_every_precondition_as_the_environment_does` |
+| M3.5 | No backup package or build output is tracked and the local state folder is ignored | `DbChange.Budgets.Tests.NothingGenerated.No_backup_package_or_build_output_is_tracked_and_the_local_state_folder_is_ignored` |
 
-Exits no test declares, which a person or a CI job runs: M0.2, M1.1, M2.1, M2.2, M2.3, M2.4, M2.5, M3.1, M3.2, M3.4, M3.5, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, M4.8, M4.9, M5.1, M5.2, M5.3, M5.4, M5.5, M5.6, M6.1, M6.2, M6.3, M6.4, M6.5, M7.1.
+Exits no test declares, which a person or a CI job runs: M0.2, M1.1, M2.1, M2.2, M2.3, M2.4, M2.5, M3.1, M3.4, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, M4.8, M4.9, M5.1, M5.2, M5.3, M5.4, M5.5, M5.6, M6.1, M6.2, M6.3, M6.4, M6.5, M7.1.

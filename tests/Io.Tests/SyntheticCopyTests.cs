@@ -141,7 +141,8 @@ public sealed partial class SyntheticCopyTests(ScratchRepository repository) : I
     /// R6 and M3's done-when: an environment at the golden base holding each of R6's sites (rows, a NULL, an orphan, a duplicate and a
     /// value over the new length), and a foreign key no row breaks, counted for the change that makes them preconditions. The copy planted
     /// at that existing data answers every precondition as the environment does, every no included; the base, published once, is restored
-    /// from the cache for it; and its plan from the base is empty, check drift --target synthetic-copy exiting 0. Without
+    /// from the cache for it; and its plan from the base is empty, check drift --target synthetic-copy exiting 0 and synthetic-copy check
+    /// from the same inputs passing with the answers up gave. Without
     /// dbchange/witnesses.sql the planter plants all five sites, the duplicate in Account among them; with the duplicate declared there,
     /// under a name the seed defines (PAR-033), the planter plants no row of Account.
     /// </summary>
@@ -169,8 +170,9 @@ public sealed partial class SyntheticCopyTests(ScratchRepository repository) : I
                 "Unique on [dbo].[Account] ([Name]) populated violating Exact",
             ], existing.States.Select(Said).Order(StringComparer.Ordinal));
             Assert.Equal(0, Up("--at", repository.Base, "--profile", profile).Exit);
+            var file = Written(existing);
 
-            var (exit, answer) = Up("--at", repository.Base, "--existing-data", Written(existing), "--profile", profile);
+            var (exit, answer) = Up("--at", repository.Base, "--existing-data", file, "--profile", profile);
 
             Assert.True(exit == 0, answer.ToJsonString());
             Assert.Equal(("built", true, head), ((string?)answer["outcome"], (bool?)answer["syntheticCopy"]!["restored"],
@@ -181,6 +183,9 @@ public sealed partial class SyntheticCopyTests(ScratchRepository repository) : I
             Assert.True(declared ? account == 0 : account > 0, "the planter planted " + account + " rows of [dbo].[Account]");
             var (drift, output) = Drift(repository.Base, profile);
             Assert.True(drift == 0, output);
+            var (check, passed) = Synthetic("check", "--at", repository.Base, "--existing-data", file, "--profile", profile);
+            Assert.True(check == 0, passed.ToJsonString());
+            Assert.Equal(answer["syntheticCopy"]!["answers"]!.ToJsonString(), passed["checked"]!["answers"]!.ToJsonString());
         }
         finally
         {
@@ -236,7 +241,8 @@ public sealed partial class SyntheticCopyTests(ScratchRepository repository) : I
     /// holds the key disabled, over an orphan, and the check enabled and untrusted; the change makes CustomerAddress.City NOT NULL and the
     /// key ON DELETE CASCADE. The copy reproduces both states exactly, read back from its catalog: the key is disabled before the copy is
     /// read, so the copy's own plan of the change is the environment's; the orphan and the NULL are planted under the suspended key; the
-    /// copy answers as the environment does; and step 8 names the disabled key, which the plan from the base drops and adds, in a note.
+    /// copy answers as the environment does; step 8 names the disabled key, which the plan from the base drops and adds, in a note; and
+    /// synthetic-copy check passes, reading the orphan under the disabled key as one the existing data holds.
     /// It never forces trust: an existing data holding the orphan that lists the key as trusted is no state rows can reach, and SQL Server
     /// refusing the key WITH CHECK over the planted orphan is witness.trust at exit 8, naming the key.
     /// </summary>
@@ -288,6 +294,10 @@ public sealed partial class SyntheticCopyTests(ScratchRepository repository) : I
             Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "synthetic-copy.disabled"
                 && (string?)f["severity"] == "note"
                 && (string?)f["subject"] == "ForeignKeyConstraint [dbo].[FK_CustomerAddress_Customer_CustomerId]");
+            var (check, passed) = Synthetic("check", "--at", at, "--existing-data", Written(existing), "--profile", profile);
+            Assert.True(check == 0, passed.ToJsonString());
+            Assert.Contains(passed["checked"]!["references"]!.AsArray(), r => (string?)r!["state"] == "disabled" && (int)r["orphans"]! > 0
+                && (string?)r["reference"] == "ForeignKeyConstraint [dbo].[FK_CustomerAddress_Customer_CustomerId]");
 
             (exit, answer) = Up("--at", at, "--existing-data", Written(existing with { Trust = [] }), "--profile", profile);
 
