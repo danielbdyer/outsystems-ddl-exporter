@@ -105,6 +105,39 @@ public sealed partial class SyntheticCopyTests(ScratchRepository repository) : I
     }
 
     /// <summary>
+    /// VALUES.md O6: two dbchange processes, the published one, run synthetic-copy up at the golden base in one checkout at once. The one
+    /// that takes .dbchange/synthetic-copy.lock first builds the copy; the other waits on the lock, then finds the registry's row of the
+    /// same inputs built to its end and answers current. Both exit 0, the local server holds one database of the name and the registry
+    /// one row. With the lock taken shared, so that both runs pass it, two rounds on SQL Server 2022 Express answered built twice, and
+    /// refused-by-name (exit 9) and built.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    [Trait("Value", "O6")]
+    public async Task Two_ups_at_once_in_one_checkout_build_one_copy_and_the_one_that_waited_on_the_lock_answers_it_current()
+    {
+        var profile = Profile("two ups at once");
+        try
+        {
+            string[] up = ["synthetic-copy", "up", "--at", repository.Base, "--profile", profile, "--json"];
+
+            var runs = await Task.WhenAll(Task.Run(() => OwnProcess(up)), Task.Run(() => OwnProcess(up)));
+
+            Assert.All(runs, run => Assert.True(run.Exit == 0, run.Answer.ToJsonString()));
+            Assert.Equal(["built", "current"], runs.Select(run => (string)run.Answer["outcome"]!).Order(StringComparer.Ordinal));
+            var copy = (string)runs[0].Answer["syntheticCopy"]!["copy"]!;
+            Assert.Equal(copy, (string?)runs[1].Answer["syntheticCopy"]!["copy"]);
+            Assert.True(await SqlServerFixture.ExistsAsync(copy), copy + " is not on the local server");
+            Assert.Single(JsonNode.Parse(File.ReadAllText(Path.Combine(repository.Root, LocalState.Name, "copies.json")))!["copies"]!
+                .AsArray(), row => (string?)row!["name"] == copy);
+        }
+        finally
+        {
+            await Dropped();
+        }
+    }
+
+    /// <summary>
     /// R6 and M3's done-when: an environment at the golden base holding each of R6's sites (rows, a NULL, an orphan, a duplicate and a
     /// value over the new length), and a foreign key no row breaks, counted for the change that makes them preconditions. The copy planted
     /// at that existing data answers every precondition as the environment does, every no included; the base, published once, is restored
@@ -347,6 +380,15 @@ public sealed partial class SyntheticCopyTests(ScratchRepository repository) : I
 
     /// <summary>synthetic-copy up with its arguments, run at the repository's root with --json.</summary>
     private (int Exit, JsonNode Answer) Up(params string[] arguments) => repository.Answer(["synthetic-copy", "up", .. arguments]);
+
+    /// <summary>The published dbchange run as a process of its own at the repository's root: its exit and the answer it writes to
+    /// standard output.</summary>
+    private (int Exit, JsonNode Answer) OwnProcess(string[] arguments)
+    {
+        var ran = (Programs.InRepository("dotnet", [Path.Combine(repository.Tool.Folder, "dbchange.dll"), .. arguments])
+            with { Directory = repository.Root }).Finish();
+        return (ran.Code, JsonNode.Parse(ran.Output) ?? throw new InvalidOperationException("dbchange wrote no answer: " + ran.Errors));
+    }
 
     /// <summary>
     /// A profile of the test's own beside the repository: the pipeline's, with a comment naming the test and a random tag, so its

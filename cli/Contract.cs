@@ -186,6 +186,10 @@ public static class Contract
                 new("built", [0], "the copy is built: it answers each precondition as the existing data does, and the plan from the"
                     + " base to it is empty"),
                 new("current", [0], "the registry holds the copy of these inputs, built to its end; nothing was applied"),
+                new("differs", [5], "the plan from the base to the copy holds operations; a finding names each, and a check written with"
+                    + " IN is named with the OR form SQL Server stores"),
+                new("needs-input", [8], "a row only a person can write, a declared witness to correct, or an answer that differs from the"
+                    + " existing data's; each finding names the next step"),
             ]),
         new("prove", "What DacFx and SQL Server do with a change on a fresh copy, with its provenance."),
         new("describe", "The pull request description, rendered from each proof's provenance."),

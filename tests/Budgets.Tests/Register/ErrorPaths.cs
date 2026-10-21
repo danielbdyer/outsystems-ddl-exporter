@@ -439,19 +439,19 @@ internal static partial class ErrorPaths
             Failed(ExistingDataFile.Read(Written(scratch, "existing-data.json",
                 "{ \"schema\": \"dbchange.existing-data/1\", \"states\": [], " + Quoted(planted) + ": true }")))),
         new("a declared witness whose header names no table", "witness.header", false, (_, _) =>
-            Failed(Witnesses.Parse("-- plants: [a].[b].[c]\nINSERT INTO dbo.T (C) VALUES (1);", Literals))),
+            Failed(Witnesses.Parse("-- plants: [a].[b].[c]\nINSERT INTO dbo.T (C) VALUES (1);", EmptyModel))),
         new("a declared witness's statement before any header", "witness.outside-block", false, (_, _) =>
-            Failed(Witnesses.Parse("DELETE FROM dbo.T;\n-- plants: [dbo].[T]\n", Literals))),
+            Failed(Witnesses.Parse("DELETE FROM dbo.T;\n-- plants: [dbo].[T]\n", EmptyModel))),
         new("a declared witness that does not parse", "witness.unparsed", false, (_, _) =>
-            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C VALUES (1);", Literals))),
+            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C VALUES (1);", EmptyModel))),
         new("a declared witness of two batches", "witness.batch", false, (_, _) =>
-            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nDELETE FROM dbo.T;\nGO\nDELETE FROM dbo.T;", Literals))),
+            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nDELETE FROM dbo.T;\nGO\nDELETE FROM dbo.T;", EmptyModel))),
         new("a declared witness that changes the schema", "witness.not-dml", false, (_, _) =>
-            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nDROP TABLE dbo.T;", Literals))),
+            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nDROP TABLE dbo.T;", EmptyModel))),
         new("a declared witness carrying a literal no repository defines", "witness.not-synthetic", true, (_, planted) =>
-            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) VALUES (N'" + planted + "');", Literals))),
+            Failed(Witnesses.Parse("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) VALUES (N'" + planted + "');", EmptyModel))),
         new("a declared witness SQL Server refuses", "witness.failed", false, (_, _) =>
-            Witnesses.Failed(Made(Witnesses.Parse("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) VALUES (NULL);", Literals))[0], 1, 515,
+            Witnesses.Failed(Made(Witnesses.Parse("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) VALUES (NULL);", EmptyModel))[0], 1, 515,
                 "Cannot insert the value NULL into column 'C', table 'copy.dbo.T'; column does not allow nulls. INSERT fails.")),
         new("a connection whose variable is unset", "connection.unresolved", false, (scratch, _) =>
             Failed(SqlServer.Resolve(Target("env:dev"),

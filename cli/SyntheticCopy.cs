@@ -90,7 +90,7 @@ public static partial class Verbs
     /// synthetic-copy up's answer: built or current at exit 0, with the notes; needs-input at exit 8, each finding naming the agent's next
     /// step; differs at exit 5, a warning per operation the plan from the base to the copy holds, with the notes.
     /// </summary>
-    private static Envelope Copied(Io.SyntheticCopy.Answer answer, Stamp stamp)
+    internal static Envelope Copied(Io.SyntheticCopy.Answer answer, Stamp stamp)
     {
         var verb = Of("synthetic-copy");
         var at = "ref:" + answer.At + " (commit " + answer.Commit[..8] + ")";
@@ -122,16 +122,14 @@ public static partial class Verbs
             Io.SyntheticCopy.Kind.Current => Contract.Answer(verb.Output, verb.Outcome("current"), 0,
                 "The synthetic copy " + answer.Copy + " is built at " + at + " from these inputs already; nothing was applied.",
                 [.. answer.Notes], stamp, content: content),
-            Io.SyntheticCopy.Kind.NeedsInput => Contract.Answer(verb.Output, Outcome.Of(Exit(8)), 8,
+            Io.SyntheticCopy.Kind.NeedsInput => Contract.Answer(verb.Output, verb.Outcome("needs-input"), 8,
                 "The synthetic copy " + answer.Copy + " at " + at + " needs input: " + Counted(answer.Findings.Count, "finding")
                     + " name" + (answer.Findings.Count == 1 ? "s" : "") + " the next step.",
                 [.. answer.Findings], stamp, content: content),
-            _ => Contract.Answer(verb.Output, Outcome.Of(Exit(5)), 5,
+            _ => Contract.Answer(verb.Output, verb.Outcome("differs"), 5,
                 "The synthetic copy " + answer.Copy + " differs from " + at + ": the plan from the base to it holds "
                     + Counted(answer.Findings.Count, "difference") + ".",
                 [.. answer.Findings, .. answer.Notes], stamp, content: content),
         };
     }
-
-    private static ExitCode Exit(int code) => Contract.Exits.Single(e => e.Code == code);
 }

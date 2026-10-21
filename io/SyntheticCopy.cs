@@ -114,7 +114,8 @@ public static partial class SyntheticCopy
                 var witnessFile = Path.Combine(at.Path, Witnesses.Path);
                 var witnesses = File.Exists(witnessFile) ? File.ReadAllText(witnessFile) : null;
                 if ((witnesses is null ? Result.Ok<IReadOnlyList<Witnesses.Block>>([])
-                        : Witnesses.Parse(witnesses, Witnesses.Literals(baseModel.Elements.Concat(headModel))))
+                        : Schema.Of(baseModel.Elements).Bind(copy =>
+                            Witnesses.Parse(witnesses, Witnesses.Repository.Of(baseModel.Elements.Concat(headModel), copy))))
                     .Failed(out var blocks, out error))
                 {
                     return new(stamp, error);

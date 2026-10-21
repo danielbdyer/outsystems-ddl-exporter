@@ -6,6 +6,7 @@ using DbChange.Tests;
 using Xunit;
 using static DbChange.Tests.Expect;
 using Elements = DbChange.Kernel.Tests.KernelProperties;
+using CaseModel = DbChange.Kernel.Tests.Model;
 
 namespace DbChange.Io.Tests;
 
@@ -17,12 +18,24 @@ namespace DbChange.Io.Tests;
 /// </summary>
 public sealed class SyntheticCopyInputTests
 {
-    /// <summary>The literals a repository's model defines: a seeded name, a seeded postal code, a check's LIKE pattern and a default's
-    /// bytes.</summary>
-    private static readonly IReadOnlySet<string> Repository = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "Acme Holdings", "98101", "ABC%", "0x0A0B",
-    };
+    /// <summary>
+    /// The repository a declared witness is held to: a copy whose dbo.T holds C nvarchar(40), N int and B varbinary(16), B's default
+    /// writing 0x0A0B; a check of dbo.Product.Code LIKE 'ABC%', and one of dbo.[Order].Status in the OR form SQL Server stores for IN
+    /// ('O', 'C'); a seed of the name N'Acme Holdings' and the postal code N'98101'; and the synonym dbo.Remote.
+    /// </summary>
+    private static readonly Witnesses.Repository Repository = Witnesses.Repository.Of(
+        [
+            .. Copy.Elements,
+            Element.PostDeploy("MERGE dbo.Account AS t USING (VALUES (N'Acme Holdings')) AS s (Name) ON t.Name = s.Name\n"
+                + "WHEN NOT MATCHED THEN INSERT (Name) VALUES (s.Name);\nINSERT INTO dbo.Address (PostalCode) VALUES (N'98101');"),
+            Elements.New(Elements.Key("Synonym", "dbo", "Remote"), []),
+        ],
+        Value(Schema.Of(Copy.Elements)));
+
+    private static CaseModel Copy => CaseModel.Of("T.C nvarchar(40) NULL", "T.N int NULL", "T.B varbinary(16) NULL",
+            "Product.Code nvarchar(20) NULL", "Order.Status char(1) NULL")
+        .Default("DF_T_B", "T", "B", "(0x0A0B)").Check("CK_Product_Code", "Product", "([Code] like 'ABC%')", ["Code"])
+        .Check("CK_Order_Status", "Order", "([Status]='C' OR [Status]='O')", ["Status"]);
 
     /// <summary>An existing data holding each kind of precondition, a Fits and a Unique with their classes, a clean and an empty answer,
     /// and a constraint held disabled and one held untrusted.</summary>
@@ -123,9 +136,10 @@ public sealed class SyntheticCopyInputTests
     /// PAR-033: each statement or literal a declared witness may not carry is refused by its line of dbchange/witnesses.sql: a statement
     /// before any header, a header naming no table or no precondition, a block that does not parse, a second batch, a statement other
     /// than DML, an INSERT of EXEC's rows, a read through OPENROWSET, a table on a linked server, as the INSERT's target, the source of
-    /// an INSERT ... SELECT or MERGE's USING, a table or a function in another database of the local server, and a literal neither
-    /// synthetic nor the repository's. The block runs as one batch on the copy's connection, so a four-part name would write to a
-    /// linked environment or copy its rows into the copy.
+    /// an INSERT ... SELECT or MERGE's USING, a table or a function in another database of the local server, the repository's synonym
+    /// dbo.Remote as a source, as a target named in one part and as a function named in another case, and a literal neither synthetic
+    /// nor the repository's. The block runs as one batch on the copy's connection, so a four-part name, or a synonym standing for one,
+    /// would write to a linked environment or copy its rows into the copy.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -146,6 +160,9 @@ public sealed class SyntheticCopyInputTests
     [InlineData("-- plants: [dbo].[T]\nUPDATE dbo.T SET C = N'wA';\nINSERT INTO dbo.T (Name) SELECT Name FROM OtherDb.dbo.Customer;",
         "witness.not-dml", 3)]
     [InlineData("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C) VALUES (OtherDb.dbo.Secret(1));", "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nINSERT INTO dbo.T (C)\n  SELECT r.C FROM dbo.Remote AS r;", "witness.not-dml", 2)]
+    [InlineData("-- plants: [dbo].[T]\nUPDATE dbo.T SET C = N'wA';\nINSERT INTO Remote (C) VALUES (N'wB');", "witness.not-dml", 3)]
+    [InlineData("-- plants: [dbo].[T]\nINSERT INTO dbo.T (N) VALUES (dbo.REMOTE(1));", "witness.not-dml", 2)]
     [InlineData("-- plants: [dbo].[T]\nUPDATE dbo.T SET C = N'wA';\nUPDATE dbo.T\n  SET C = N'Bob';", "witness.not-synthetic", 4)]
     public void A_declared_witness_is_refused_by_its_line_for_each_statement_or_literal_it_may_not_carry(string text, string code,
         int line)
@@ -156,11 +173,13 @@ public sealed class SyntheticCopyInputTests
     }
 
     /// <summary>
-    /// VALUES.md P1 and law 12′ in its planted form: a declared literal enters a copy when it is empty, carries the planter's mark w, is
-    /// a literal the repository's model defines (or one under a LIKE pattern it defines, the wildcards dropped, then the mark), is
-    /// written as an ISO date or time or as one of the planter's two uniqueidentifier forms, or is binary that is empty, begins with
-    /// 0x77, or the model defines. A string of digits, a phone number among them, enters only where the model defines it, since a
-    /// number is written as a numeric literal. Any other value can have come from an environment, and is refused without being quoted.
+    /// VALUES.md P1 and law 12′ in its planted form, a literal written into the character column dbo.T.C: it enters a copy when it is
+    /// empty, carries the planter's mark w, is a literal the repository's model defines, begins with the text a LIKE pattern of the
+    /// model holds before its first wildcard and then the mark (N'ABCw1' under LIKE 'ABC%'; the 'O' the model's check lists is no
+    /// pattern, so N'O' enters and N'Owen Jones' does not), is written as an ISO date or time or as one of the planter's two
+    /// uniqueidentifier forms, or is binary that is empty, begins with 0x77, or the model defines. A string of digits, a phone or a card
+    /// number among them, enters only where the model defines it, written in quotes or without them. Any other value can have come from
+    /// an environment, and is refused without being quoted.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -169,8 +188,12 @@ public sealed class SyntheticCopyInputTests
     [InlineData("N''", true)]
     [InlineData("N'Acme Holdings'", true)]
     [InlineData("N'ABCw1'", true)]
+    [InlineData("N'O'", true)]
+    [InlineData("N'Owen Jones'", false)]
+    [InlineData("N'Ow1'", false)]
     [InlineData("N'98101'", true)]
-    [InlineData("42", true)]
+    [InlineData("98101", true)]
+    [InlineData("42", false)]
     [InlineData("N'42'", false)]
     [InlineData("N'2065550101'", false)]
     [InlineData("N'+12065550101'", false)]
@@ -198,6 +221,84 @@ public sealed class SyntheticCopyInputTests
         {
             PlantedValue.Password.AbsentFrom(Failed(parsed, "witness.not-synthetic"));
         }
+    }
+
+    /// <summary>
+    /// VALUES.md P1 for a number, which carries no mark (PLT-124): one written into dbo.T's int column N stays a number and enters, but
+    /// SQL Server stores one written into its nvarchar column C or its varbinary column B as text or bytes, so there it enters only where
+    /// its digits are a literal the model defines, as the postal code 98101 is. So it is for the value an INSERT writes by its column
+    /// list or, with none, by the table's columns in order; an UPDATE's SET, under an alias, a sign or parentheses; a MERGE's INSERT and
+    /// UPDATE, through the VALUES list it reads; an INSERT ... SELECT, through a derived table or a common table expression; and the
+    /// operand of a CONVERT or a CAST to a character type, or an argument of CONCAT, wherever it stands. A length REPLICATE takes and a
+    /// number a WHERE compares make no text. A number refused is named by its line and not quoted.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [Trait("Value", "P1")]
+    [InlineData("INSERT INTO dbo.T (N) VALUES (2065550101);", true)]
+    [InlineData("INSERT INTO dbo.T (C) VALUES (2065550101);", false)]
+    [InlineData("INSERT INTO dbo.T (C) VALUES (98101);", true)]
+    [InlineData("INSERT INTO dbo.T (B) VALUES (2065550101);", false)]
+    [InlineData("INSERT INTO dbo.T VALUES (N'wA', 2065550101, NULL);", true)]
+    [InlineData("INSERT INTO dbo.T VALUES (2065550101, 1, NULL);", false)]
+    [InlineData("UPDATE dbo.T SET N = 2065550101, C = N'wA' WHERE N = 4111111111111111;", true)]
+    [InlineData("UPDATE t SET t.C = (-2065550101) FROM dbo.T AS t;", false)]
+    [InlineData("MERGE dbo.T AS t USING (VALUES (7, N'wA')) AS s (Id, Name) ON t.N = s.Id\n"
+        + "  WHEN NOT MATCHED THEN INSERT (N, C) VALUES (s.Id, s.Name);", true)]
+    [InlineData("MERGE dbo.T AS t USING (VALUES (7, 2065550101)) AS s (Id, Phone) ON t.N = s.Id\n"
+        + "  WHEN NOT MATCHED THEN INSERT (N, C) VALUES (s.Id, s.Phone);", false)]
+    [InlineData("MERGE dbo.T AS t USING (VALUES (7, 2065550101)) AS s (Id, Phone) ON t.N = s.Id\n"
+        + "  WHEN MATCHED THEN UPDATE SET C = s.Phone;", false)]
+    [InlineData("INSERT INTO dbo.T (C) SELECT 4111111111111111;", false)]
+    [InlineData("INSERT INTO dbo.T (C) SELECT v.p FROM (VALUES (4111111111111111)) AS v (p);", false)]
+    [InlineData("WITH v (p) AS (SELECT 4111111111111111) INSERT INTO dbo.T (C) SELECT p FROM v;", false)]
+    [InlineData("INSERT INTO dbo.T (C) VALUES (CONVERT(nvarchar(20), 4111111111111111));", false)]
+    [InlineData("INSERT INTO dbo.T (N) VALUES (CAST(CAST(4111111111111111 AS varchar(20)) AS bigint));", false)]
+    [InlineData("INSERT INTO dbo.T (C) VALUES (CONCAT(N'w', $2065550101));", false)]
+    [InlineData("INSERT INTO dbo.T (C) VALUES (REPLICATE(N'w', 41));", true)]
+    public void A_number_enters_a_character_or_binary_column_only_where_the_model_defines_its_digits(string statement, bool admitted)
+    {
+        var parsed = Witnesses.Parse("-- plants: [dbo].[T]\n" + statement, Repository);
+
+        Assert.Equal(admitted, parsed is Result<IReadOnlyList<Witnesses.Block>>.Ok);
+        if (!admitted)
+        {
+            var refused = Failed(parsed, "witness.not-synthetic");
+            Assert.StartsWith("dbchange/witnesses.sql line 2 carries a number SQL Server makes text or bytes of", refused.Message,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain("206555", refused.Message + refused.Remedy, StringComparison.Ordinal);
+            Assert.DoesNotContain("411111", refused.Message + refused.Remedy, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// The repository's rules as io reads them from a model DacFx 170.5.96 builds from T-SQL, the base package's elements read as the
+    /// copy's tables as synthetic-copy up reads them: CREATE SYNONYM dbo.Remote FOR a table on the linked server prod-sql is a Synonym
+    /// element, so a block reading dbo.Remote is witness.not-dml naming it; CK_Product_Code CHECK (Code LIKE 'ABC%') gives the text
+    /// ABC, so N'ABCw1' enters dbo.Product.Code and N'ABC1' does not; and Code is nvarchar, so a number written into it is refused.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_model_s_synonym_LIKE_pattern_and_column_types_hold_a_declared_witness_as_DacFx_reads_the_model()
+    {
+        using var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160,
+            new Microsoft.SqlServer.Dac.Model.TSqlModelOptions());
+        model.AddObjects("CREATE TABLE dbo.Product (Id INT NOT NULL, Code NVARCHAR(20) NOT NULL CONSTRAINT CK_Product_Code CHECK "
+            + "(Code LIKE 'ABC%'));");
+        model.AddObjects("CREATE SYNONYM dbo.Remote FOR [prod-sql].[Catalog].[dbo].[Customer];");
+        var elements = Value(Ssdt.ReadModel(model));
+        var repository = Witnesses.Repository.Of(elements, Value(Schema.Of(elements)));
+        Result<IReadOnlyList<Witnesses.Block>> Declared(string statement) =>
+            Witnesses.Parse("-- plants: [dbo].[Product]\n" + statement, repository);
+
+        var remote = Failed(Declared("INSERT INTO dbo.Product (Id, Code) SELECT r.Id, r.Name FROM dbo.Remote AS r;"), "witness.not-dml");
+
+        Assert.StartsWith("dbchange/witnesses.sql line 2 holds the synonym [dbo].[Remote], which can stand for a table", remote.Message,
+            StringComparison.Ordinal);
+        Assert.IsType<Result<IReadOnlyList<Witnesses.Block>>.Ok>(Declared("INSERT INTO dbo.Product (Id, Code) VALUES (1, N'ABCw1');"));
+        Failed(Declared("INSERT INTO dbo.Product (Id, Code) VALUES (1, N'ABC1');"), "witness.not-synthetic");
+        Failed(Declared("INSERT INTO dbo.Product (Id, Code) VALUES (2065550101, 2065550101);"), "witness.not-synthetic");
+        Assert.IsType<Result<IReadOnlyList<Witnesses.Block>>.Ok>(Declared("INSERT INTO dbo.Product (Id, Code) VALUES (2065550101, N'w1');"));
     }
 
     /// <summary>
