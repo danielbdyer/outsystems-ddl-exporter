@@ -18,9 +18,11 @@ public static partial class SqlServer
     /// predicate, in a join's ON as in a WHERE, reads at most one value from the data (a column, a length or an aggregate), save = or
     /// &lt;&gt; between two columns, an equi-join or an orphan check; and a subquery's select list carries only columns, literals and the
     /// answers above, so a derived column is never two values combined. Every other form is refused with where it stands and what it is,
-    /// and none of the query's literals is quoted.
+    /// and none of the query's literals is quoted. One form answers text, a column's signatures with their counts and the rare ones
+    /// folded (WP 3.7, V3_MILESTONES.md §17 item 24), admitted only as SqlServer.Signatures.cs commits it, and never by
+    /// <see cref="Admitted(string)"/>.
     /// </summary>
-    private static class Allowlist
+    private static partial class Allowlist
     {
         private const string Forms =
             "COUNT, COUNT_BIG, SUM(CASE WHEN … THEN 1 ELSE 0 END), MIN or MAX over LEN or DATALENGTH of a column, "

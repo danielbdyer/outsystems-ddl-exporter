@@ -185,25 +185,29 @@ public static partial class SqlServer
             Parameters = [("@language", session.Language), ("@dateformat", session.Order)],
         };
 
+    private static Result<AggregateQuery> NoSynonym(Database target, AggregateQuery query, QueryLog log) =>
+        NoSynonym(target, query.Site, query.Tables, log).Map(_ => query);
+
     /// <summary>
-    /// The query, when no table it reads by name is a synonym on the target (DECISIONS.md, 2026-09-25): a synonym can stand for a table
-    /// in another database or on a linked server, which the query's text cannot show, so the target's catalog is asked, in one statement
-    /// through <see cref="Query{T}"/>, before the query runs. A synonym is aggregate-query.refused, named as the query writes it.
+    /// The site, when no table its query reads by name is a synonym on the target (DECISIONS.md, 2026-09-25): a synonym can stand for a
+    /// table in another database or on a linked server, which the query's text cannot show, so the target's catalog is asked, in one
+    /// statement through <see cref="Query{T}"/>, before the query runs. A synonym is aggregate-query.refused, named as the query writes it.
     /// </summary>
-    private static Result<AggregateQuery> NoSynonym(Database target, AggregateQuery query, QueryLog log) => query.Tables.Count == 0 ? query
-        : Query(target, new Statement("Synonyms: " + query.Site,
+    private static Result<string> NoSynonym(Database target, string site, IReadOnlyList<string> tables, QueryLog log) => tables.Count == 0
+        ? site
+        : Query(target, new Statement("Synonyms: " + site,
             "SELECT t.name FROM (VALUES "
-            + string.Join(", ", query.Tables.Select((_, i) => "(@t" + i.ToString(CultureInfo.InvariantCulture) + ")"))
-                + ") AS t(name) WHERE OBJECT_ID(t.name, N'SN') IS NOT NULL;") { Parameters = [.. query.Tables.Select((table, i) =>
+            + string.Join(", ", tables.Select((_, i) => "(@t" + i.ToString(CultureInfo.InvariantCulture) + ")"))
+                + ") AS t(name) WHERE OBJECT_ID(t.name, N'SN') IS NOT NULL;") { Parameters = [.. tables.Select((table, i) =>
                     ("@t" + i.ToString(CultureInfo.InvariantCulture), table))] },
             log, rows => rows.Select(row => (string)row[0]!).ToList())
         .Bind(synonyms => synonyms is [var synonym, ..]
             ? new Error("aggregate-query.refused",
-                "The query " + query.Site + " reads " + synonym
+                "The query " + site + " reads " + synonym
                 + ", a synonym, which can stand for a table in another database or on a linked server; "
                 + "an aggregate query reads the target's own tables.",
                 "Name the table the synonym stands for in the query.")
-            : Result.Ok(query));
+            : Result.Ok(site));
 
     /// <summary>
     /// A value the allowlist admits the type of: an integer of any width, or NULL. Anything else is a defect in the allowlist,

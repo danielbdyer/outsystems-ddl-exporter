@@ -208,6 +208,6 @@ public static partial class Verbs
         _ => kind.Word,
     };
 
-    private static string Counted(int count, string noun) =>
+    private static string Counted(long count, string noun) =>
         count.ToString(System.Globalization.CultureInfo.InvariantCulture) + " " + noun + (count == 1 ? "" : "s");
 }

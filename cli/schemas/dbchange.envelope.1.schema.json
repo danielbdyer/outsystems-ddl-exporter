@@ -40,7 +40,9 @@
         "done",
         "in-sync",
         "interrupted",
+        "measured",
         "needs-input",
+        "pushed",
         "ready",
         "refused-by-name",
         "unparsed-input",
@@ -435,6 +437,24 @@
       "if": {
         "properties": {
           "outcome": {
+            "const": "measured"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
             "const": "needs-input"
           }
         }
@@ -444,6 +464,24 @@
           "exit": {
             "enum": [
               8
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "pushed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
             ]
           }
         }

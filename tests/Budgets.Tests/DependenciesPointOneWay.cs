@@ -74,12 +74,13 @@ public sealed class DependenciesPointOneWay
 
     /// <summary>
     /// The io types cli may name, each of whose members it may call: the use cases and their answers, and the services Program and the
-    /// renderers use, among them the existing data's file form, in which synthetic-copy up renders the copy's answers.
+    /// renderers use, among them the existing data's file form, in which synthetic-copy up renders the copy's answers, and the signatures
+    /// a column's profile holds.
     /// </summary>
     private static readonly string[] Whole =
     [
         "Checkout", "Standing", "ModelRead", "ModelRead+Source", "ModelDiff", "ModelDiff+Answer", "DriftCheck", "DriftCheck+Request",
-            "DriftCheck+Answer", "SyntheticCopy", "ExistingDataFile",
+            "DriftCheck+Answer", "SyntheticCopy", "ExistingDataFile", "Profile", "SqlServer+Signatures", "SqlServer+Signature",
         "Doctor+Readiness", "Doctor+Prerequisite", "Doctor+Item", "Ssdt+ModelElements", "SqlServer+QueryLog", "SqlServer+Reads",
         "Write", "Json", "SchemaText", "PrintedScript", "PasswordForm", "Telemetry", "ServerProbe", "Interruption", "Runner", "Ran",
     ];

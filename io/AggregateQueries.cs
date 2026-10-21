@@ -149,21 +149,13 @@ public static partial class AggregateQueries
 
         /// <summary>TableEmpty read from sys.partitions: the partitions the login sees of the table, heap or clustered index, and their
         /// rows.</summary>
-        internal static Result<TableQuery> OfPartitions(Name table, Precondition precondition, SqlServer.Session session)
-        {
-            var from = Join(Join(Named("sys", "partitions", "p"), Named("sys", "objects", "o"), Equal("o", "object_id", "p", "object_id")),
-                Named("sys", "schemas", "s"), Equal("s", "schema_id", "o", "schema_id"));
-            var where = All([Compare(ColumnRef("s", "name"), BooleanComparisonType.Equals, Unicode(table.Schema ?? "dbo")),
-                Compare(ColumnRef("o", "name"), BooleanComparisonType.Equals, Unicode(table.Base)),
-                In(ColumnRef("p", "index_id"), Number(0), Number(1))]);
-            var select = Select([CountRows(), Call("SUM", ColumnRef("p", "rows"))], from, where);
-            return SqlServer.AggregateQuery.Of(select, table + ": TableEmpty from sys.partitions", session).Map(query =>
+        internal static Result<TableQuery> OfPartitions(Name table, Precondition precondition, SqlServer.Session session) =>
+            PartitionRows(table, table + ": TableEmpty from sys.partitions", session).Map(query =>
                 new TableQuery(table, query, [Part.Rows(precondition)], [new(null, null), new(precondition, null)], [],
                     values => values[0] is > 0
                         ? new Counts([new PreconditionCount(precondition, values[1] ?? 0, values[1] ?? 0)], [], [])
                         : new Counts([], [], [new(precondition, NotPredictable + "sys.partitions shows this login no partition of " + table
                             + ", and a table it cannot see is never read as empty")])));
-        }
 
         /// <summary>Each part's count from the values its items answered, the table's rows first, or why the values leave it not
         /// predictable read-only; a NULL, which SUM gives over no row, is 0.</summary>

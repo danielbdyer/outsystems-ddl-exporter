@@ -242,14 +242,18 @@ public static partial class SqlServer
         target.Match<Result<Database>>(
         environment => environmentsFile.Bind(environments => environments.Named(environment.Name) is { } named
             ? EnvironmentDatabase.Of(named, repositoryRoot).Map(n => (Database)n)
-            : new Error("target.unnamed", environment + " names no environment of " + EnvironmentsFile.Json + ".",
-                environments.All.Count == 0
-                ? "Add the environment to " + EnvironmentsFile.Json + " with its host, connection reference and profile."
-                : "Name one it holds: " + string.Join(", ", environments.All.Select(e => e.Target)) + ".")),
+            : Unnamed(environment, environments)),
         copy => LocalServer.Registered(repositoryRoot, copy.Name, environmentsFile).Map(c => (Database)c),
         () => LocalServer.Synthetic(repositoryRoot, environmentsFile).Map(c => (Database)c),
         reference => NotADatabase(reference),
         dacpac => NotADatabase(dacpac));
+
+    /// <summary>An environment the environments file does not name: target.unnamed, naming those it does.</summary>
+    internal static Error Unnamed(Target.Environment environment, Environments environments) =>
+        new("target.unnamed", environment + " names no environment of " + EnvironmentsFile.Json + ".",
+            environments.All.Count == 0
+            ? "Add the environment to " + EnvironmentsFile.Json + " with its host, connection reference and profile."
+            : "Name one it holds: " + string.Join(", ", environments.All.Select(e => e.Target)) + ".");
 
     private static Error NotADatabase(Target target) => new Error("target.not-a-database",
         target + " is read as a package, and a database is asked for here: env:<name>, copy:<name> or synthetic-copy.",

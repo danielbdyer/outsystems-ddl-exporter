@@ -642,6 +642,40 @@ internal static partial class ErrorPaths
         new("dbchange synthetic-copy with nothing named to do", "arguments.unknown-subcommand", false, (scratch, _) =>
             Carried(Verbs.SyntheticCopy(new Checkout(scratch, scratch, null, Cli.Contract.Version), SqlServer.QueryLog.Start(scratch),
                 []))),
+        new("a column to profile named in two parts", "arguments.column", true, (_, planted) =>
+            Failed(Io.Profile.ColumnOf("dbo." + planted))),
+        new("dbchange profile with no column and no --counts", "arguments.column", false, (scratch, _) =>
+            Carried(Verbs.Profile(new Checkout(scratch, scratch, null, Cli.Contract.Version), SqlServer.QueryLog.Start(scratch),
+                ["--env", "uat"]))),
+        new("dbchange profile --commit without --counts", "arguments.unknown-flag", false, (scratch, _) =>
+            Carried(Verbs.Profile(new Checkout(scratch, scratch, null, Cli.Contract.Version), SqlServer.QueryLog.Start(scratch),
+                ["--env", "uat", "dbo.Customer.Email", "--commit"]))),
+        new("a column the environment's catalog does not show", "target.no-column", false, (_, _) =>
+            Io.Profile.Absent(Target("env:uat"), Made(Name.Of("dbo", "Customer")), "Email")),
+        new("a column of no character type", "target.column-type", false, (_, _) =>
+            Io.Profile.NoText(Target("env:uat"), new SqlServer.CatalogColumn(Made(Name.Of("dbo", "Customer")), "Age", "int", null))),
+        new("a vocabulary asked of an environment classified real", "aggregate-query.vocabulary", false, (scratch, _) =>
+            Carried(Verbs.Profile(new Checkout(RepositoryAt(scratch, Environments(Dev("\"classification\": \"real\"", name: "uat"))),
+                scratch, null, Cli.Contract.Version), SqlServer.QueryLog.Start(scratch), ["--env", "uat", "dbo.Customer.Email",
+                "--vocabulary"]))),
+        new("a vocabulary asked of an environment confirmed synthetic", "verb.not-built", false, (scratch, _) =>
+            Carried(Verbs.Profile(new Checkout(RepositoryAt(scratch, Environments(Dev("\"classification\": \"synthetic\", "
+                + "\"confirmedBy\": \"the dev lead\", \"confirmedOn\": \"2026-10-20\"", name: "uat"))), scratch, null,
+                Cli.Contract.Version), SqlServer.QueryLog.Start(scratch), ["--env", "uat", "dbo.Customer.Email", "--vocabulary"]))),
+        new("a signature query other than the committed form", "aggregate-query.refused", true, (_, planted) =>
+            Failed(SqlServer.SignatureQuery.Of("SELECT t.Email AS signature, COUNT_BIG(*) AS [rows], 1 AS signatures FROM dbo.Customer AS t "
+                + "WHERE t.Email = N'" + planted + "' GROUP BY t.Email", "dbo.Customer.Email"))),
+        new("a signature answered that the committed form never gives", "internal.answer-type", true, (_, planted) =>
+            Failed(SqlServer.Answered([[planted, 1L, 1L]]))),
+        new("a row-tier ledger with no table of its four columns", "ledger.malformed", true, (_, planted) =>
+            Failed(Io.Profile.Appended("# Row tiers\n\n" + planted + "\n", Made(EnvironmentName.Of("--env", "uat")),
+                new DateOnly(2026, 10, 21), [(Made(Name.Of("dbo", "Customer")), "0")]))),
+        new("a row-tier ledger another program holds open", "ledger.unreadable", false, (scratch, _) =>
+        {
+            var ledger = Written(scratch, Io.Profile.Ledger, "# Row tiers\n");
+            using var held = new FileStream(ledger, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            return Failed(Io.Profile.LedgerText(scratch));
+        }),
         new("a word that names no verb", "arguments.unknown-verb", false, (scratch, _) =>
             Answered(["frobnicate"], new Checkout(scratch, scratch, null, Cli.Contract.Version))),
         new("a verb this build has no body for", "verb.not-built", false, (scratch, _) =>

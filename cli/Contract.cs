@@ -177,7 +177,20 @@ public static class Contract
             ]),
         new("classify", "Which operation a change is, provisionally, from the committed evidence."),
         new("predict", "Whether a change blocks or applies on each environment the caller can read, and why."),
-        new("profile", "What an environment's data looks like, as the evidence the synthetic copy is generated from."),
+        new("profile", "The value-free shape of one column of an environment, of either classification: its signatures, each character"
+            + " put in its class, with their counts, those seen fewer than five times or of punctuation and spaces alone folded into one"
+            + " count, and its distinct values as collated beside as bytes; --vocabulary is refused for an environment classified real."
+            + " Or each table's row tier from sys.partitions, appended to dbchange/ledgers/row-tiers.md, and with --commit pushed on a"
+            + " branch of its own. dbchange profile --env <environment> <schema.table.column> [--vocabulary] | dbchange profile --env"
+            + " <environment> --counts [--commit]",
+            Cli.Verbs.Profile, Cli.Verbs.ProfileContent,
+            [
+                new("done", [0], "the column's shape: its signatures seen five times or more with their rows, the rest folded into one"
+                    + " count, and the summary's counts"),
+                new("measured", [0], "each table's row tier measured, a dated row appended to dbchange/ledgers/row-tiers.md for each"
+                    + " tier that changed; with --commit, nothing pushed where no row was appended"),
+                new("pushed", [0], "the row tiers measured and appended, and the ledger committed on a branch of its own and pushed"),
+            ]),
         new("synthetic-copy", "A copy on the local server, built from the repository at a ref and planted with rows that answer each"
             + " precondition as an environment's existing data does; check, status and down arrive later."
             + " dbchange synthetic-copy up [--at <ref>] [--existing-data <file>] [--profile <path>] [--project <path>]",
@@ -249,13 +262,14 @@ public static class Contract
     /// closed ErrorCategory and no discard arm, so a member added there without an arm here fails the build. A name, an element or a
     /// fingerprint the kernel rejects while reading a package or a database is input that could not be parsed (exit 2), as is a package, a
     /// refactorlog, a model two of whose elements share a key, whether io finds it or the kernel, or the copy registry. The environments
-    /// file, a profile, a reference, a connection, a SQLCMD value and the toolchain ledger are configuration (exit 6), whether io or the
-    /// kernel finds the error, and so are a failure DacFx reports with no SQL Server error inside it, such as a package whose target
-    /// platform the server is not, a verb this build lacks, and a defect in dbchange itself. A target of no known form is a bad argument,
-    /// as is a flag or a verb dbchange does not know; a server that does not answer or refuses the identity is exit 4; a copy the registry
-    /// does not hold, a local server on a named host, and an aggregate query the allowlist refuses are refused by name, as are Classify's
-    /// refusals: a rename without its refactorlog entry, and a column-list change or a rebuild of a table CDC tracks. An operation's
-    /// recognize: block that breaks the grammar is configuration (exit 6), as the environments file is.
+    /// file, a profile, a reference, a connection, a SQLCMD value, the toolchain ledger and the row-tier ledger are configuration (exit
+    /// 6), whether io or the kernel finds the error, and so are a failure DacFx reports with no SQL Server error inside it, such as a
+    /// package whose target platform the server is not, a verb this build lacks, and a defect in dbchange itself. A target of no known form
+    /// is a bad argument, as is a flag or a verb dbchange does not know, or a column profile names that the environment does not hold as a
+    /// character type; a server that does not answer or refuses the identity is exit 4; a copy the registry does not hold, a local server
+    /// on a named host, an aggregate query the allowlist refuses, and a vocabulary asked of an environment classified real are refused by
+    /// name, as are Classify's refusals: a rename without its refactorlog entry, and a column-list change or a rebuild of a table CDC
+    /// tracks. An operation's recognize: block that breaks the grammar is configuration (exit 6), as the environments file is.
     /// </summary>
     // CS8524 (an enum value no member names) is disabled for this switch alone; CS8509, a named member without an arm, stays an error.
 #pragma warning disable CS8524
@@ -291,6 +305,7 @@ public static class Contract
         ErrorCategory.File => 6,
         ErrorCategory.Verb => 6,
         ErrorCategory.Internal => 6,
+        ErrorCategory.Ledger => 6,
         ErrorCategory.Build => 7,
         ErrorCategory.Witness => 8,
         ErrorCategory.Lock => 9,

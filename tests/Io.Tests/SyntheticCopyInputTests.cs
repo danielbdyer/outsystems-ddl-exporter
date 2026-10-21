@@ -201,6 +201,8 @@ public sealed class SyntheticCopyInputTests
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Value", "P1")]
+    [Trait("Law", "12′ no value from an environment reaches a copy or a committed file")]
+    [Trait("Exit", "M3.4")]
     [InlineData("N'wAnything'", true)]
     [InlineData("N''", true)]
     [InlineData("N'Acme Holdings'", true)]

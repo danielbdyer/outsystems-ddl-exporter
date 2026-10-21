@@ -1,5 +1,5 @@
 # Next — rewritten by the session that finishes something; never appended
-Updated 2026-10-21 by #705, in wave 7: WP 2.1's second slice, WP 2.6's corpus, WP 3.5's `synthetic-copy up` and WP 7.1's citations.
+Updated 2026-10-21 by #705, in wave 8: WP 3.7's `profile`, a column's signatures and the row tiers.
 
 ## The operator's actions
 - The laptop check against Dev (M1 exit 1, spikes S1 and S3) waits until the operator brings the branch to a laptop:
@@ -18,8 +18,8 @@ Updated 2026-10-21 by #705, in wave 7: WP 2.1's second slice, WP 2.6's corpus, W
 ## Next
 - WP 2.5's predict chains `Vocabulary.Read` and `Coordinates.Of` (a `Declared` takes a person's state; an unclassified statement goes
   to proof), reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`, writes the existing data
-  `up` reads with its trust list, and predicts as `Io.Tests: SampleChangePredictionTests` does for the corpus, whose INSERT scripts
-  the planter's copies replace in M3. Then WP 3.6's `synthetic-copy check`, `status`, `down` and O8's scale test; WP 3.7's `profile`.
+  `up` reads with its trust list, and predicts as `Io.Tests: SampleChangePredictionTests` does for the corpus, whose INSERT scripts the
+  planter's copies replace in M3. Then WP 3.6, M3's last work package, with O8's scale test; `Io.Tests: ProfileTests` holds M3 exit 4.
 - S4's laptop half, the SSDT repository's own schema on LocalDB 16.x, waits on S6; its CI half is a decision line.
 - WP 7.2 rewrites each moved skill's citations to the forms `Citations` accepts (no rewrite map is kept). Of v2's skills/ and agents/,
   one passing block still cites v2 outside the words `Register.Prose` refuses, add-index's line 29, by a bare §19 (the handbook's
