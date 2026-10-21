@@ -79,10 +79,10 @@ directive". As design rules:
   `Precondition`, `PreconditionState`, `ExistingData` and `AppliesTo` keep their names; the local
   server is `LocalServer`; the environments file is `dbchange/environments.json`. The blueprint
   uses these names, and proposes a rename only with the evidence a ruling needs.
-- **The Facsimile**, the Twin's successor (pull request #706, merged here), is specified
-  test-first at `archive/v2/ssdt-agent/facsimile/`: invariants in nine families, a case catalog
-  held by a lint, a target realization, and a handoff into v3. `V3_MILESTONES.md` §3.1 reconciles
-  it with the plan, and M3 is re-cut around its planter, confirmed by the operator on 2026-10-19 (§17 item 20).
+- **The Facsimile**, the Twin's successor (#706, merged here), is specified test-first at
+  `archive/v2/ssdt-agent/facsimile/`: invariants in nine families, a case catalog held by a lint,
+  a target realization, and a handoff into v3. `V3_MILESTONES.md` §3.1 reconciles it with the
+  plan, and M3 is re-cut around its planter, confirmed by the operator (§17 item 20).
 - **Settled by the operator**, and not to be reopened (`V3_MILESTONES.md` §17, after the table):
   C#; MCP as a first-class surface with the CLI as its floor; LocalDB 16.x on the laptops and no
   Docker in the environments' network; who reads which environment; two principals, named in no
