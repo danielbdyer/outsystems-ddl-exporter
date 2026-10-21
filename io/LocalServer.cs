@@ -34,6 +34,20 @@ public static partial class LocalServer
         + "EXEC (@sql); END";
 
     /// <summary>
+    /// The synthetic copy's database made with no guard: its name is the same in every checkout of the same inputs, so a database of the
+    /// name already standing is another checkout's, which SQL Server refuses with Msg 1801 and this checkout never takes over.
+    /// </summary>
+    private const string MakeNamed = "DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql);";
+
+    /// <summary>
+    /// SQL Server's refusals of a make because a database of the copy's name already stands, measured on SQL Server 2022 Express on
+    /// 2026-10-20: CREATE DATABASE's Msg 1801; RESTORE's Msg 3154, a backup of another database than the one standing; Msg 3159, a
+    /// standing database of the backup's own family whose log tail is not backed up; and Msg 1834, a file the restore writes that the
+    /// standing database holds open.
+    /// </summary>
+    private static readonly HashSet<int> Taken = [1801, 3154, 3159, 1834];
+
+    /// <summary>
     /// The copy's database dropped, its sessions ended first, under an application lock in master that this session alone holds
     /// (sp_getapplock, 'dbchange drop ' and the name), so two drops of one copy at once, by two runs' sweeps or by two Drop calls, run one
     /// after the other and the second finds the database gone. Without the lock the second's ALTER DATABASE is killed by the first's
@@ -208,39 +222,59 @@ public static partial class LocalServer
 
     /// <summary>
     /// A copy on the server given, its database made empty by CREATE DATABASE (<see cref="Made"/>); <paramref name="now"/> is the clock the
-    /// sweep and the row read, the time now unless a test moves it.
+    /// sweep and the row read, the time now unless a test moves it; <paramref name="named"/> is the synthetic copy's name, where the copy
+    /// is it, and a run's copy takes a name of its own.
     /// </summary>
     internal static Result<SqlServer.Copy> Create(string repositoryRoot, string server, SqlServer.QueryLog log,
-        Func<string, IPAddress[]>? resolve = null, DateTimeOffset? now = null) =>
+        Func<string, IPAddress[]>? resolve = null, DateTimeOffset? now = null, CopyName? named = null) =>
         Made(repositoryRoot, server, log, resolve ?? Resolved, now ?? DateTimeOffset.UtcNow,
-            copy => Run(copy, "CREATE DATABASE", Make, log), leavesDatabase: false);
+            copy => Making(copy, "CREATE DATABASE", copy.Name.IsSynthetic ? MakeNamed : Make, log), leavesDatabase: false, named);
 
     /// <summary>
     /// A copy on the server given, refused on a named environment's host (R15 against dbchange/environments.json, read here once); this
     /// host's copies registered on that server more than a day before <paramref name="now"/> swept first; recorded with its server before
     /// <paramref name="make"/> makes its database, so a crash leaves a row to follow. A failed make removes the row; where the failure can
     /// have left a database (<paramref name="leavesDatabase"/>, a RESTORE), the database is dropped first, and a row whose database could
-    /// not be dropped stays for the sweep.
+    /// not be dropped stays for the sweep; but a make refused as copy.foreign leaves the database standing, since another checkout made
+    /// it. The copy takes <paramref name="named"/> where it is given, the synthetic copy's name, and else a name of its own; its row names
+    /// this machine either way.
     /// </summary>
     private static Result<SqlServer.Copy> Made(string repositoryRoot, string server, SqlServer.QueryLog log,
-        Func<string, IPAddress[]> resolve, DateTimeOffset now, Func<SqlServer.Copy, Result<SqlServer.Copy>> make, bool leavesDatabase) =>
+        Func<string, IPAddress[]> resolve, DateTimeOffset now, Func<SqlServer.Copy, Result<SqlServer.Copy>> make, bool leavesDatabase,
+        CopyName? named = null) =>
         ServerName(server).Bind(name => EnvironmentsFile.Read(repositoryRoot)
             .Bind(environments => Unnamed(environments, repositoryRoot, name, resolve)))
             .Bind(name => Swept(repositoryRoot, server, name, now, log).Map(_ => name)).Bind(name =>
         {
-            var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId,
+            var copy = new SqlServer.Copy(named ?? CopyName.Make(Environment.MachineName, Environment.ProcessId,
                 BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, repositoryRoot);
             var row = new JsonObject
             {
-                ["name"] = copy.Name.ToString(), ["server"] = name.ToString(), ["machine"] = copy.Name.Machine,
-                ["pid"] = Environment.ProcessId,
+                ["name"] = copy.Name.ToString(), ["server"] = name.ToString(),
+                ["machine"] = CopyName.Make(Environment.MachineName, 0, 0).Machine, ["pid"] = Environment.ProcessId,
                 ["created"] = now.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
             };
             return Change(repositoryRoot, rows => [.. rows, row]).Bind(_ => make(copy).Match(
                 made => Result.Ok(made),
-                error => (leavesDatabase ? Run(copy, "DROP DATABASE", Unmake, log) : Result.Ok(copy))
+                error => (leavesDatabase && error.Code != "copy.foreign" ? Run(copy, "DROP DATABASE", Unmake, log) : Result.Ok(copy))
                     .Match(Unregistered, _ => Result.Ok(copy)).Bind(_ => Result.Fail<SqlServer.Copy>(error))));
         });
+
+    /// <summary>
+    /// A statement that makes the copy's database, sent as <see cref="Run{T}"/> sends one. Where the copy takes the synthetic copy's name,
+    /// a refusal SQL Server gives because a database of that name already stands (<see cref="Taken"/>) is copy.foreign: another checkout
+    /// made it between up's look at master and this statement. Any other refusal is the error its number maps to, as Run maps it.
+    /// </summary>
+    private static Result<SqlServer.Copy> Making(SqlServer.Copy copy, string site, string statement, SqlServer.QueryLog log,
+        params (string Name, string Value)[] parameters) =>
+        SqlServer.Query(copy, new SqlServer.Statement(site, statement)
+        {
+            Timeout = DatabaseStatementTimeout, Catalog = "master", Pooled = false,
+            Parameters = [("@name", copy.Name.ToString()), .. parameters],
+        }, log, _ => Result.Ok(copy), failed => copy.Name.IsSynthetic && Taken.Contains(failed.Number)
+            ? Foreign(copy.Name, ConnectionString.ServerOf(new SqlConnectionStringBuilder(copy.Connection)))
+            : Result.Fail<SqlServer.Copy>(copy.ErrorOf(failed.Number, failed.Message ?? "", fatal: false, opened: true)))
+        .Bind(made => made);
 
     /// <summary>
     /// copy: resolved against .dbchange/copies.json alone: the row holding the name, on a server R15 clears against the environments file

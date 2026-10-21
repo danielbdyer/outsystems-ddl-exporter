@@ -71,6 +71,7 @@ public enum ErrorCategory
     Pattern,
     Plan,
     Environments,
+    ExistingData,
     Profile,
     Ref,
     Refactorlog,
@@ -86,6 +87,7 @@ public enum ErrorCategory
     Tool,
     Toolchain,
     Verb,
+    Witness,
 }
 
 /// <summary>The form of an error code, and each category as a code writes it: the one grammar the kernel applies and cli/Render.cs writes
@@ -132,6 +134,7 @@ public static class ErrorCode
         ErrorCategory.Pattern => "pattern",
         ErrorCategory.Plan => "plan",
         ErrorCategory.Environments => "environments",
+        ErrorCategory.ExistingData => "existing-data",
         ErrorCategory.Profile => "profile",
         ErrorCategory.Ref => "ref",
         ErrorCategory.Refactorlog => "refactorlog",
@@ -147,6 +150,7 @@ public static class ErrorCode
         ErrorCategory.Tool => "tool",
         ErrorCategory.Toolchain => "toolchain",
         ErrorCategory.Verb => "verb",
+        ErrorCategory.Witness => "witness",
 #pragma warning restore CS8524
     };
 

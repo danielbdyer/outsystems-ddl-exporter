@@ -99,25 +99,43 @@ public readonly record struct EnvironmentName : IComparable<EnvironmentName>
 }
 
 /// <summary>
-/// A copy's database name, as dbchange makes one and copy: names one (DECISIONS.md, 2026-09-25):
+/// A copy's database name, as dbchange makes one and copy: names one (DECISIONS.md, 2026-09-25), in one of two forms. A run's copy is
 /// dbchange_&lt;host&gt;_&lt;pid&gt;_&lt;hex&gt;, the name of the machine that made it in lowercase letters, digits and '_' (1 to 40), the
-/// id of the process that made it, and eight hexadecimal digits. The machine and the process let a later run drop the copies of a process
-/// that ended on this machine. The one grammar of the name. default(CopyName) is not a name.
+/// id of the process that made it, and eight hexadecimal digits; the machine and the process let a later run drop the copies of a process
+/// that ended on this machine. The synthetic copy is dbchange_synthetic_&lt;16 hex&gt;_existing-data[_&lt;16 hex&gt;] (V3_MILESTONES.md §4
+/// row 13): the first sixteen hexadecimal digits of its base's fingerprint, over the package, the profile, DacFx and the server, and of the
+/// fingerprint of the existing data planted in it, where one is; it names no machine and no process, so Machine is empty and Pid 0 for
+/// it, and no sweep chooses it. A run's name never takes the synthetic form, which holds a '-'. The one grammar of the name.
+/// default(CopyName) is not a name.
 /// </summary>
 public readonly record struct CopyName : IComparable<CopyName>
 {
     private static readonly Regex Grammar = new(@"\Adbchange_(?<machine>[a-z0-9_]{1,40})_(?<pid>0|[1-9][0-9]{0,9})_[0-9a-f]{8}\z",
         RegexOptions.CultureInvariant);
 
+    private static readonly Regex SyntheticGrammar =
+        new(@"\Adbchange_synthetic_(?<base>[0-9a-f]{16})_existing-data(?:_(?<data>[0-9a-f]{16}))?\z", RegexOptions.CultureInvariant);
+
     private readonly string? _text;
 
     private CopyName(string text, string machine, int pid) => (_text, Machine, Pid) = (text, machine, pid);
 
-    /// <summary>The name of the machine that made the copy, as the copy's name carries it.</summary>
+    /// <summary>The name of the machine that made a run's copy, as the copy's name carries it; empty for the synthetic copy.</summary>
     public string Machine { get; }
 
-    /// <summary>The id of the process that made the copy.</summary>
+    /// <summary>The id of the process that made a run's copy; 0 for the synthetic copy.</summary>
     public int Pid { get; }
+
+    /// <summary>Whether the name is the synthetic copy's, dbchange_synthetic_&lt;16 hex&gt;_existing-data[_&lt;16 hex&gt;].</summary>
+    public bool IsSynthetic => _text is not null && SyntheticGrammar.IsMatch(_text);
+
+    /// <summary>The synthetic copy's first sixteen hexadecimal digits of its base's fingerprint; null for a run's copy.</summary>
+    public string? Base => _text is not null && SyntheticGrammar.Match(_text) is { Success: true } m ? m.Groups["base"].Value : null;
+
+    /// <summary>The synthetic copy's first sixteen hexadecimal digits of its existing data's fingerprint; null for a synthetic copy that
+    /// holds presence rows alone, and for a run's copy.</summary>
+    public string? ExistingData => _text is not null && SyntheticGrammar.Match(_text) is { Success: true } m && m.Groups["data"].Success
+        ? m.Groups["data"].Value : null;
 
     /// <summary>The name <paramref name="text"/> gives, or copy.unregistered led by <paramref name="subject"/>, the text unquoted:
     /// .dbchange/copies.json holds no copy by a name dbchange never gives one.</summary>
@@ -125,11 +143,21 @@ public readonly record struct CopyName : IComparable<CopyName>
         text is not null && Grammar.Match(text) is { Success: true } match
             && int.TryParse(match.Groups["pid"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var pid)
             ? new CopyName(text, match.Groups["machine"].Value, pid)
-            : new Error("copy.unregistered",
-                subject + " names a copy by a name dbchange never gives one, so .dbchange/copies.json holds no copy by it;"
-                + " dbchange names a copy dbchange_<host>_<pid>_<hex>, for the machine and the process that made it,"
-                + " in lowercase letters, digits and '_'.",
-                "Name a copy that .dbchange/copies.json holds on this machine.");
+        : text is not null && SyntheticGrammar.IsMatch(text) ? new CopyName(text, "", 0)
+        : new Error("copy.unregistered",
+            subject + " names a copy by a name dbchange never gives one, so .dbchange/copies.json holds no copy by it;"
+            + " dbchange names a copy dbchange_<host>_<pid>_<hex>, for the machine and the process that made it,"
+            + " in lowercase letters, digits and '_', and the synthetic copy dbchange_synthetic_<16 hex>_existing-data[_<16 hex>].",
+            "Name a copy that .dbchange/copies.json holds on this machine.");
+
+    /// <summary>
+    /// The synthetic copy's name for a base and the existing data planted in it: dbchange_synthetic_, the first sixteen hexadecimal digits
+    /// of <paramref name="base"/>, _existing-data, and, where <paramref name="existingData"/> is given, _ and its first sixteen; 66
+    /// characters at most, well within the 128 a database name holds.
+    /// </summary>
+    public static CopyName Synthetic(Fingerprint @base, Fingerprint? existingData) =>
+        new("dbchange_synthetic_" + @base.ToString()[..16] + "_existing-data"
+            + (existingData is { } data ? "_" + data.ToString()[..16] : ""), "", 0);
 
     /// <summary>
     /// The name a copy made by process <paramref name="pid"/> on the machine <paramref name="machineName"/> takes, with

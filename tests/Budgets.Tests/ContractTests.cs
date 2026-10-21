@@ -26,8 +26,8 @@ public sealed partial class ContractTests
     public static TheoryData<string> Answers => new(Contract.Verbs.Select(v => v.Name).Concat(["no-such-verb", ""]));
 
     /// <summary>
-    /// The help as the built dbchange prints it validates against its schema and says which verbs this build has: the four of M1 and
-    /// --version.
+    /// The help as the built dbchange prints it validates against its schema and says which verbs this build has: the four of M1,
+    /// synthetic-copy and --version.
     /// </summary>
     [Fact]
     [Trait("Category", "build")]
@@ -39,11 +39,43 @@ public sealed partial class ContractTests
         Assert.DoesNotContain('\r', output);
         var help = JsonNode.Parse(output)!;
         VerbAnswer.Valid("dbchange.help.1.schema.json", help);
-        Assert.Equal(["doctor", "read", "diff", "check", "--version"],
+        Assert.Equal(["doctor", "read", "diff", "synthetic-copy", "check", "--version"],
             help["verbs"]!.AsArray().Where(v => (bool)v!["built"]!).Select(v => (string)v!["name"]!));
-        help["exits"]![0]!["code"] = 8;
+        help["exits"]![0]!["code"] = 10;
         Assert.False(VerbAnswer.Evaluate("dbchange.help.1.schema.json", help).IsValid,
             "the schema admits an exit code the table does not have");
+    }
+
+    /// <summary>
+    /// The help names each outcome a verb answers with, at its exit, since the bundle and cli/VERBS.md are generated from it (AGENTS.md):
+    /// each kind of answer synthetic-copy up gives, built and current at exit 0, differs at exit 5 and needs-input at exit 8, takes an
+    /// outcome the help lists for synthetic-copy at that exit, and validates against the verb's schema.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData(Io.SyntheticCopy.Kind.Built, "built", 0)]
+    [InlineData(Io.SyntheticCopy.Kind.Current, "current", 0)]
+    [InlineData(Io.SyntheticCopy.Kind.Differs, "differs", 5)]
+    [InlineData(Io.SyntheticCopy.Kind.NeedsInput, "needs-input", 8)]
+    public void Each_answer_synthetic_copy_up_gives_takes_an_outcome_its_help_lists_at_its_exit(Io.SyntheticCopy.Kind kind, string word,
+        int exit)
+    {
+        Finding[] findings = kind switch
+        {
+            Io.SyntheticCopy.Kind.Differs => [Finding.Warning("synthetic-copy.identity", "Table [dbo].[Order]",
+                "The plan from the base to the copy would alter Table [dbo].[Order].", "Run dbchange check drift --target synthetic-copy.")],
+            Io.SyntheticCopy.Kind.NeedsInput => [Finding.Error("witness.acceptance", "NotNull on [dbo].[Order] ([Total])",
+                "The copy answers NotNull on [dbo].[Order] ([Total]) populated and clean.", "Plant a row that breaks it.")],
+            _ => [],
+        };
+        var answer = Verbs.Copied(new Io.SyntheticCopy.Answer(kind, CopyName.Synthetic(Fingerprint.Of("a base"), null),
+            Expect.Value(GitRef.Of("--at", "main")), new string('a', 40), null, false, [], [], [], findings, []),
+            new Stamp(Expect.Value(DacFx.Version)));
+        var listed = Render.Help()["verbs"]!.AsArray().Single(v => (string?)v!["name"] == "synthetic-copy")!["outcomes"]!.AsArray();
+
+        Assert.Equal((word, exit), (answer.Outcome.Word, answer.Exit));
+        Assert.Contains(listed, o => (string?)o!["outcome"] == word && o["exits"]!.AsArray().Any(e => (int)e! == exit));
+        VerbAnswer.Valid("dbchange.synthetic-copy.1.schema.json", Render.Json(answer));
     }
 
     [Fact]
@@ -526,6 +558,7 @@ public sealed partial class ContractTests
     [Trait("Value", "S2")]
     [InlineData("predict")]
     [InlineData("check outsystems")]
+    [InlineData("synthetic-copy status")]
     public void A_verb_this_build_does_not_have_answers_exit_6_with_verb_not_built_naming_the_verb(string verb)
     {
         var (exit, answer) = Answered([.. verb.Split(' '), "--json"],

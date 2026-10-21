@@ -135,6 +135,48 @@ public sealed class CopyCacheTests : IDisposable
         Assert.False(File.Exists(Path.Combine(root, ".dbchange", "cache", "backups.json")), "a server with no cache had a backup indexed");
     }
 
+    /// <summary>
+    /// VALUES.md O6 at the synthetic copy's name, which every checkout of the same inputs computes alike, and which up looks for in master
+    /// before it makes the copy: where another checkout's database takes the name after that look, the make is refused copy.foreign. From
+    /// a second repository root, Create of the name another root's database holds is refused by SQL Server's Msg 1801 and Restore of a
+    /// backup into it by Msg 3154; neither registers the name in the second root's registry, neither drops the database, and the
+    /// database keeps its rows.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    [Trait("Value", "O6")]
+    public async Task A_synthetic_name_another_checkout_s_database_holds_is_copy_foreign_to_Create_and_Restore_and_the_database_stands()
+    {
+        var server = await SqlServerFixture.ServerAsync();
+        var other = SqlServerFixture.RepositoryRoot(Path.Combine(Repository.Root, ".dbchange", "copies-under-test",
+            Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]));
+        var name = CopyName.Synthetic(Fingerprint.Of("another checkout's copy " + Guid.NewGuid().ToString("N")), null);
+        var key = Fingerprint.Of("another checkout's backup " + Guid.NewGuid().ToString("N"));
+        using var made = DisposableCopy.Of(Value(LocalServer.Create(root, server, SqlServer.QueryLog.Start(root), named: name)));
+        try
+        {
+            await SqlServerFixture.ExecuteAsync(made.Copy.Connection, "CREATE TABLE dbo.Kept (Id int); INSERT INTO dbo.Kept (Id) VALUES (1);");
+            using (var backedUp = DisposableCopy.Of(Value(LocalServer.Create(other, server, SqlServer.QueryLog.Start(other)))))
+            {
+                Value(LocalServer.BackUp(backedUp.Copy, key, SqlServer.QueryLog.Start(other)));
+            }
+
+            var created = Failed(LocalServer.Create(other, server, SqlServer.QueryLog.Start(other), named: name), "copy.foreign");
+            var restored = Failed(LocalServer.Restore(other, server, key, SqlServer.QueryLog.Start(other), named: name), "copy.foreign");
+
+            Assert.All(new[] { created, restored }, error => Assert.Contains(name.ToString(), error.Message, StringComparison.Ordinal));
+            Assert.True(await SqlServerFixture.ExistsAsync(name.ToString()), "a refused make dropped " + name);
+            Assert.Equal(1, await SqlServerFixture.ScalarAsync(made.Copy.Connection, "SELECT COUNT(*) FROM dbo.Kept;"));
+            Assert.DoesNotContain(JsonNode.Parse(File.ReadAllText(Path.Combine(other, ".dbchange", "copies.json")))!["copies"]!.AsArray(),
+                row => (string)row!["name"]! == name.ToString());
+        }
+        finally
+        {
+            await SqlServerFixture.DeleteBackupsAsync(other);
+            Directory.Delete(other, recursive: true);
+        }
+    }
+
     /// <summary>The fresh copy, made as <paramref name="restored"/> says, with no note: the cache serves this server.</summary>
     private static SqlServer.Copy Fresh(Result<LocalServer.Fresh> made, bool restored)
     {
