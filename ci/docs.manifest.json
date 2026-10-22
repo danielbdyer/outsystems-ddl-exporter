@@ -153,6 +153,16 @@
       "ancestor": []
     },
     {
+      "path": "DBCHANGE_LITE.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the lite tool's build session"],
+      "moment": ["until the lite tool moves to the SSDT repository"],
+      "budget": 224,
+      "generator": null,
+      "ancestor": []
+    },
+    {
       "path": ".github/PULL_REQUEST_TEMPLATE/schema-change.md",
       "kind": "hand",
       "owner": "tool",

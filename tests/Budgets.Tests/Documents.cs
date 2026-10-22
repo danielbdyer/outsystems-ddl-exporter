@@ -34,7 +34,7 @@ internal static class Documents
     /// </summary>
     public static readonly IReadOnlyList<string> RootDesign =
         ["V3_ARCHITECTURE.md", "V3_INSTRUCTION_ARCHITECTURE.md", "LIFECYCLE_BACKPORT_PROMPT.md", "V3_MILESTONES.md", "V3_BUILD_PROMPT.md",
-         "V3_BLUEPRINT_PROMPT.md", "V3_PARITY.md"];
+         "V3_BLUEPRINT_PROMPT.md", "V3_PARITY.md", "DBCHANGE_LITE.md"];
 
     /// <summary>
     /// M8, one tool: the root design documents leave for archive/design/ and the cutover tools' "not held yet" ends as it starts.
