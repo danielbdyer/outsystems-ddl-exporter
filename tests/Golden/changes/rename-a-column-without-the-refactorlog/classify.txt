@@ -1,0 +1,1 @@
+error rename.column-without-entry Column [dbo].[Customer].[MobileNumber]

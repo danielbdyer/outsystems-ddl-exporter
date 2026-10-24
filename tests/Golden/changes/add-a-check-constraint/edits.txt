@@ -1,0 +1,4 @@
+=== Modules/Product.sql
+--- CONSTRAINT PK_Product_Id PRIMARY KEY CLUSTERED (Id)
++++ CONSTRAINT PK_Product_Id PRIMARY KEY CLUSTERED (Id),
++++     CONSTRAINT CK_Product_Code CHECK (LEN(Code) > 0)

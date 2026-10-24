@@ -1,0 +1,4 @@
+precondition Unique on [sales].[CustomerAddress] ([Id])
+empty: applies
+populated: applies
+violating: applies

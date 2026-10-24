@@ -1,0 +1,19 @@
+=== Modules/OrderStatusText.sql
+--- -- Intentionally no schema object. The column lives in Modules/Order.sql.
++++ CREATE TYPE dbo.Code FROM NVARCHAR(10) NOT NULL;
++++ GO
++++ CREATE TYPE dbo.Lines AS TABLE (Id INT NOT NULL, Doubled AS Id * 2);
++++ GO
++++ CREATE TABLE dbo.Measured (Id INT NOT NULL PRIMARY KEY, Doubled AS Id * 2, Kept INT SPARSE NULL, Everything XML COLUMN_SET FOR ALL_SPARSE_COLUMNS);
++++ GO
++++ CREATE STATISTICS ST_Measured_Id ON dbo.Measured (Id);
++++ GO
++++ CREATE FUNCTION dbo.Inline() RETURNS TABLE AS RETURN SELECT 1 AS One;
++++ GO
++++ CREATE FUNCTION dbo.Multi() RETURNS @t TABLE (One INT) AS BEGIN INSERT @t VALUES (1); RETURN; END
++++ GO
++++ CREATE PROCEDURE dbo.WithParameter @Id INT AS SELECT @Id AS Id;
++++ GO
++++ CREATE ROLE MeasuredReader;
++++ GO
++++ GRANT SELECT ON dbo.Measured TO MeasuredReader;

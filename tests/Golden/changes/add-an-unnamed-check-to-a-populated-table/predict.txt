@@ -1,0 +1,4 @@
+precondition Check on [dbo].[OrderLine] ([LineNumber])
+empty: applies
+populated: applies
+violating: blocks by Check on [dbo].[OrderLine] ([LineNumber]); ships as add-check

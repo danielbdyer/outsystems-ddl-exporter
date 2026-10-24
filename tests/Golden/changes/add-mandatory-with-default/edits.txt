@@ -1,0 +1,4 @@
+=== Modules/Customer.sql
+--- AccountId       INT             NULL,
++++ AccountId       INT             NULL,
++++     Tier            INT             NOT NULL CONSTRAINT DF_Customer_Tier DEFAULT (0),

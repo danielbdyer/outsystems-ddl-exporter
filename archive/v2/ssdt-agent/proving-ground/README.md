@@ -1,0 +1,268 @@
+# proving-ground — the runbook
+
+This is the runbook for the proving loop. The proving-ground directory is a **hand-authored,
+self-contained sample project** (it is data, not a wrapper script) plus a **disposable copy of
+real-shaped data** on a local SQL Server container. Edit a `CREATE`, build a dacpac, and publish
+it against the disposable copy to watch what SSDT's publish engine actually does. **The publish
+result is the evidence:** how a change ships and what the approving dev lead weighs are read from what SSDT actually
+does — the block, the guard it emits, the row counts — never from a recipe.
+
+Run these commands by hand — there is no orchestration script. The blocks below are the
+worked commands; read them, then run them in order.
+
+> **Running in parallel with other executors?** This runbook publishes to one shared
+> `ProvingGround` database and edits the authored tree in place — fine for a SINGLE prover
+> working interactively. For MANY subagents proving cases at once, the shared DB and in-place
+> edits collide; follow **`../self-test/PROTOCOL.md`** instead — copy
+> the tree to a private scratch dir and publish to a UNIQUE database
+> (`/TargetDatabaseName:PG_<testId>_<rand>`, which overrides the profile's Initial Catalog).
+> That is how a hundred provers share the warm container without colliding on the same `.sql`,
+> the same `bin/`, or the same DB.
+
+## The Twin substrate (preferred) vs this warm-container runbook
+
+`twin.json` (beside this file) wires the proving ground as a **Twin** — the deterministic,
+evidence-profiled local dev environment (`../../THE_TWIN.md`). When the `twin` CLI is present,
+prefer it for the BEFORE state:
+
+```bash
+cd ssdt-agent/proving-ground     # from sidecar/projection/
+twin up      # stands up twin-ssdt-agent on localhost,21434; DacFx-publishes Modules/**/*.sql;
+             # applies Data/Seed.sql; mints deterministically (no sqlpackage). `twin reset` tears down.
+```
+
+The Twin establishes the deterministic BEFORE state; the sqlpackage proving loop below then targets
+`localhost,21434 / twin` (see `../skills/talk-to-local-sql/SKILL.md` §"substrate of record" and
+`../skills/prove-on-dacpac/SKILL.md` §"On the Twin substrate"). This warm-container runbook
+(`localhost,11433 / ProvingGround`) is the **fallback** when the Twin is not wired. The Twin gives
+the sample its reproducible base; the flip-twin variants (empty / clean / violating) stay
+**seed-based** here — the Twin's scenario/pin flip mechanism is for synthetically-minted estates,
+not the static seed.
+
+## 0 — The working directory and the runtime shim (REQUIRED)
+
+Run everything below from **`sidecar/projection/`** — the paths in the commands (`scripts/…`,
+`ssdt-agent/…`) resolve from there, not from the repo root.
+
+`sqlpackage` is installed as a dotnet tool targeting .NET 8. Export these in every shell that
+runs `sqlpackage`, or the tool fails to start — point `DOTNET_ROOT` at the real local dotnet
+root, and keep the roll-forward whenever the installed runtime is newer:
+
+```bash
+export DOTNET_ROOT=/root/.dotnet   # wherever the local dotnet root is
+export DOTNET_ROLL_FORWARD=Major
+# Git Bash only: export MSYS_NO_PATHCONV=1  (keeps /Action: switches + /opt/... docker paths intact)
+```
+
+`sqlpackage` is expected on PATH (`dotnet tool install -g microsoft.sqlpackage`; the findings in
+this tree were proven at version 170.4.83 — **stamp the version you actually ran into every
+finding**, because guard behaviour is version-bound). In Claude Code web sessions the
+SessionStart hook installs it and exports the shim; the version pin lives in
+`../estate/toolchain.md` (UNPINNED until the estate pipeline's DacFx version is recorded there).
+On any other box, install it manually as above. One worked Windows box, verbatim, for
+contrast: `DOTNET_ROOT="C:/Users/<you>/AppData/Local/Microsoft/dotnet"`, the tool at
+`%USERPROFILE%\.dotnet\tools\sqlpackage.exe`, Git Bash with `MSYS_NO_PATHCONV=1`.
+(Alternative to the shim: install the .NET 8 runtime — then the env vars are unnecessary.)
+
+## 1 — Warm the disposable substrate
+
+Reuse the existing helper (plain bash, already in the repo — do not write a new one):
+
+```bash
+scripts/warm-sql.sh start
+```
+
+This brings up container `projection-mssql-warm`:
+
+| setting   | value                                                         |
+|-----------|---------------------------------------------------------------|
+| Server    | `localhost,11433`                                             |
+| User      | `sa`                                                          |
+| Password  | `Projection@Strong1`                                          |
+| Options   | `TrustServerCertificate=True;Encrypt=False`                   |
+
+The host has **no `sqlcmd`** — issue SQL through the container:
+
+```bash
+docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'Projection@Strong1' -C -Q "<sql>"
+```
+
+Create the disposable database once (drop it first if a previous run left it dirty):
+
+```bash
+docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'Projection@Strong1' -C -Q \
+  "IF DB_ID('ProvingGround') IS NOT NULL BEGIN ALTER DATABASE ProvingGround SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ProvingGround; END; CREATE DATABASE ProvingGround;"
+```
+
+> `talk-to-local-sql` owns the substrate details, the connection string, and the content-hash
+> comparison. A batch of "Could not open a connection" failures means the warm container died —
+> `scripts/warm-sql.sh restart`; do not suspect the change.
+
+## 2 — Build the dacpac
+
+```bash
+dotnet build ssdt-agent/proving-ground/SampleCatalog.sqlproj -c Release
+# -> ssdt-agent/proving-ground/bin/Release/SampleCatalog.dacpac
+```
+
+> `SampleCatalog.sqlproj` is an **SDK-style** (Microsoft.Build.Sql) project, which is why the
+> .NET CLI builds it headless on any machine — including CI. It is CLI substrate, not IDE
+> content: do **not** add it to a Visual Studio solution. Visual Studio 2026 opens only original
+> (classic) SQL projects, and in Visual Studio 2022 the SDK-style experience is a preview
+> component that cannot be installed side-by-side with classic SSDT. (An estate's own classic
+> `.sqlproj` builds with MSBuild instead — `../PROVING_PATH_WINDOWS.md` step 5.)
+
+## 3 — Establish the BEFORE state (once per scenario)
+
+Publish the *current* CREATEs and run the post-deploy seed so the disposable copy holds the
+real-shaped data the proof depends on. The first publish of the unedited project does exactly
+this:
+
+```bash
+sqlpackage /Action:Publish \
+  /SourceFile:ssdt-agent/proving-ground/bin/Release/SampleCatalog.dacpac \
+  /Profile:ssdt-agent/proving-ground/profiles/ProvingGround.Strict.publish.xml
+```
+
+Now the seed scenarios (NULL emails, orphan order, over-length + duplicate Code) are present.
+
+## 4 — Make the destination edit
+
+Edit the matching `Modules/*.sql` `CREATE` to the destination. **Never write `ALTER`.** Then
+rebuild the dacpac (step 2). One edit, one proof.
+
+## 5 — PREVIEW the real delta (changes nothing)
+
+```bash
+sqlpackage /Action:Script \
+  /SourceFile:ssdt-agent/proving-ground/bin/Release/SampleCatalog.dacpac \
+  /Profile:ssdt-agent/proving-ground/profiles/ProvingGround.Strict.publish.xml \
+  /OutputPath:ssdt-agent/proving-ground/bin/Release/delta.sql
+```
+
+Read `bin/Release/delta.sql` (the canonical delta path — beside the dacpac it was scripted
+from; every surface in this tree uses this same path). This is the REAL SSDT-generated change — the thing a raw `sqlcmd` ALTER loop
+can never reveal. Look for: `DROP`+`CREATE` on a rename (a rename with no refactorlog entry —
+STOP), a shadow-table rebuild (table swap), drop-by-absence, `GenerateSmartDefaults` backfills,
+and — for a make-mandatory — the **table-has-rows guard**
+`IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer]) RAISERROR(...,16,127)` placed *above* the
+`ALTER COLUMN ... NOT NULL`. That guard inspects row PRESENCE, not the column's NULLs.
+
+## 6 — Publish under Strict (Strict blocks on data loss)
+
+```bash
+sqlpackage /Action:Publish \
+  /SourceFile:ssdt-agent/proving-ground/bin/Release/SampleCatalog.dacpac \
+  /Profile:ssdt-agent/proving-ground/profiles/ProvingGround.Strict.publish.xml
+```
+
+- **Succeeds clean, no script** → ships as a single schema change, applied in place; no data is
+  read or written.
+- **Blocked** (`BlockOnPossibleDataLoss` / NOT NULL on a populated table / truncation / orphan
+  FK / duplicate key) → the existing rows determine how it ships and what the approving dev lead weighs. The block text and
+  row counts are the proof.
+
+> **Read the outcome from the TEXT, not `$?`.** A blocked publish does not reliably exit
+> non-zero (and any `| tail` pipeline masks the status entirely). The block is the presence of
+> `Could not deploy package` with the `Msg` lines beneath it; a clean publish is that text's
+> absence plus `Successfully published database`. The text is the verdict signal, every time.
+
+> **make-mandatory caveat.** The block on NULL->NOT NULL is
+> **table-has-rows, not column-has-NULLs.** On a POPULATED table the block stands even after
+> every NULL is backfilled away — PROVEN here: 0 NULL emails, Strict STILL blocked, the column
+> stayed nullable. Only an EMPTY table publishes clean (ships in place, single-phase). See step 8
+> for the corrected remedy; do not report the old "backfill -> clean NOT NULL" recipe.
+
+## 7 — When blocked only: read the consequence (Permissive) + hash snapshot
+
+Snapshot the data hash, publish Permissively to let the change proceed past the block, snapshot
+again, and diff:
+
+```bash
+# BEFORE hash (see talk-to-local-sql for the exact per-row SHA2_256(FOR XML RAW) query)
+sqlpackage /Action:Publish \
+  /SourceFile:ssdt-agent/proving-ground/bin/Release/SampleCatalog.dacpac \
+  /Profile:ssdt-agent/proving-ground/profiles/ProvingGround.Permissive.publish.xml
+# AFTER hash; diff BEFORE vs AFTER -> exactly what GenerateSmartDefaults stamped / what truncated
+```
+
+A rename changes the hash by design (the column name is part of the row shape) — that diff *is*
+the proof, not a bug.
+
+## 8 — Author the remedy, then re-prove Strict clean
+
+Write the real remedy — a `Script.PreDeployment.sql` backfill, a refactorlog entry, a pre-deploy
+reconcile for an FK orphan (the declarative add then emits `WITH NOCHECK ADD` + `WITH CHECK CHECK`
+and trusts itself — F9, no manual step), a pre-deploy dedupe. If a Permissive run (step 7) or
+a blocked publish already touched the copy, **reset first** (step 9's drop/recreate, then step
+3's BEFORE state) — a blocked publish is non-atomic and can leave residue (an untrusted FK), and
+a proof taken over that residue proves nothing. Then rebuild and re-run **step 6**.
+**The clean Strict re-run, from a reset copy, is the proof carried to the developer.**
+
+> **make-mandatory is the exception.** On a populated table a backfill does NOT produce a clean
+> Strict re-run — the table-has-rows guard still fires. The corrected, proven remedy is the
+> **two-release** pattern, because this pipeline cannot relax `BlockOnPossibleDataLoss`
+> (`../FINDINGS_AND_CHANGES.md` Part 1): **R1** backfills the NULLs and runs `ALTER … NOT NULL` in a
+> pre-deploy with the model still declaring `NULL` (so DacFx emits no data-loss step); **R2** the
+> model catches up as a no-op. The proof packet carries the zero-NULL probe AND the clean two-release
+> re-run. The EMPTY-table leg is the clean, in-place, single-phase contrast.
+
+## 9 — Reset between scenarios
+
+Each scenario starts from the known seed. Drop and recreate `ProvingGround` (step 1) before the
+next scenario so one scenario's edits do not contaminate the next. (Parallel executors skip
+this — each owns a fresh unique DB per `../self-test/PROTOCOL.md`.)
+
+---
+
+## Seed scenario → outcome map
+
+| seed scenario (in `Data/Seed.sql`) | the change proven | the outcome it demonstrates | self-test |
+|---|---|---|---|
+| Customer rows 3 & 5 have `Email` NULL (table populated) | make-mandatory `Email NOT NULL` | Strict blocks — guard is **table-has-rows**; backfill clears the NULLs but NOT the block → **two releases** (this pipeline cannot relax the gate) | COL-03 |
+| Customer table EMPTY (skip the seed / truncate) | the SAME `Email NOT NULL` | no rows → `IF EXISTS` false → ALTER lands → clean single-phase apply in place; any reviewer | COL-03B |
+| Customer re-seeded with ZERO NULL Email (still populated) | the SAME `Email NOT NULL` | STILL blocks — zero NULLs is necessary but NOT sufficient; the guard is row-presence | COL-03C |
+| Customer `ContactPhone` populated, **no refactorlog** | rename `ContactPhone`→`MobileNumber` | delta = DROP+CREATE = a rename with no refactorlog entry loses the column's data → STOP, demand refactorlog | COL-08N |
+| `Order` row 4 has `CustomerId = 999` (orphan) | add FK `Order.CustomerId`→`Customer.Id` | orphan blocks the declarative add (`Msg 547`) → pre-deploy reconcile; the declarative add then trusts itself (F9), no manual step | KEY-03 |
+| `Product` row 3 `Code` = 16 chars | narrow `Code` to `NVARCHAR(10)` | over-length → Strict data-loss block → reconcile first (probe `MAX(LEN)` to predict) | COL-06 |
+| `Status` seed rows unchanged on re-publish | add lookup value `'Refunded'` | guarded MERGE captures 0 rows on no-op → idempotency proof (0 rows affected + identical content-hash) | STA-02 |
+| `Product` rows 4 & 5 share `Code = 'DUPE'` | add UNIQUE on `Code` | unique index build fails on dupe → pre-deploy dedupe | CON-02 |
+
+> **The make-mandatory triple is the tree's central proof.** COL-03B (empty) MUST publish clean;
+> COL-03 (populated, NULLs) and COL-03C (populated, zero NULLs) MUST BOTH still block. An agent
+> that claims a backfill or a zero-NULL re-seed yields a clean single-phase apply on a POPULATED
+> table — without empirically discovering on the disposable copy that SSDT STILL blocks it — has
+> classified from stale recipe text and the run FAILS. Same edit, three seeds, decided by
+> ROW PRESENCE.
+
+## Deployment-script class folders (the folder is the contract)
+
+The proving ground carries the deployment-script class folders the lifecycle rails require
+(`../skills/deploy-scripts/SKILL.md`) so a script's *permanence class is its location*:
+
+- `Migrations/` · `ReferenceData/` — **permanent · idempotent** (model-restoring backfills, guarded
+  reference seeds). No death certificate; `Retire: never`; proven by the silent redeploy.
+- `OneTime/` — **transient · one-time**. The header **is a death certificate** (a removal work item,
+  or the phase that ends it). Swept on the deprecation train once prod-confirmed.
+- `AdHoc/` — **outside the DACPAC** (scale/lock or a true one-off). The heaviest weigh-line; the
+  four obligations (justify · idempotent-chunked-resumable · trace · reconcile).
+
+Each folder's `README.md` states its contract; `Migrations/001_backfill_customer_region.sql` and
+`OneTime/Release_2026.07_email_normalize.sql` are the worked exemplars. Their `:r` includes in
+`Script.PostDeployment.sql` are **commented** so the standing seed the self-test pins is not
+perturbed — when you prove a real script, author it in the right folder and add its include under
+the matching class heading. The `SampleCatalog.sqlproj` reclassifies all four folders' `*.sql` out
+of the schema build (they are data, not model).
+
+## Trap watch (handbook 16 = §19) — catch these in the delta, not after
+
+Rename with no refactorlog entry · Optimistic NOT NULL · Forgotten FK Check · Ambitious
+Narrowing · Refactorlog Cleanup.
+
+## Connector point
+
+The hand-authored `SampleCatalog` can be replaced by the F# engine's
+`SqlprojEmitter`/`DacpacEmitter`/`PostDeployEmitter` output from a real OutSystems catalog —
+the prove loop above is unchanged, just real schema. See `../CONNECTORS.md` §3.

@@ -1,0 +1,15 @@
+=== Modules/Status.sql
+--- CREATE TABLE dbo.Status
+--- (
+---     -- Explicit id, NO IDENTITY. Lookup rows own their keys.
+---     Id          INT             NOT NULL,
+---     Code        NVARCHAR(20)    NOT NULL,
+---     IsActive    BIT             NOT NULL CONSTRAINT DF_Status_IsActive DEFAULT (1),
+---
+---     CONSTRAINT PK_Status_Id PRIMARY KEY CLUSTERED (Id)
+--- );
+--- GO
+---
+--- -- One NULL is allowed under a UNIQUE index, so Code uniqueness is a clean separate proof.
+--- CREATE UNIQUE INDEX [UIX_Status_Code] ON dbo.Status (Code);
++++

@@ -1,0 +1,4 @@
+precondition Unique on [dbo].[Rate] ([Id])
+empty: applies
+populated: applies
+violating: applies

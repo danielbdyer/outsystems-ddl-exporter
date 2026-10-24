@@ -17,24 +17,20 @@ name: ssdt-agent gates
 on:
   pull_request:
     paths:
-      - "sidecar/projection/ssdt-agent/**"
-      - "ssdt-playbook/**"
-      - "handbook/**"
-      - ".claude/skills/**"
-      - ".claude/agents/**"
+      - "archive/v2/ssdt-agent/**"
+      - "archive/v1/ssdt-playbook/**"
+      - "archive/v1/handbook/**"
       - ".github/PULL_REQUEST_TEMPLATE/schema-change.md"
-      - "sidecar/projection/ssdt-agent/scripts/**"
+      - "archive/v2/ssdt-agent/scripts/**"
       - ".github/workflows/ssdt-agent-gates.yml"
   push:
     branches: [main]
     paths:
-      - "sidecar/projection/ssdt-agent/**"
-      - "ssdt-playbook/**"
-      - "handbook/**"
-      - ".claude/skills/**"
-      - ".claude/agents/**"
+      - "archive/v2/ssdt-agent/**"
+      - "archive/v1/ssdt-playbook/**"
+      - "archive/v1/handbook/**"
       - ".github/PULL_REQUEST_TEMPLATE/schema-change.md"
-      - "sidecar/projection/ssdt-agent/scripts/**"
+      - "archive/v2/ssdt-agent/scripts/**"
       - ".github/workflows/ssdt-agent-gates.yml"
 
 jobs:
@@ -45,13 +41,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run the gates
-        run: node sidecar/projection/ssdt-agent/scripts/ssdt-agent-gates.mjs all
+        run: node archive/v2/ssdt-agent/scripts/ssdt-agent-gates.mjs all
       - name: prove.mjs selftest (publish-output classifier stays honest)
-        run: node sidecar/projection/ssdt-agent/scripts/prove.mjs selftest
+        run: node archive/v2/ssdt-agent/scripts/prove.mjs selftest
       - name: bake.mjs selftest (fingerprint and naming laws stay honest)
-        run: node sidecar/projection/ssdt-agent/scripts/bake.mjs selftest
+        run: node archive/v2/ssdt-agent/scripts/bake.mjs selftest
       - name: inflight-check.mjs selftest (the lag-window hold stays honest)
-        run: node sidecar/projection/ssdt-agent/scripts/inflight-check.mjs selftest
+        run: node archive/v2/ssdt-agent/scripts/inflight-check.mjs selftest
 
   build-proving-ground:
     name: proving ground compiles
@@ -61,6 +57,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          global-json-file: global.json
+          global-json-file: archive/v2/global.json
       - name: Build SampleCatalog (Release)
-        run: dotnet build sidecar/projection/ssdt-agent/proving-ground/SampleCatalog.sqlproj -c Release
+        working-directory: archive/v2
+        run: dotnet build ssdt-agent/proving-ground/SampleCatalog.sqlproj -c Release

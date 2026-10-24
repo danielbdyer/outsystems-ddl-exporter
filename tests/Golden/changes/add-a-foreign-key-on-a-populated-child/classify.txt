@@ -1,0 +1,1 @@
+create-fk-clean ForeignKeyConstraint [dbo].[FK_Customer_Account_AccountId]

@@ -1,0 +1,1 @@
+add-unique Index [dbo].[Product].[UIX_Product_Code]

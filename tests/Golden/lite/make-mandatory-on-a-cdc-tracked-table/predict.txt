@@ -1,0 +1,5 @@
+precondition TableEmpty on [dbo].[Customer]
+precondition NotNull on [dbo].[Customer] ([Email])
+empty: applies; prove it
+populated: blocks by TableEmpty on [dbo].[Customer]; prove it
+violating: blocks by TableEmpty on [dbo].[Customer], NotNull on [dbo].[Customer] ([Email]); prove it

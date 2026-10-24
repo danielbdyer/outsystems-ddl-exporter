@@ -1,0 +1,4 @@
+precondition Check on [dbo].[AAA] ([Host], [Id])
+empty: applies
+populated: applies
+violating: applies

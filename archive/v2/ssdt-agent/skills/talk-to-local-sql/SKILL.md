@@ -1,0 +1,406 @@
+---
+name: talk-to-local-sql
+description: The disposable local-SQL substrate prove-on-dacpac publishes against, dispatched per machine. Use whenever prove-on-dacpac needs a local SQL Server to publish to, a fresh-or-reset disposable database, ad-hoc sqlcmd probes (row counts, MAX(LEN), NULL counts, duplicates, orphans), or the content-hash check that answers "did the values actually change". Tools first — scripts/prove.mjs detect resolves the substrate, twin up / scripts/bake.mjs restore establish the BEFORE state, prove.mjs verdict runs the publish loop — then this file supplies the per-machine hand rungs those tools encode — the Twin or the warm-sql container in the source repository (docker-exec sqlcmd; that host has NO sqlcmd), or the estate Windows substrate (a local engine with host sqlcmd, per PROVING_PATH_WINDOWS.md). The developer's agent runs the commands; no new wrapper script.
+---
+
+# Talk to local SQL
+
+> **Why this substrate.** The probe and the hash are the proof: a measured number is evidence, an
+> asserted one is a guess — "1,240 rows are blank" stands where "some rows might be blank" cannot.
+> The count is taken before the change is classified, so classification rests on the data, not on
+> recollection. The strongest result this substrate produces is silence: a no-op redeploy that
+> affects 0 rows and returns an unchanged content digest is the proof that a deploy is idempotent,
+> and an unchanged digest on a re-run is a positive guarantee, not a non-event. The developer is
+> owed the measured form — "0 NULLs remain, and the second deploy moved nothing" — over a
+> recollection.
+
+This skill owns the substrate `prove-on-dacpac` publishes against: a disposable SQL Server
+database, real-*shaped* but safe to drop, standing in for the Dev database. Nothing here ever
+touches production; the database is reset between scenarios and dropped without ceremony.
+
+## Reach for the tools first
+
+Three zero-dependency tools (Node ≥ 18, in `../../scripts/`) already encode this file's
+dispatch, setup, and publish loop. Start every job at its tool; drop to the hand rungs below
+only when dispatching by hand or when the tool's own verdict says the substrate is unreachable
+(exit 4) or misconfigured (exit 6).
+
+| Job | Tool-first form | The hand rungs below |
+|---|---|---|
+| Which substrate is this machine? | `node ssdt-agent/scripts/prove.mjs detect` — prints the resolved substrate as JSON; a committed `prove.config.json` outranks every rung | "Detect the substrate" |
+| Establish / reset the BEFORE state | `twin up` (Twin substrate) · `node ssdt-agent/scripts/bake.mjs restore` (estate, pulled artifact) · `scripts/warm-sql.sh start` + the seed (sample) | the reset blocks, per substrate |
+| Build + Strict/Permissive publish + verdict | `node ssdt-agent/scripts/prove.mjs verdict` — JSON verdict on stdout; exit 0 published · 3 blocked · 7 build failed · 9 indeterminate | `../prove-on-dacpac/SKILL.md`'s hand loop |
+| Data probes (NULLs, MAX(LEN), duplicates, orphans) | the SQL below, through the substrate's sqlcmd form — the SQL **is** the tool | "Run sqlcmd against it" |
+| Content-hash check ("did values change?") | same — substrate-independent SQL | "The content-hash check" |
+
+The probes and the content-hash SQL are the payload and never change per machine; only the
+wrapper around them does. That wrapper is what the rest of this file dispatches.
+
+## The substrate of record: the Twin (deterministic), the sample as fallback
+
+The substrate that earns trust is **the Twin** (`../../../THE_TWIN.md`): `twin up` holds a local SQL
+Server current with the estate's own definitions and fills it with a **deterministic, masked,
+distribution-faithful** dataset. Trust is a property of the *system*, not of any agent re-running it —
+`twin check` proves π∘σ≈id, mints are byte-identical (T1), and a schema edit re-mints only the
+columns it touches (**S-stable**), so a reviewer regenerates the same base data without re-running
+the agent. The **evidence-profiling config (`twin.json`) is version-controlled beside the model and
+evolves as the schema evolves**. Do not restate the Twin's laws here — point.
+
+### Detect the substrate
+This ladder is encoded in `../../scripts/prove.mjs` (`detect` prints the resolved substrate as
+JSON; an explicit `prove.config.json` — the estate's committed declaration of its engine
+endpoint, project, and profiles — outranks every rung, and makes LocalDB or any local SQL
+Server a first-class target with no container anywhere). The rungs, for when you dispatch by
+hand:
+- `proving-ground/twin.json` present **and** the `twin` CLI available (`twin` on PATH, or
+  `dotnet run --project src/Twin.Cli --` from `sidecar/projection/`, source repository only) →
+  **the Twin substrate**.
+- else `scripts/warm-sql.sh` present (a source-repository checkout) → **the warm-container sample
+  substrate** — the hand-authored `ProvingGround` sample, the docker-exec sections below.
+- else (the tree is vendored, e.g. at `ssdt-agent/` in the estate repository) → **the estate
+  Windows substrate**: a local engine and a restored copy of real Dev data per
+  `../../PROVING_PATH_WINDOWS.md` — see "The estate Windows substrate" below.
+
+The proving **loop is identical** on every substrate — the BEFORE-state setup and the command
+wrappers differ; the SQL inside the probes and the content-hash check is substrate-independent.
+
+> **Scope of the docker sections.** "The runtime shim", "sqlcmd lives in the CONTAINER", "Bring up
+> the warm container", and the docker-exec forms of the probe / reset blocks are the
+> **warm-container substrate's** mechanics (the shim also serves the Twin). On the estate Windows
+> substrate, take the wrapper commands from "The estate Windows substrate" below and reuse the
+> same SQL.
+
+### Establish the BEFORE state on the Twin
+Run from the config's directory — `root` is the `twin.json` directory, so the estate globs resolve
+against `proving-ground/`:
+
+```bash
+cd ssdt-agent/proving-ground      # from sidecar/projection/
+twin up            # stands up twin-ssdt-agent on localhost,21434; DacFx-publishes Modules/**/*.sql;
+                   #   applies Data/Seed.sql; mints deterministically. ~1s no-op when already current.
+twin status        # schema + data current? the stored seed / scenario.
+```
+
+The Twin mints via **DacFx — no sqlpackage** and runs in its **own** container, distinct from the
+warm one the fallback uses:
+
+| Field | Twin | Sample fallback |
+|---|---|---|
+| Container | `twin-ssdt-agent` | `projection-mssql-warm` |
+| Server (from host) | `localhost,21434` | `localhost,11433` |
+| Database | `twin` | `ProvingGround` |
+| User / Password | `sa` / `Twin@Strong1` | `sa` / `Projection@Strong1` |
+
+### The Twin is the BEFORE state; sqlpackage is the proof
+The Twin establishes the deterministic base data; it is **not** the publish-under-test. Its own
+publish drops-objects-not-in-source, **ignores the refactorlog**, and runs **only** the `staticData`
+lane (not the pre/post-deploy `:r` chain). So the refactorlog / rename / pre-post-deploy semantics
+the curriculum turns on are proven by **SSDT's `sqlpackage` on top of the Twin base** — point the
+proving loop's Strict/Permissive publishes at `localhost,21434 / twin` (see `../prove-on-dacpac`).
+(Estate views, when an estate carries them, are excluded from the Twin's wipe and mint but stay
+published — `DECISIONS.md` 2026-08-11, the views rule.)
+
+### Isolation rules (encode these)
+- **Twin sets BEFORE; sqlpackage owns the rest.** Once `twin up` establishes the base, only
+  `sqlpackage` touches the DB until teardown. A second `twin up` mid-proof reads the fingerprint
+  mismatch (your edited dacpac ≠ the estate files) and would reconcile your edit away.
+- **`twin check` may share the warm container.** It acquires a throwaway DB via
+  `PROJECTION_MSSQL_CONN_STR`; if that points at `projection-mssql-warm` it lands there transiently.
+  For hard separation, unset it (or give the Twin its own throwaway container) before `twin check`.
+- **Parallel executors.** The Twin holds one DB per config; the self-test fleet still isolates per
+  `../../self-test/PROTOCOL.md` (unique `PG_<id>` DBs on the warm container) or a per-executor
+  `twin.json`/port. Until that is decided, the fleet uses the sample path.
+
+### What the Twin does and does NOT do for the sample
+For the static-seeded sample the Twin gives the **deterministic, reproducible base** (schema +
+`Data/Seed.sql`), standing up in one command and re-minting deterministically when a Module changes
+(S-stable: only edited columns move; a **rename** perturbs its own object's values, because the
+Twin's identity is name-based). The seed-planted flip states (NULL Emails, orphan Order, DUPE Codes)
+are the **static seed's** — the Twin reproduces them, it does not generate them. So the flip-twin
+**variants** (empty / clean / violating) stay **seed-based** for the sample (the self-test's
+scratch-edit path). Twin **scenarios + pins** (rows / weights / date windows / exact pins) are the
+flip mechanism for a **synthetically-minted real estate**, where evidence-profiled data fills the
+tables — that is where empty/clean/violating become named `twin.json` scenarios. Do not claim
+scenarios drive the static sample's variants.
+
+The commands and SQL are scaffolded here; the developer's agent runs them. There is **no wrapper
+script** — the existing `scripts/warm-sql.sh` (plain bash, already in the source repository) is
+reused, and `sqlcmd` (via `docker exec`, see below) / `sqlpackage` run directly.
+
+## The runtime shim (REQUIRED before any sqlpackage call)
+
+`sqlpackage` is a .NET-8 dotnet tool. Export these **before** any `dotnet`/`sqlpackage` call in
+the session, or the tool fails to start: point `DOTNET_ROOT` at the real local dotnet root, and
+keep `DOTNET_ROLL_FORWARD=Major` whenever the installed runtime is newer than .NET 8. On Git Bash
+only, also export `MSYS_NO_PATHCONV=1` so the `sqlpackage /Action:` switches **and** the
+`docker exec /opt/...` sqlcmd paths below are not mangled (the flag is inert on other shells):
+
+```bash
+export DOTNET_ROOT=/root/.dotnet    # or wherever the local dotnet root is
+export DOTNET_ROLL_FORWARD=Major
+# Git Bash only:
+export MSYS_NO_PATHCONV=1   # keep /Action: + /SourceFile: + /opt/... paths intact
+```
+
+`sqlpackage` is the dotnet tool `microsoft.sqlpackage`, expected on PATH (a global
+`dotnet tool install -g microsoft.sqlpackage` puts it there). In Claude Code web sessions the
+SessionStart hook installs it and exports this shim already — probe with `sqlpackage /Version`
+before installing by hand. Its version pin lives in `../../estate/toolchain.md`; while that
+ledger row reads UNPINNED, stamp the version actually run into every finding. One worked Windows box, verbatim,
+for contrast: `DOTNET_ROOT="C:/Users/<you>/AppData/Local/Microsoft/dotnet"`, the tool at
+`%USERPROFILE%\.dotnet\tools\sqlpackage.exe`, invoked from Git Bash with `MSYS_NO_PATHCONV=1`.
+(The durable alternative is installing the .NET 8 runtime; then the roll-forward is unnecessary.)
+
+## sqlcmd lives in the CONTAINER, not on the host (IMPORTANT)
+
+**This machine has NO host `sqlcmd`.** Do **not** invoke a bare `sqlcmd -S localhost,11433 ...` —
+it does not exist on the PATH and will fail. Issue every SQL round-trip through the warm container
+with `docker exec`, using the bundled tools at `/opt/mssql-tools18/bin/sqlcmd`:
+
+```bash
+docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'Projection@Strong1' -C -Q "<sql>"
+```
+
+Notes that matter:
+
+- **From inside the container, the server is `localhost`** (NOT `localhost,11433`) — `11433` is the
+  host-side published port; inside the container SQL Server listens on the default `1433`.
+- **`-C`** trusts the server certificate; **`-i`** keeps stdin usable for heredocs / piped SQL.
+- **`MSYS_NO_PATHCONV=1` is required on Git Bash** or it rewrites `/opt/mssql-tools18/...` into a
+  Windows path and the exec fails. (Same flag the `sqlpackage /Action:` switches need.)
+- `sqlpackage`, by contrast, runs on the **host** and connects over the published port, so its
+  profiles use `localhost,11433`. Two different vantage points: `sqlpackage` from outside
+  (`,11433`), `sqlcmd` from inside the container (`localhost`).
+
+## Bring up the warm container
+
+The repo already owns the container lifecycle — do **not** write a new `docker run`. The script is
+the single source of truth for the name / port / password.
+
+```bash
+scripts/warm-sql.sh start      # start the container (or no-op if already up)
+scripts/warm-sql.sh status     # container + readiness check — run this FIRST when in doubt
+scripts/warm-sql.sh restart    # clean instance (use after a memory-grant stall / login failures)
+```
+
+This yields the container `projection-mssql-warm` listening on **localhost,11433** (host side).
+
+> **Note (from project survival rules):** on Git Bash, `scripts/warm-sql.sh status` can give a
+> **false "NOT ready"** due to MSYS path mangling. If `status` looks wrong, confirm with a direct
+> `docker exec` sqlcmd round-trip (below) before assuming the container is down.
+
+### Connection parameters
+
+| Field | Value |
+|---|---|
+| Container | `projection-mssql-warm` |
+| Server (from host, e.g. sqlpackage) | `localhost,11433` |
+| Server (from inside the container, sqlcmd) | `localhost` (default port 1433) |
+| User | `sa` |
+| Password | `Projection@Strong1` |
+| Options | `TrustServerCertificate=True;Encrypt=False` (or `-C` on sqlcmd) |
+| Disposable copy | `ProvingGround` (or a per-executor `PG_<testId>_<rand>`, see PROTOCOL.md) |
+
+Full connection string (what the host-side publish profiles use):
+
+```
+Server=localhost,11433;Initial Catalog=ProvingGround;User ID=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False
+```
+
+## Run sqlcmd against it (via docker exec)
+
+Use `sqlcmd` for the cheap data probes that classification leans on. Confirm connectivity first:
+
+```bash
+# liveness round-trip (also the antidote to a false "NOT ready" status)
+docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'Projection@Strong1' -C -Q "SELECT @@VERSION"
+```
+
+(`-C` = trust the server certificate; quote the password for the shell; remember
+`MSYS_NO_PATHCONV=1` on Git Bash for the `/opt/...` path.)
+
+The probes that predict whether the change is blocked **before** the dacpac is even built (wrap each
+in the same `docker exec ... -Q "<sql>"` form):
+
+```sql
+-- make-mandatory: how many rows hold a NULL Email under the new NOT NULL rule?
+-- (NOTE: SSDT blocks on table-has-rows, not this NULL count — but the count still proves the
+--  backfill cleared it; see prove-on-dacpac's make-mandatory finding.)
+SELECT COUNT(*) AS NullRows FROM dbo.Customer WHERE Email IS NULL;
+
+-- narrow (Ambitious Narrowing): does any value exceed the new length?
+SELECT MAX(LEN(Code)) AS LongestCode FROM dbo.Product;
+
+-- add-unique: are there duplicates that would fail the unique index?
+SELECT Code, COUNT(*) AS n FROM dbo.Product GROUP BY Code HAVING COUNT(*) > 1;
+
+-- create-FK (Forgotten FK Check): are there orphan children with no parent?
+SELECT o.Id, o.CustomerId
+FROM dbo.[Order] o
+LEFT JOIN dbo.Customer c ON c.Id = o.CustomerId
+WHERE c.Id IS NULL;
+```
+
+Example, fully wired:
+
+```bash
+docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'Projection@Strong1' -C \
+  -Q "SELECT COUNT(*) AS NullRows FROM dbo.Customer WHERE Email IS NULL;"
+```
+
+These probes **predict**; the Strict publish in `prove-on-dacpac` **proves**. Run the probe to know
+what to look for, then let the blocked publish confirm it.
+
+## Create / reset / drop the disposable database (via docker exec)
+
+Reset between scenarios so each case starts from the known seed. This database is disposable —
+dropping and recreating is the normal path, not a last resort.
+
+```bash
+# create (idempotent)
+docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'Projection@Strong1' -C -Q \
+  "IF DB_ID('ProvingGround') IS NULL CREATE DATABASE ProvingGround;"
+
+# hard reset: drop + recreate so the next scenario starts clean
+docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'Projection@Strong1' -C -Q \
+  "IF DB_ID('ProvingGround') IS NOT NULL BEGIN ALTER DATABASE ProvingGround SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ProvingGround; END; CREATE DATABASE ProvingGround;"
+```
+
+After a reset, re-establish the BEFORE state (deploy the current CREATEs + post-deploy seed) per
+`proving-ground/README.md` — that seed is the "real-shaped data" every case is measured against.
+
+> **Parallel runs:** when many executors prove cases at once, each owns a **unique** DB
+> (`PG_<testId>_<rand>`) created and dropped exactly the same `docker exec` way, and never touches
+> the shared `ProvingGround` catalog. The full isolation + idempotent-teardown protocol is
+> **`self-test/PROTOCOL.md`** — and it honours survival rule 2 (leaked per-run DBs degrade the warm
+> container), so every executor reaps its own DB on exit.
+
+## The content-hash check ("did the values actually change?")
+
+When a Permissive publish proceeds past what the Strict publish blocks, exactly what moved must be
+established. The content-hash check is a per-row `SHA2_256` over the row's full shape, combined
+**order-independently** so row order is irrelevant, with **NULL kept distinct from `''`**. Snapshot
+it **before** and **after** the Permissive publish; an unchanged total means no value changed. (Run
+it through the same `docker exec ... -Q` form.)
+
+```sql
+-- Content hash of a table, order-independent over rows.
+-- (SELECT x.* FOR XML RAW) serializes the full row shape (column names included),
+-- so a rename changes the hash BY DESIGN — that is correct, the diff is the proof.
+-- NULL stays distinct from '' because FOR XML RAW omits NULL attributes entirely.
+-- CORRECTED (proven live, SQL Server 2022): the per-row hash must be hoisted through
+-- CROSS APPLY — a subquery placed directly inside SUM fails with Msg 130.
+SELECT
+  COUNT(*)                                            AS RowCount,
+  CONVERT(VARBINARY(8000),
+    SUM(CONVERT(BIGINT,
+      CONVERT(INT, SUBSTRING(h.hb, 1, 4))              -- 32-bit slice, summed order-independently
+    ))
+  )                                                   AS ContentDigest
+FROM dbo.Customer AS x
+CROSS APPLY (SELECT HASHBYTES('SHA2_256', (SELECT x.* FOR XML RAW)) AS hb) AS h;
+```
+
+Run it once before the Permissive publish, once after, and compare `RowCount` + `ContentDigest`:
+
+- **digest unchanged** -> no value moved (the change was structural-only, or truly benign).
+- **digest changed** -> values moved; the rows that differ are exactly what
+  `GenerateSmartDefaults` stamped, or what truncated. **That is the row count the finding states.**
+- **digest changed on a rename** -> expected and correct; the column name is part of the row shape.
+
+> The digest is a *change detector*, not a forensic diff: a changed digest reports that values
+> moved and how many rows; the specific old-vs-new values come from querying the affected rows
+> directly (e.g. `WHERE Email = '' ` after a smart-default stamp). Pair the digest with a targeted
+> SELECT when the developer needs the actual values, not just the count.
+>
+> **The no-op redeploy is the idempotency proof:** publish an unchanged tree twice; the second run
+> should produce **zero delta**, the guarded seed MERGE should report **0 rows**, and the digest
+> should be **identical**. That silence is the idempotency guarantee, the strongest result this
+> substrate produces, not a non-event.
+
+## The estate Windows substrate (the vendored tree)
+
+When the tree is vendored in the estate repository, there is no warm container and no
+`scripts/warm-sql.sh` — the substrate is the developer's own Windows machine, set up once per
+`../../PROVING_PATH_WINDOWS.md` (a local engine, `sqlpackage`, a restored copy of real Dev data,
+and the two local publish profiles). Verify it with that runbook's step 6 (the acceptance test and
+the constraint-trust check) before relying on it.
+
+| Field | Value |
+|---|---|
+| Engine | SQL Server Express LocalDB, or a local SQL Server Developer edition |
+| Server | `(localdb)\MSSQLLocalDB` (LocalDB) or `localhost` (Developer edition) |
+| Disposable copy | preferred: a pulled bake artifact (`../../scripts/bake.mjs restore` — a fingerprint-versioned `.bacpac` of masked, deterministic data; no real values reach the laptop). Fallback while no artifact exists: `ProvingCopy` restored from a Dev `.bak`. Never a shared environment |
+| Auth | Integrated Security (no password) |
+| sqlcmd | on the HOST (installs with Visual Studio's data tooling / SSMS) — no docker |
+
+The wrapper is plain host `sqlcmd` from PowerShell; every probe and the content-hash query in this
+file run through it unchanged:
+
+```powershell
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d ProvingCopy -Q "<sql>"
+```
+
+**Reset = re-pull or re-restore.** The disposable copy is born from an artifact, so the
+clean-slate move is not drop-and-reseed but re-import: a pulled bake artifact restores into a
+fresh fingerprint-versioned database (`bake.mjs restore` — no drop ever needed; old versions are
+dropped at leisure), and a backup-born `ProvingCopy` re-restores (the runbook's step 3,
+`RESTORE DATABASE ... WITH REPLACE`). Every scenario starts from the same artifact. Drop a copy
+entirely when done:
+
+```powershell
+sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "IF DB_ID('ProvingCopy') IS NOT NULL BEGIN ALTER DATABASE ProvingCopy SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ProvingCopy; END"
+```
+
+Notes that differ from the container substrate:
+
+- The runtime shim is usually unnecessary here: `sqlpackage` is Visual Studio's own or the
+  `dotnet tool` install per the runbook, and `MSYS_NO_PATHCONV` is a Git Bash concern that does
+  not apply in PowerShell.
+- The publish profiles are the runbook's `Local.Strict.publish.xml` and a Permissive copy — the
+  same two postures as `proving-ground/profiles/`, pointed at the local engine. Never point one at
+  anything that cannot be dropped.
+- The estate's own project usually builds with **MSBuild** (a classic `.sqlproj`), not
+  `dotnet build` — the build fork is in `../../PROVING_PATH_WINDOWS.md` step 5 and
+  `../prove-on-dacpac/SKILL.md`.
+
+## Honest limits of this substrate
+
+- It is real-*shaped*, not real-*sized* — it cannot prove production-scale timing or blocking; at
+  large row counts (on the order of `>1M rows`) a change may block writes or run long, which is an
+  added-scrutiny finding this copy cannot settle (see `classify-mechanism`).
+- It is a single instance — concurrency, online index builds, and live-traffic locks are not
+  modeled.
+- It holds one catalog — External Entities and cross-database / ETL / report consumers are out of
+  frame and must be named as dependency scope, not proven here.
+- It runs the **forward** publish only — it cannot prove a change is reversible, and it cannot
+  prove the running application keeps working against the new shape (see `prove-on-dacpac`'s
+  honest-limits section).
+- Point profiles and the `docker exec` sqlcmd at **`ProvingGround` (or a per-executor
+  `PG_<testId>_<rand>`) only** — never at anything that cannot be safely dropped.
+
+## Hard rules
+
+- **No new wrapper / orchestration script.** Reuse what the substrate already owns
+  (`scripts/warm-sql.sh` in the source repository; the standing local engine on the estate); run
+  `sqlcmd` / `sqlpackage` directly. The agent runs the commands.
+- **On the warm container the host has no sqlcmd** — always `docker exec` into
+  `projection-mssql-warm`, server `localhost` inside the container, with `MSYS_NO_PATHCONV=1` on
+  Git Bash. **On the estate Windows substrate `sqlcmd` runs on the host** against the local
+  engine.
+- Everything authored for this tree lives under `ssdt-agent/`; the substrate is whatever the
+  machine already owns — the warm container in the source repository, the local engine on the
+  estate.
+
+## Connector points
+
+- The disposable substrate reuses the **existing** `scripts/warm-sql.sh` — the connector boundary
+  is that this database lives only on that warm container and is disposable. See
+  `CONNECTORS.md`.
+- A future build could replace the hand-seeded `ProvingGround` with data shaped by the F# engine
+  from a real OutSystems catalog (same connection, same content-hash check). Highlighted, not wired.

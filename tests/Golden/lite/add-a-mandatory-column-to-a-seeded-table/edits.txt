@@ -1,0 +1,4 @@
+=== Modules/Status.sql
+--- Code        NVARCHAR(20)    NOT NULL,
++++ Code        NVARCHAR(20)    NOT NULL,
++++     Label       NVARCHAR(40)    NOT NULL,

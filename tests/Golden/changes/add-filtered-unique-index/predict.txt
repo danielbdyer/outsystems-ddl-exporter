@@ -1,0 +1,4 @@
+precondition Unique on [dbo].[Customer] ([Email])
+empty: applies
+populated: applies
+violating: blocks by Unique on [dbo].[Customer] ([Email]); ships as add-unique

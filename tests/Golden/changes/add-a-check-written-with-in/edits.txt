@@ -1,0 +1,4 @@
+=== Modules/Order.sql
+--- CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id)
++++ CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id),
++++     CONSTRAINT CK_Order_StatusText CHECK (StatusText IN (N'Pending', N'Shipped', N'Cancelled'))

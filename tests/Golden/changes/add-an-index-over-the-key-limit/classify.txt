@@ -1,0 +1,2 @@
+add-index Index [dbo].[Product].[IX_Product_Name]
+widen Column [dbo].[Product].[Name]

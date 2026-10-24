@@ -1,0 +1,3 @@
+add-mandatory Column [dbo].[Customer].[CreatedAt]
+add-mandatory Column [dbo].[Customer].[CreatedBy]
+add-mandatory Column [dbo].[Customer].[UpdatedAt]

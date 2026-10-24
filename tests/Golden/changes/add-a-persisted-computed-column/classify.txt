@@ -1,0 +1,1 @@
+unclassified change: prove it, created Column [dbo].[Product].[CodeLength]

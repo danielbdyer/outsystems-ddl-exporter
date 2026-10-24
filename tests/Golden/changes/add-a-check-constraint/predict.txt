@@ -1,0 +1,4 @@
+precondition Check on [dbo].[Product] ([Code])
+empty: applies
+populated: applies
+violating: blocks by Check on [dbo].[Product] ([Code]); ships as add-check

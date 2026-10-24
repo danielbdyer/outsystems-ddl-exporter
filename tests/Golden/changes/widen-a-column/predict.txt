@@ -1,0 +1,4 @@
+precondition Fits on [dbo].[Product] ([Code])
+empty: applies
+populated: applies
+violating: applies

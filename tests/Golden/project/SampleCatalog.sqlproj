@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The golden project (v2's archive/v2/ssdt-agent/proving-ground/SampleCatalog.sqlproj, SDK-style) as a classic, Visual Studio
+  format project: the same objects and scripts, with the items the SDK's glob made implicit listed here. It builds with
+  dotnet build against dist/estate/, the committed engine's targets (V3_MILESTONES.md section 1 fact 1).
+-->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <Name>SampleCatalog</Name>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectVersion>4.1</ProjectVersion>
+    <ProjectGuid>{28F133F9-56E1-4C65-802F-75BD7A2EF964}</ProjectGuid>
+    <DSP>Microsoft.Data.Tools.Schema.Sql.Sql160DatabaseSchemaProvider</DSP>
+    <OutputType>Database</OutputType>
+    <RootNamespace>SampleCatalog</RootNamespace>
+    <AssemblyName>SampleCatalog</AssemblyName>
+    <ModelCollation>1033, CI</ModelCollation>
+    <DefaultFileStructure>BySchemaAndSchemaType</DefaultFileStructure>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <TargetDatabaseSet>True</TargetDatabaseSet>
+    <SuppressTSqlWarnings>71502</SuppressTSqlWarnings>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <OutputPath>bin\Release\</OutputPath>
+    <BuildScriptName>$(MSBuildProjectName).sql</BuildScriptName>
+    <TreatWarningsAsErrors>False</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <OutputPath>bin\Debug\</OutputPath>
+    <BuildScriptName>$(MSBuildProjectName).sql</BuildScriptName>
+  </PropertyGroup>
+  <PropertyGroup>
+    <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">11.0</VisualStudioVersion>
+  </PropertyGroup>
+  <Import Condition="'$(SQLDBExtensionsRefPath)' != ''" Project="$(SQLDBExtensionsRefPath)\Microsoft.Data.Tools.Schema.SqlTasks.targets" />
+  <Import Condition="'$(SQLDBExtensionsRefPath)' == ''" Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\SSDT\Microsoft.Data.Tools.Schema.SqlTasks.targets" />
+  <ItemGroup>
+    <Folder Include="Properties" />
+    <Folder Include="Modules\" />
+    <Folder Include="Data\" />
+    <Folder Include="profiles\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Build Include="Modules\Account.sql" />
+    <Build Include="Modules\Category.sql" />
+    <Build Include="Modules\Customer.sql" />
+    <Build Include="Modules\CustomerAddress.sql" />
+    <Build Include="Modules\Order.sql" />
+    <Build Include="Modules\OrderLine.sql" />
+    <Build Include="Modules\OrderStatusText.sql" />
+    <Build Include="Modules\Product.sql" />
+    <Build Include="Modules\ProductLegacy.sql" />
+    <Build Include="Modules\Status.sql" />
+  </ItemGroup>
+  <ItemGroup>
+    <PreDeploy Include="Script.PreDeployment.sql" />
+  </ItemGroup>
+  <ItemGroup>
+    <PostDeploy Include="Script.PostDeployment.sql" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Included into the build only through the post-deploy script's :r. -->
+    <None Include="Data\Seed.sql" />
+    <None Include="profiles\pipeline.publish.xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <RefactorLog Include="SampleCatalog.refactorlog" />
+  </ItemGroup>
+</Project>

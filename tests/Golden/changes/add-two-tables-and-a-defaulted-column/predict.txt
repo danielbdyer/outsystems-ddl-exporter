@@ -1,0 +1,5 @@
+precondition Unique on [dbo].[Channel] ([Id])
+precondition Unique on [dbo].[Segment] ([Id])
+empty: applies
+populated: applies
+violating: applies

@@ -1,0 +1,6 @@
+=== Modules/Product.sql
+--- LegacyCode NVARCHAR(40)  NOT NULL CONSTRAINT DF_Product_LegacyCode DEFAULT (N'LEGACY'),
++++
+=== Modules/Customer.sql
+--- Email           NVARCHAR(256)   NULL,
++++ Email           NVARCHAR(100)   NULL,

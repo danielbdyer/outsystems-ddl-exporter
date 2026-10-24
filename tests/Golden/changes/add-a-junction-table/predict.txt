@@ -1,0 +1,6 @@
+precondition ForeignKey on [dbo].[CustomerAccount] ([AccountId])
+precondition ForeignKey on [dbo].[CustomerAccount] ([CustomerId])
+precondition Unique on [dbo].[CustomerAccount] ([AccountId], [CustomerId])
+empty: applies
+populated: applies
+violating: applies

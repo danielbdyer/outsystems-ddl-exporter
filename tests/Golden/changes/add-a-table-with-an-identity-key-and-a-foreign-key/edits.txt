@@ -1,0 +1,4 @@
+=== Modules/OrderStatusText.sql
+--- -- Intentionally no schema object. The column lives in Modules/Order.sql.
++++ CREATE TABLE dbo.Invoice (Id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Invoice_Id PRIMARY KEY,
++++     CustomerId INT NOT NULL CONSTRAINT FK_Invoice_Customer REFERENCES dbo.Customer (Id));

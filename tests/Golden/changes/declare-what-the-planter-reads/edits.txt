@@ -1,0 +1,53 @@
+=== Modules/Customer.sql
+--- AccountId       INT             NULL,
++++ AccountId       INT             NULL CONSTRAINT FK_Customer_Account_AccountId REFERENCES dbo.Account (Id),
+=== Modules/CustomerAddress.sql
+--- CustomerId  INT             NOT NULL,
++++ CustomerId  INT             NOT NULL CONSTRAINT FK_CustomerAddress_Customer_CustomerId REFERENCES dbo.Customer (Id) ON DELETE CASCADE,
+=== Modules/Order.sql
+--- CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id)
++++ CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id),
++++     CONSTRAINT FK_Order_Status_StatusId FOREIGN KEY (StatusId) REFERENCES dbo.Status (Id),
++++     CONSTRAINT CK_Order_Total CHECK (Total >= 0)
+=== Modules/OrderLine.sql
+--- CONSTRAINT PK_OrderLine_Id PRIMARY KEY CLUSTERED (Id)
++++ CONSTRAINT PK_OrderLine_Id PRIMARY KEY CLUSTERED (Id),
++++     CONSTRAINT FK_OrderLine_Order_OrderId FOREIGN KEY (OrderId) REFERENCES dbo.[Order] (Id),
++++     CONSTRAINT UQ_OrderLine_Order_Line UNIQUE (OrderId, LineNumber DESC),
++++     CHECK (Amount >= 0)
+=== Modules/Product.sql
+--- CategoryId INT           NULL,
++++ CategoryId INT           NULL CONSTRAINT FK_Product_Category_CategoryId REFERENCES dbo.Category (Id),
++++ CodeLength AS LEN(Code),
++++ Doubled AS (Id * 2) PERSISTED NOT NULL,
+=== Modules/OrderStatusText.sql
+--- -- Intentionally no schema object. The column lives in Modules/Order.sql.
++++ CREATE UNIQUE INDEX UIX_Product_LegacyCode ON dbo.Product (LegacyCode) WHERE CategoryId IS NOT NULL;
++++ GO
++++ CREATE SEQUENCE dbo.NoteNumber AS INT START WITH 5000;
++++ GO
++++ CREATE TYPE dbo.ShortCode FROM NVARCHAR(6) NOT NULL;
++++ GO
++++ CREATE TABLE dbo.OrderLineNote (Id INT IDENTITY(1000, -5) NOT NULL CONSTRAINT PK_OrderLineNote_Id PRIMARY KEY, OrderId INT NOT NULL,
++++     LineNumber INT NOT NULL, Number INT NOT NULL CONSTRAINT DF_OrderLineNote_Number DEFAULT (NEXT VALUE FOR dbo.NoteNumber),
++++     Code dbo.ShortCode, Note NVARCHAR(MAX) NULL, Stamp ROWVERSION,
++++     CONSTRAINT FK_OrderLineNote_OrderLine FOREIGN KEY (OrderId, LineNumber) REFERENCES dbo.OrderLine (OrderId, LineNumber));
++++ GO
++++ CREATE TABLE dbo.Department (Id INT NOT NULL CONSTRAINT PK_Department_Id PRIMARY KEY, HeadId INT NULL);
++++ GO
++++ CREATE TABLE dbo.Employee (Id INT NOT NULL CONSTRAINT PK_Employee_Id PRIMARY KEY, DepartmentId INT NOT NULL
++++     CONSTRAINT FK_Employee_Department REFERENCES dbo.Department (Id), ManagerId INT NULL REFERENCES dbo.Employee (Id));
++++ GO
++++ ALTER TABLE dbo.Department ADD CONSTRAINT FK_Department_Head FOREIGN KEY (HeadId) REFERENCES dbo.Employee (Id);
++++ GO
++++ CREATE TABLE dbo.Hen (Id INT NOT NULL CONSTRAINT PK_Hen_Id PRIMARY KEY, EggId INT NOT NULL);
++++ GO
++++ CREATE TABLE dbo.Egg (Id INT NOT NULL CONSTRAINT PK_Egg_Id PRIMARY KEY, HenId INT NOT NULL CONSTRAINT FK_Egg_Hen REFERENCES dbo.Hen (Id));
++++ GO
++++ ALTER TABLE dbo.Hen ADD CONSTRAINT FK_Hen_Egg FOREIGN KEY (EggId) REFERENCES dbo.Egg (Id);
++++ GO
++++ CREATE TABLE dbo.Price (Id INT NOT NULL CONSTRAINT PK_Price_Id PRIMARY KEY, Amount DECIMAL(9, 2) NOT NULL,
++++     ValidFrom DATETIME2 GENERATED ALWAYS AS ROW START NOT NULL, ValidTo DATETIME2 GENERATED ALWAYS AS ROW END NOT NULL,
++++     PERIOD FOR SYSTEM_TIME (ValidFrom, ValidTo)) WITH (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbo.PriceHistory));
++++ GO
++++ CREATE TRIGGER dbo.trg_Account_Audit ON dbo.Account AFTER INSERT AS SET NOCOUNT ON;

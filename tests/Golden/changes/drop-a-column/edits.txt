@@ -1,0 +1,3 @@
+=== Modules/Product.sql
+--- LegacyCode NVARCHAR(40)  NOT NULL CONSTRAINT DF_Product_LegacyCode DEFAULT (N'LEGACY'),
++++

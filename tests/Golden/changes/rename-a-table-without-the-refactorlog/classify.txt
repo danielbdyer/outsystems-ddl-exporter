@@ -1,0 +1,1 @@
+error rename.table-without-entry Table [dbo].[CustomerLocation]

@@ -1,0 +1,1 @@
+delete-entity Table [dbo].[Status]

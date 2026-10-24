@@ -1,0 +1,4 @@
+precondition Check on [dbo].[Order] ([StatusText])
+empty: applies
+populated: applies
+violating: blocks by Check on [dbo].[Order] ([StatusText]); ships as add-check

@@ -1,0 +1,1 @@
+drop-pk PrimaryKeyConstraint [dbo].[PK_Account_Id]

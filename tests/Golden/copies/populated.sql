@@ -1,0 +1,21 @@
+INSERT INTO dbo.Status (Id, Code, IsActive) VALUES (1, N'Pending', 1);
+INSERT INTO dbo.Category (Id, Code, IsActive) VALUES (1, N'HW', 1);
+SET IDENTITY_INSERT dbo.Account ON;
+INSERT INTO dbo.Account (Id, Name, Region) VALUES (1, N'Acme Holdings', N'West');
+SET IDENTITY_INSERT dbo.Account OFF;
+SET IDENTITY_INSERT dbo.Customer ON;
+INSERT INTO dbo.Customer (Id, Name, Email, ContactPhone, Region, AccountId)
+    VALUES (1, N'Acme', N'orders@acme.example', N'+1-206-555-0101', N'West', 1);
+SET IDENTITY_INSERT dbo.Customer OFF;
+SET IDENTITY_INSERT dbo.CustomerAddress ON;
+INSERT INTO dbo.CustomerAddress (Id, CustomerId, Line1, City, PostalCode) VALUES (1, 1, N'1 Main St', N'Seattle', N'98101');
+SET IDENTITY_INSERT dbo.CustomerAddress OFF;
+SET IDENTITY_INSERT dbo.[Order] ON;
+INSERT INTO dbo.[Order] (Id, CustomerId, StatusId, Total, StatusText) VALUES (1, 1, 1, 120.00, N'Pending');
+SET IDENTITY_INSERT dbo.[Order] OFF;
+SET IDENTITY_INSERT dbo.OrderLine ON;
+INSERT INTO dbo.OrderLine (Id, OrderId, LineNumber, Amount) VALUES (1, 1, 1, 120.00);
+SET IDENTITY_INSERT dbo.OrderLine OFF;
+SET IDENTITY_INSERT dbo.Product ON;
+INSERT INTO dbo.Product (Id, Code, Name, LegacyCode, CategoryId) VALUES (1, N'100', N'Widget', N'LGC-100', 1);
+SET IDENTITY_INSERT dbo.Product OFF;

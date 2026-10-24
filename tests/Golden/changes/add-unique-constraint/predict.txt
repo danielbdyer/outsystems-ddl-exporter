@@ -1,0 +1,4 @@
+precondition Unique on [dbo].[Product] ([Code])
+empty: applies
+populated: applies
+violating: blocks by Unique on [dbo].[Product] ([Code]); ships as add-unique

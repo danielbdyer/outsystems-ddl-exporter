@@ -1,0 +1,22 @@
+[
+  {
+    "name": "check-written-with-in",
+    "why": "SQL Server stores a CHECK written with IN as a chain of ORs, so DacFx drops and re-creates the check on every plan (DECISIONS.md 2026-10-19).",
+    "action": "Write the check in the OR form SQL Server stores; the difference stands until then."
+  },
+  {
+    "name": "clustered-key-rebuild",
+    "why": "A clustered primary key moved to other columns makes DacFx rebuild the table, and the rebuild's tmp_ms_xx_ statements name objects the change did not.",
+    "action": "Count the tmp_ms_xx_ statements as the change's own; they name the table the change alters."
+  },
+  {
+    "name": "query-store-option",
+    "why": "A model that declares no Query Store option plans OFF on DacFx 162.5.57 and READ_WRITE on 170.5.96 (DECISIONS.md 2026-10-19).",
+    "action": "Run dbchange-lite on the DacFx release the toolchain ledger pins; doctor refuses another."
+  },
+  {
+    "name": "case-only-rename",
+    "why": "Under a case-insensitive collation a rename that differs only by case plans as nothing, or as a drop and a create.",
+    "action": "Ask a lead whether the object was renamed or is drift; a rename needs its refactorlog entry."
+  }
+]

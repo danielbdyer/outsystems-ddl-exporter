@@ -1,0 +1,747 @@
+{
+  "about": "Every markdown file in the repository outside archive/, plus archive/INDEX.md and every file in ci/, as data: who reads it, when, and its line budget. The Manifest test holds every markdown file outside archive/ to its row and each hand-written file to its budget. A new document adds its row in the same pull request.",
+  "fields": {
+    "path": "the file, relative to the repository root",
+    "kind": "hand, or generated (by the generator named; its first line is the generated banner)",
+    "owner": "tool (this repository writes it), ssdt (the SSDT repository writes it), or vendored (this repository writes it and the SSDT repository receives it)",
+    "reader": "who reads it",
+    "moment": "when they read it",
+    "budget": "the ceiling in physical lines; null for a generated file, for DECISIONS.md, which grows one line per decision under the Decisions test, and for a file in ci/: data the tests parse, or a script the tests and CI run, neither of them prose",
+    "generator": "for a generated file, what generates it; null for a hand-written one",
+    "becomes": "for a hand-written file a later milestone generates: the milestone and the generator; absent otherwise",
+    "ancestor": "the archived documents it succeeds, as provenance"
+  },
+  "documents": [
+    {
+      "path": "README.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a person"],
+      "moment": ["first day"],
+      "budget": 150,
+      "generator": null,
+      "ancestor": ["archive/v1/readme.md", "archive/v2/README.md"]
+    },
+    {
+      "path": "AGENTS.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["any agent", "a maintainer"],
+      "moment": ["session start", "a change"],
+      "budget": 120,
+      "generator": null,
+      "ancestor": ["archive/v1/AGENTS.md", "archive/v2/CLAUDE.md", "archive/v2/KICKOFF.md"]
+    },
+    {
+      "path": "CLAUDE.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Claude Code"],
+      "moment": ["session start"],
+      "budget": 33,
+      "generator": null,
+      "ancestor": ["archive/v2/CLAUDE.md", "archive/v2/ssdt-agent/CLAUDE.md"]
+    },
+    {
+      "path": "VALUES.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a maintainer", "a review bot"],
+      "moment": ["first day", "a pull request to this repository"],
+      "budget": 300,
+      "generator": null,
+      "ancestor": ["archive/v2/PRODUCT_AXIOMS.md", "archive/v1/architecture-guardrails.md", "archive/v2/CLAUDE.md"]
+    },
+    {
+      "path": "DECISIONS.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["anyone"],
+      "moment": ["a decision"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/DECISIONS.md"]
+    },
+    {
+      "path": "LAWS.md",
+      "kind": "generated",
+      "owner": "tool",
+      "reader": ["a maintainer", "a review bot"],
+      "moment": ["a change", "a pull request to this repository"],
+      "budget": null,
+      "generator": "ci/laws.sh, or ci/laws.ps1 on Windows, from the tests' Law, Value and Exit traits; Budgets.Tests: Laws holds the committed file to its output",
+      "ancestor": ["archive/v2/AXIOMS.md", "archive/v2/PRODUCT_AXIOMS.md"]
+    },
+    {
+      "path": "NEXT.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a session"],
+      "moment": ["session start"],
+      "budget": 40,
+      "generator": null,
+      "ancestor": ["archive/v2/HANDOFF.md", "archive/v1/tasks.md"]
+    },
+    {
+      "path": "V3_ARCHITECTURE.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 3118,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "V3_INSTRUCTION_ARCHITECTURE.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 1753,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "LIFECYCLE_BACKPORT_PROMPT.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 444,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "V3_MILESTONES.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 1163,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "V3_BUILD_PROMPT.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 556,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "V3_BLUEPRINT_PROMPT.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the blueprint session"],
+      "moment": ["until M8"],
+      "budget": 488,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "V3_PARITY.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 358,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "DBCHANGE_LITE.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the lite tool's build session"],
+      "moment": ["until the lite tool moves to the SSDT repository"],
+      "budget": 440,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "tools/dbchange-lite/README.md",
+      "kind": "hand",
+      "owner": "vendored",
+      "reader": ["a maintainer of dbchange-lite", "the SSDT repository's developers, once vendored"],
+      "moment": ["before building or running dbchange-lite"],
+      "budget": 60,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "tools/dbchange-lite/knowledge/dbchange-lite.md",
+      "kind": "hand",
+      "owner": "vendored",
+      "reader": ["a developer's agent in the SSDT repository"],
+      "moment": ["at the start of every schema change dbchange-lite predicts"],
+      "budget": 60,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "tests/Golden/lite/make-mandatory-on-a-cdc-tracked-table/cdc-tracked.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["dbchange-lite's corpus harness, which writes it as the case's CDC ledger"],
+      "moment": ["the CDC case of tests/Golden/lite/ runs"],
+      "budget": 10,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": ".github/PULL_REQUEST_TEMPLATE/schema-change.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a developer"],
+      "moment": ["a schema pull request"],
+      "budget": 85,
+      "generator": null,
+      "becomes": "generated at M7 by dbchange knowledge package, from knowledge/description.md",
+      "ancestor": ["archive/v2/ssdt-agent/skills/author-pr/SKILL.md", "archive/v2/ssdt-agent/pr-template/schema-change.md"]
+    },
+    {
+      "path": "ci/docs.manifest.json",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests"],
+      "moment": ["every build"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/publish.sh",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the fast lane", "a publish of dist/dbchange/"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/publish.ps1",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the fast lane on Windows", "a publish of dist/dbchange/ on Windows"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/sql.sh",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the SQL lane", "a session that needs SQL Server"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/warm-sql.sh"]
+    },
+    {
+      "path": "ci/sql.ps1",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "a maintainer"],
+      "moment": ["the SQL lane on Windows", "a session that needs SQL Server on Windows"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/warm-sql.sh"]
+    },
+    {
+      "path": "ci/readside.sh",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the SQL lane on Ubuntu", "regenerating WP 3.1's read-side facts"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/src/Projection.Adapters.Sql/ReadSide.fs", "archive/v2/src/Projection.Targets.Json/CatalogCodec.fs"]
+    },
+    {
+      "path": "ci/budgets.json",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests"],
+      "moment": ["every build"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/packages.allow",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests"],
+      "moment": ["every build"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/review/build.js",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a session preparing an operator review"],
+      "moment": ["a milestone close", "an alignment review", "an intake with open questions"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/review/mdlite.js",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a session preparing an operator review"],
+      "moment": ["a milestone close", "an alignment review", "an intake with open questions"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/review/app.client.js",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a session preparing an operator review"],
+      "moment": ["a milestone close", "an alignment review", "an intake with open questions"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/review/app.css",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a session preparing an operator review"],
+      "moment": ["a milestone close", "an alignment review", "an intake with open questions"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/laws.sh",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["every build", "a new law test"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/matrix-status.sh"]
+    },
+    {
+      "path": "ci/laws.ps1",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "a maintainer"],
+      "moment": ["every build on Windows", "a new law test on Windows"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/matrix-status.sh"]
+    },
+    {
+      "path": "tests/Golden/dbchange/ledgers/toolchain.md",
+      "kind": "hand",
+      "owner": "ssdt",
+      "reader": ["dbchange doctor", "dbchange check drift", "whoever owns the deployment step"],
+      "moment": ["every claim's provenance", "a new dbchange version", "the Octopus step's DacFx changing"],
+      "budget": 15,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "tests/Golden/patterns/add-check.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/add-check/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/add-index.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/add-index/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/add-mandatory.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/add-mandatory/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/add-optional.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/add-optional/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/add-unique.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/add-unique/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/create-entity.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/create-entity/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/create-fk-clean.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/create-fk-clean/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/define-pk.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/define-pk/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/delete-attribute.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/delete-attribute/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/delete-entity.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/delete-entity/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/drop-pk.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/drop-pk/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/edit-seed.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/edit-seed/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/identity-swap.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/identity-swap/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/make-mandatory.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/make-mandatory/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/make-optional.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/make-optional/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/narrow.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/narrow/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/rename-attribute.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/rename-attribute/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/retype-explicit.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/retype-explicit/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/temporal-convert.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/temporal-convert/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/temporal-new.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/temporal-new/SKILL.md"]
+    },
+    {
+      "path": "tests/Golden/patterns/widen.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Classify, through io/Patterns.cs", "the tests"],
+      "moment": ["every classification", "a change to how the operation is recognized"],
+      "budget": 20,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/skills/op/widen/SKILL.md"]
+    },
+    {
+      "path": "ci/register.json",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests"],
+      "moment": ["every build"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/THE_RECORD.md", "V3_INSTRUCTION_ARCHITECTURE.md"]
+    },
+    {
+      "path": "tests/Cases/00-invariants.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 1100,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/10-questions.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 2100,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/20-planter.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 1800,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/30-outcomes.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 2100,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/40-ops-columns.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 2000,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/41-ops-keys.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 1900,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/42-ops-tables.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 2500,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/43-compound.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 600,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/50-environments.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 1100,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/60-privacy.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 600,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/70-process.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 1700,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/80-twin-parity.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 2000,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/90-traceability.md",
+      "kind": "generated",
+      "owner": "tool",
+      "reader": ["a work package that ports a case", "a review of the catalog's coverage"],
+      "moment": ["a change to a case", "a gate of the Facsimile's"],
+      "budget": null,
+      "generator": "Budgets.Tests: CaseCatalog, the catalog's lint, which writes it when it is stale",
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/ARCHITECTURE.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 600,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/INVARIANTS.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a work package that ports its cases", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 500,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "tests/Cases/README.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["whoever writes or ports a case", "Budgets.Tests: CaseCatalog"],
+      "moment": ["a work package that ports a case", "a change to a case"],
+      "budget": 300,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/facsimile/"]
+    },
+    {
+      "path": "archive/INDEX.md",
+      "kind": "generated",
+      "owner": "tool",
+      "reader": ["the owner"],
+      "moment": ["provenance"],
+      "budget": null,
+      "generator": "WP 0.1, once, from git history; not maintained",
+      "ancestor": []
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+=== Modules/Customer.sql
+--- ContactPhone    NVARCHAR(40)    NULL,
++++ MobileNumber    NVARCHAR(40)    NULL,
+
+=== SampleCatalog.refactorlog
+--- </Operations>
++++   <Operation Name="Rename Refactor" Key="6d1c1b5e-3f0a-4c2e-9b7d-2a4f8e6c0d13" ChangeDateTime="09/24/2026 10:00:00">
++++     <Property Name="ElementName" Value="[dbo].[Customer].[ContactPhone]" />
++++     <Property Name="ElementType" Value="SqlSimpleColumn" />
++++     <Property Name="ParentElementName" Value="[dbo].[Customer]" />
++++     <Property Name="ParentElementType" Value="SqlTable" />
++++     <Property Name="NewName" Value="[MobileNumber]" />
++++   </Operation>
++++ </Operations>
+=== Data/Seed.sql
+--- ) AS source (Id, Name, Email, ContactPhone, Region, AccountId)
++++ ) AS source (Id, Name, Email, MobileNumber, Region, AccountId)
+=== Data/Seed.sql
+---      OR ISNULL(target.ContactPhone, N'<NULL>') <> ISNULL(source.ContactPhone, N'<NULL>')
++++      OR ISNULL(target.MobileNumber, N'<NULL>') <> ISNULL(source.MobileNumber, N'<NULL>')
+=== Data/Seed.sql
+---     UPDATE SET target.Name = source.Name, target.Email = source.Email, target.ContactPhone = source.ContactPhone,
++++     UPDATE SET target.Name = source.Name, target.Email = source.Email, target.MobileNumber = source.MobileNumber,
+=== Data/Seed.sql
+---     INSERT (Id, Name, Email, ContactPhone, Region, AccountId)
++++     INSERT (Id, Name, Email, MobileNumber, Region, AccountId)
+=== Data/Seed.sql
+---     VALUES (source.Id, source.Name, source.Email, source.ContactPhone, source.Region, source.AccountId);
++++     VALUES (source.Id, source.Name, source.Email, source.MobileNumber, source.Region, source.AccountId);

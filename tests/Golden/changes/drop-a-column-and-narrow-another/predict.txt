@@ -1,0 +1,6 @@
+precondition TableEmpty on [dbo].[Customer]
+precondition Fits on [dbo].[Customer] ([Email])
+precondition TableEmpty on [dbo].[Product]
+empty: applies
+populated: blocks by TableEmpty on [dbo].[Customer], TableEmpty on [dbo].[Product]; ships in two releases
+violating: blocks by TableEmpty on [dbo].[Customer], Fits on [dbo].[Customer] ([Email]), TableEmpty on [dbo].[Product]; ships in two releases
