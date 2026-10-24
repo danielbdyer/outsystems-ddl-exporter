@@ -1,14 +1,13 @@
 # Next — rewritten by the session that finishes something; never appended
-Updated 2026-10-21 by #705, in wave 7: WP 2.1's second slice, WP 2.6's corpus, WP 3.5's `synthetic-copy up` and WP 7.1's citations.
+Updated 2026-10-24 by #705: dbchange-lite built under `tools/dbchange-lite/` from `DBCHANGE_LITE.md` (its §14 says what landed); before it, wave 7.
 
 ## The operator's actions
-- The laptop check against Dev (M1 exit 1, spikes S1 and S3) waits until the operator brings the branch to a laptop:
-  in the v3 clone, `git switch claude/v3-architecture-design-sl95mx`, `git pull` and `ci/publish.ps1`; then, in the SSDT
-  repository's clone, with `<v3 clone>\dist\dbchange\dbchange.exe` as `dbchange`, run
-  `dbchange check drift --target env:dev --at <Dev's deployed tag> --json` and `dbchange read --from env:dev --json`,
-  and, on Dev's database under your own login, `SELECT collation_name FROM sys.databases WHERE name = DB_NAME()`.
-  Report check drift's exit code and its JSON answer (its `elapsedMs`), the read's `elapsedMs` and the `collation_name`:
-  M1 exit 1 passes on exit 0, or 5 naming each differing object, in a minute.
+- The laptop check against Dev (M1 exit 1, spikes S1 and S3) waits until the operator brings the branch to a laptop: in the v3 clone,
+  `git switch claude/v3-architecture-design-sl95mx`, `git pull` and `ci/publish.ps1`; then, in the SSDT repository's clone, with
+  `<v3 clone>\dist\dbchange\dbchange.exe` as `dbchange`, run `dbchange check drift --target env:dev --at <Dev's deployed tag> --json` and
+  `dbchange read --from env:dev --json`, and, on Dev's database under your own login, `SELECT collation_name FROM sys.databases WHERE name = DB_NAME()`.
+  Report check drift's exit code and its JSON answer (its `elapsedMs`), the read's `elapsedMs` and the `collation_name`: M1 exit 1 passes on exit 0, or 5 naming each differing object, in a minute.
+- dbchange-lite's Step 0 on a work laptop and Dev (`DBCHANGE_LITE.md` §14), and its §15 decisions, each with the default the build took.
 - At M0, install the SessionStart and SessionEnd hooks in `.claude/hooks/` as `CLAUDE.md` describes them; no agent may edit them.
 - Answer the cards still open in round two of the M1 review (linked in #704's description).
 - Move or delete the v2 worktrees under archive/v2/.claude/worktrees (3.6 GB), which Visual Studio and Copilot scan.
@@ -16,6 +15,7 @@ Updated 2026-10-21 by #705, in wave 7: WP 2.1's second slice, WP 2.6's corpus, W
 - Run the sql-windows job on the branch: DacFx 162.5.57 plans LocalDB 17.0 as Sql160, and no run of the 162 half there is measured.
 
 ## Next
+- dbchange-lite: the `lite` CI job's first run on SQL Server 2022 Express and LocalDB; L8's edits to the skills as a vendoring patch for the SSDT repository; L9, the MCP adapter, after the trial (`DBCHANGE_LITE.md` §14).
 - WP 2.5's predict chains `Vocabulary.Read` and `Coordinates.Of` (a `Declared` takes a person's state; an unclassified statement goes
   to proof), reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`, writes the existing data
   `up` reads with its trust list, and predicts as `Io.Tests: SampleChangePredictionTests` does for the corpus, whose INSERT scripts

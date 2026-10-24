@@ -186,3 +186,51 @@ jobs:
         if: always()
         shell: bash
         run: echo "elapsed $(( $(date +%s) - DBCHANGE_JOB_START )) s"
+
+  lite:
+    name: lite (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    # dbchange-lite (DBCHANGE_LITE.md): its own solution under tools/dbchange-lite/, built and tested beside v3's lanes and touching
+    # none of them. The fixture tests run the corpus of tests/Golden/changes/ on the local server the tool itself chooses, the SQL Server
+    # 2022 Express ci/sql.sh up installs on Ubuntu (~/.dbchange/sql.env) and LocalDB on Windows; the published folder carries DacFx's
+    # build targets, which the tests build each sample change with.
+    defaults:
+      run:
+        working-directory: tools/dbchange-lite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore DbChangeLite.sln --locked-mode
+      - run: dotnet build DbChangeLite.sln --no-restore
+      - run: dotnet test DbChangeLite.sln --no-build --filter "Category=fast" --blame-hang-timeout 8m --blame-hang-dump-type none
+      - name: Publish the tool folder
+        if: runner.os == 'Linux'
+        run: bash ci/publish.sh
+      - name: Publish the tool folder
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./ci/publish.ps1
+      - name: SQL Server 2022 Express, installed and started
+        if: runner.os == 'Linux'
+        working-directory: .
+        run: bash ci/sql.sh up
+      - name: LocalDB, started
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: .
+        run: ./ci/sql.ps1 up
+      - name: The corpus, drift, prove and diff
+        shell: bash
+        run: |
+          export DBCHANGE_LITE_TOOL="$PWD/dist/dbchange-lite"
+          dotnet test DbChangeLite.sln --no-build --filter "Category=fixture|Category=build" --blame-hang-timeout 30m --blame-hang-dump-type none --logger "console;verbosity=normal"
+      - if: always() && runner.os == 'Linux'
+        working-directory: .
+        run: bash ci/sql.sh down

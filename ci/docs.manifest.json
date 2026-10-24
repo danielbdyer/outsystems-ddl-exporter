@@ -158,7 +158,37 @@
       "owner": "tool",
       "reader": ["the operator", "the lite tool's build session"],
       "moment": ["until the lite tool moves to the SSDT repository"],
-      "budget": 224,
+      "budget": 440,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "tools/dbchange-lite/README.md",
+      "kind": "hand",
+      "owner": "vendored",
+      "reader": ["a maintainer of dbchange-lite", "the SSDT repository's developers, once vendored"],
+      "moment": ["before building or running dbchange-lite"],
+      "budget": 60,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "tools/dbchange-lite/knowledge/dbchange-lite.md",
+      "kind": "hand",
+      "owner": "vendored",
+      "reader": ["a developer's agent in the SSDT repository"],
+      "moment": ["at the start of every schema change dbchange-lite predicts"],
+      "budget": 60,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "tests/Golden/lite/make-mandatory-on-a-cdc-tracked-table/cdc-tracked.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["dbchange-lite's corpus harness, which writes it as the case's CDC ledger"],
+      "moment": ["the CDC case of tests/Golden/lite/ runs"],
+      "budget": 10,
       "generator": null,
       "ancestor": []
     },

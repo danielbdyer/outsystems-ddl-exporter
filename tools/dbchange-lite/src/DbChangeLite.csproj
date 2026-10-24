@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>dbchange-lite</AssemblyName>
+    <RootNamespace>DbChangeLite</RootNamespace>
+    <RollForward>LatestMinor</RollForward>
+    <VersionPrefix>0.1.0</VersionPrefix>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SqlServer.DacFx" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageDownload Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="[1.0.3]" />
+    <PackageDownload Include="Microsoft.SqlServer.Dacpacs.Master" Version="[160.2.8]" />
+    <PackageDownload Include="Microsoft.SqlServer.Dacpacs.Msdb" Version="[160.1.4]" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="exits.frozen;operations.json;causes.json" CopyToOutputDirectory="PreserveNewest" />
+    <InternalsVisibleTo Include="DbChangeLite.Tests" />
+  </ItemGroup>
+</Project>

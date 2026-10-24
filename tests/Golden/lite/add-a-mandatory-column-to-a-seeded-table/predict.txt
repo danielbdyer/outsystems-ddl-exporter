@@ -1,0 +1,4 @@
+precondition TableEmpty on [dbo].[Status]
+empty: applies; prove it
+populated: blocks by TableEmpty on [dbo].[Status]; prove it
+violating: blocks by TableEmpty on [dbo].[Status]; prove it

@@ -41,6 +41,10 @@ internal static class Documents
     /// </summary>
     public const int OneTool = 8;
 
+    /// <summary>dbchange-lite's folder, whose documents leave with the tool (DBCHANGE_LITE.md §9), and its own corpus cases, data its
+    /// harness reads (§10).</summary>
+    public static readonly IReadOnlyList<string> Lite = ["tools/dbchange-lite/", "tests/Golden/lite/"];
+
     private static readonly Regex ValueRow = new(@"^\| ([A-Z]\d+) \|", RegexOptions.CultureInvariant);
     private static readonly Regex WorkPackageRow = new(@"^\| (\d)\.(\d+) \|", RegexOptions.CultureInvariant);
     private static readonly Regex MilestoneHeading = new(@"^## \d+\. M(\d)\b", RegexOptions.CultureInvariant);
@@ -139,13 +143,16 @@ internal static class Documents
     public static string Exit(int milestone, int exit) => string.Create(CultureInfo.InvariantCulture, $"M{milestone}.{exit}");
 
     /// <summary>
-    /// Every hand-written markdown row, less the root design documents until M8 starts, and less the Facsimile's case catalog under
-    /// tests/Cases/, which moved unchanged with its case and law identifiers (V3_MILESTONES.md §3.1) and whose case blocks are data
-    /// that names the Facsimile's own files: CaseCatalog holds its grammar, its counts and its own citations. What NoRestatedCounts reads.
+    /// Every hand-written markdown row, less the root design documents until M8 starts, less dbchange-lite's documents under
+    /// tools/dbchange-lite/, which name v2's skills they edit until the tool moves to the SSDT repository (DECISIONS.md, 2026-10-24), and
+    /// less the Facsimile's case catalog under tests/Cases/, which moved unchanged with its case and law identifiers (V3_MILESTONES.md
+    /// §3.1) and whose case blocks are data that names the Facsimile's own files: CaseCatalog holds its grammar, its counts and its own
+    /// citations. What NoRestatedCounts reads.
     /// </summary>
     public static IEnumerable<string> HandWritten => Rows
         .Where(r => r.Kind == "hand" && r.Path.EndsWith(".md", StringComparison.Ordinal)
             && !(!Started(OneTool) && RootDesign.Contains(r.Path))
+            && !Lite.Any(l => r.Path.StartsWith(l, StringComparison.Ordinal))
             && !r.Path.StartsWith(CaseCatalog.Folder + "/", StringComparison.Ordinal))
         .Select(r => r.Path);
 
