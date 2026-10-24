@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 
 namespace DbChangeLite;
@@ -30,6 +29,14 @@ public abstract record Source
         };
     }
 
+    public static (Source To, Ref? Onto) Change(Invocation invocation)
+    {
+        var to = Parse(invocation.Values.GetValueOrDefault("--to") ?? "ref:HEAD", "--to");
+        var onto = invocation.Values.GetValueOrDefault("--onto") ?? "ref:origin/main";
+        return (to, onto == "none" ? null : Parse(onto, "--onto") as Ref
+            ?? throw Stop.Of("bad-arguments", "onto.form", "--onto", "--onto is " + onto + ", and it takes ref:<git ref> or none.", "Give --onto as ref:<git ref>, or none."));
+    }
+
     public sealed override string ToString() => this switch
     {
         Ref r => "ref:" + r.Name,
@@ -39,18 +46,16 @@ public abstract record Source
     };
 }
 
-public sealed record Built(string PackagePath, string Fingerprint, string? Commit, string? OntoCommit, string? Tree, string Describe);
+public sealed record Built(string PackagePath, string Fingerprint, string? Commit, string? OntoCommit, string? Tree, string Describe, IReadOnlyList<Finding>? Warnings = null);
 
 public static partial class Ssdt
 {
-    public const string Targets = "Microsoft.Data.Tools.Schema.SqlTasks.targets";
-
     public static Built Package(Source source, Source.Ref? onto, Run run)
     {
         switch (source)
         {
             case Source.Dacpac dacpac:
-                var path = Path.GetFullPath(Path.Combine(run.Root, dacpac.Path));
+                var path = Path.GetFullPath(dacpac.Path, run.WorkingDirectory);
                 if (!File.Exists(path))
                 {
                     throw Stop.Of("bad-arguments", "source.dacpac-missing", dacpac.Path, "There is no package at " + dacpac.Path + ".", "Give dacpac:<path> an existing .dacpac.");
@@ -58,9 +63,9 @@ public static partial class Ssdt
 
                 return new Built(path, DbChangeLite.Fingerprint.OfBytes(File.ReadAllBytes(path)), null, null, null, source.ToString());
             case Source.Project project:
-                var folder = Path.GetFullPath(Path.Combine(run.Root, project.Path));
+                var folder = Path.GetFullPath(project.Path, run.WorkingDirectory);
                 var sqlproj = folder.EndsWith(".sqlproj", StringComparison.OrdinalIgnoreCase) ? folder : OneProject(folder);
-                var fingerprint = FolderFingerprint(Path.GetDirectoryName(sqlproj)!);
+                var fingerprint = Cache.FolderFingerprint(Path.GetDirectoryName(sqlproj)!);
                 return new Built(Cache.Package(run, fingerprint, () => Build(sqlproj, run)), fingerprint, null, null, null, source.ToString());
             case Source.Ref reference:
                 return Checkout(reference, onto, run);
@@ -73,6 +78,9 @@ public static partial class Ssdt
     {
         var commit = Git(run.Root, ["rev-parse", "--verify", reference.Name + "^{commit}"], run.Cancel, "source.ref-unknown", reference.Name).Trim();
         var ontoCommit = onto is null ? null : Git(run.Root, ["rev-parse", "--verify", onto.Name + "^{commit}"], run.Cancel, "source.ref-unknown", onto.Name).Trim();
+        var uncommitted = reference.Name == "HEAD" ? Git(run.Root, ["status", "--porcelain", "--untracked-files=no"], run.Cancel, "source.status", reference.Name).Split('\n', StringSplitOptions.RemoveEmptyEntries).Length : 0;
+        var warnings = uncommitted == 0 ? null : new[] { Finding.Warning("source.uncommitted", "ref:HEAD", "The working tree holds " + uncommitted.ToString(CultureInfo.InvariantCulture)
+            + " uncommitted change" + (uncommitted == 1 ? "" : "s") + ", which ref:HEAD does not include.", "Commit the change, or give --to project:<the project's folder> to read the working tree.") };
         var worktree = Path.Combine(run.Folder, "src-" + commit[..12]);
         Git(run.Root, ["worktree", "add", "--detach", worktree, commit], run.Cancel, "source.worktree", reference.Name);
         try
@@ -84,7 +92,7 @@ public static partial class Ssdt
 
             var tree = Git(worktree, ["rev-parse", "HEAD^{tree}"], run.Cancel, "source.tree", reference.Name).Trim();
             var describe = reference + (onto is null ? "" : " onto " + onto);
-            return new Built(Cache.Package(run, "tree-" + tree, () => Build(OneProject(worktree), run)), tree, commit, ontoCommit, tree, describe);
+            return new Built(Cache.Package(run, "tree-" + tree, () => Build(OneProject(worktree), run)), tree, commit, ontoCommit, tree, describe, warnings);
         }
         finally
         {
@@ -103,8 +111,11 @@ public static partial class Ssdt
 
         var conflicts = Exec("git", ["-C", worktree, "diff", "--name-only", "--diff-filter=U"], worktree, TimeSpan.FromMinutes(1), run.Cancel).Output.Trim();
         Exec("git", ["-C", worktree, "merge", "--abort"], worktree, TimeSpan.FromMinutes(1), CancellationToken.None);
-        throw Stop.Of("needs-input", "merge.conflict", ontoName, "Merging " + ontoName + " into the change conflicts in " + conflicts.ReplaceLineEndings(", ") + ".",
-            "Merge " + ontoName + " into the branch, resolve each file, commit, and run the verb again.");
+        throw conflicts.Length == 0
+            ? Stop.Of("needs-input", "merge.failed", ontoName, "git merge of " + ontoName + " into the change failed: " + (merge.Error + merge.Output).Trim().ReplaceLineEndings(" "),
+                "Merge " + ontoName + " into the branch by hand as git's message says, then run the verb again.")
+            : Stop.Of("needs-input", "merge.conflict", ontoName, "Merging " + ontoName + " into the change conflicts in " + conflicts.ReplaceLineEndings(", ") + ".",
+                "Merge " + ontoName + " into the branch, resolve each file, commit, and run the verb again.");
     }
 
     public static string OneProject(string folder)
@@ -122,38 +133,7 @@ public static partial class Ssdt
             [var one] => one,
             [] => throw Stop.Of("bad-arguments", "project.missing", folder, folder + " holds no .sqlproj.", "Name a source that holds one SSDT project."),
             _ => throw Stop.Of("bad-arguments", "project.ambiguous", folder, folder + " holds several projects: " + string.Join(", ", projects.Select(p => Path.GetRelativePath(folder, p))) + ".",
-                "Set DBCHANGE_LITE_PROJECT to the project's path from the repository root."),
+                "Set DBCHANGE_LITE_PROJECT to the project's path inside the source folder, as this message lists it."),
         };
     }
-
-    public static string Build(string project, Run run)
-    {
-        if (!File.Exists(Path.Combine(run.Tool, Targets)))
-        {
-            throw Stop.Of("configuration-refused", "tool.targets-missing", run.Tool, "The tool folder " + run.Tool + " holds no " + Targets + ", so no SSDT project can build.",
-                "Run ci/publish.sh (ci/publish.ps1 on Windows) and run dbchange-lite from the published folder, or set DBCHANGE_LITE_TOOL to it.");
-        }
-
-        StopFiles(run.Folder);
-        var output = Path.Combine(run.Folder, "build-" + Path.GetFileNameWithoutExtension(project) + "-" + Guid.NewGuid().ToString("N")[..8]) + Path.DirectorySeparatorChar;
-        Directory.CreateDirectory(output);
-        var build = Exec("dotnet",
-        [
-            "build", project, "-c", "Release", "--no-restore", "-nologo", "-tl:off", "-v:m", "-nodeReuse:false", "-p:DacFxTelemetryEnabled=false", "-p:NetCoreBuild=true",
-            "-p:NETCoreTargetsPath=" + run.Tool, "-p:SQLDBExtensionsRefPath=" + run.Tool, "-p:TargetFrameworkRootPath=" + Path.Combine(run.Tool, "refasm"),
-            "-p:OutputPath=" + output, "-p:BaseIntermediateOutputPath=" + output + "obj" + Path.DirectorySeparatorChar, "-p:IntermediateOutputPath=" + output + "obj" + Path.DirectorySeparatorChar,
-        ], Path.GetDirectoryName(project)!, TimeSpan.FromMinutes(10), run.Cancel);
-        var package = Directory.EnumerateFiles(output, "*.dacpac", SearchOption.TopDirectoryOnly)
-            .FirstOrDefault(p => !Path.GetFileName(p).Equals("master.dacpac", StringComparison.OrdinalIgnoreCase) && !Path.GetFileName(p).Equals("msdb.dacpac", StringComparison.OrdinalIgnoreCase));
-        if (build.Code != 0 || package is null)
-        {
-            var errors = (build.Output + "\n" + build.Error).Split('\n').Where(l => l.Contains(": error ", StringComparison.Ordinal)).Select(l => l.Trim()).Distinct().ToList();
-            throw new Stop(Contract.Of("build-failed"), Finding.Error("build.failed", Path.GetFileName(project),
-                "The build of " + Path.GetFileName(project) + " failed" + (errors.Count == 0 ? " with exit " + build.Code + "." : ": " + string.Join(" | ", errors.Take(10))),
-                "Fix each error at the file and line named, then run the verb again."));
-        }
-
-        return package;
-    }
-
 }

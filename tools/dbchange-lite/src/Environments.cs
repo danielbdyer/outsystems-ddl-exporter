@@ -8,8 +8,7 @@ using System.Text.Json;
 
 namespace DbChangeLite;
 
-public sealed record NamedEnvironment(string Name, string Host, string Connection, string Profile, IReadOnlyDictionary<string, string> SqlCmd,
-    IReadOnlyList<string> ReaderGroups, bool NeverRead, int DeployOrder);
+public sealed record NamedEnvironment(string Name, string Host, string Connection, string Profile, IReadOnlyDictionary<string, string> SqlCmd, bool NeverRead, int DeployOrder);
 
 public sealed record Environments(IReadOnlyList<NamedEnvironment> All)
 {
@@ -38,7 +37,7 @@ public static class EnvironmentsFile
         var all = new List<NamedEnvironment>();
         foreach (var property in document.RootElement.GetProperty("environments").EnumerateObject())
         {
-            var e = property.Value;
+            var e = property.Value.ValueKind == JsonValueKind.Object ? property.Value : throw Refused(property.Name, "value", "is not an object with host, connection and profile");
             var connection = Text(e, "connection") ?? throw Refused(property.Name, "connection", "has no connection reference");
             if (!IsReference(connection))
             {
@@ -48,11 +47,10 @@ public static class EnvironmentsFile
             var sqlcmd = e.TryGetProperty("sqlcmd", out var values)
                 ? values.EnumerateObject().ToDictionary(v => v.Name, v => SqlCmdValue(property.Name, v), StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var readers = e.TryGetProperty("readerGroups", out var groups) ? groups.EnumerateArray().Select(g => g.GetString() ?? "").ToList() : [];
+            var never = !e.TryGetProperty("neverRead", out var flag) ? false : flag.ValueKind is JsonValueKind.True or JsonValueKind.False ? flag.GetBoolean() : throw Refused(property.Name, "neverRead", "is not true or false");
+            var order = !e.TryGetProperty("deployOrder", out var place) ? int.MaxValue : place.ValueKind == JsonValueKind.Number && place.TryGetInt32(out var value) ? value : throw Refused(property.Name, "deployOrder", "is not a whole number");
             all.Add(new NamedEnvironment(property.Name, Text(e, "host") ?? throw Refused(property.Name, "host", "names no host"), connection,
-                Text(e, "profile") ?? throw Refused(property.Name, "profile", "names no publish profile"), sqlcmd, readers,
-                e.TryGetProperty("neverRead", out var never) && never.ValueKind == JsonValueKind.True,
-                e.TryGetProperty("deployOrder", out var order) && order.ValueKind == JsonValueKind.Number ? order.GetInt32() : int.MaxValue));
+                Text(e, "profile") ?? throw Refused(property.Name, "profile", "names no publish profile"), sqlcmd, never, order));
         }
 
         return new Environments(all);

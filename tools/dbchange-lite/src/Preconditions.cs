@@ -30,7 +30,7 @@ public static class Preconditions
         {
             switch (statement.Node)
             {
-                case CreateTableStatement create when !IsRebuildCopy(create.SchemaObjectName):
+                case CreateTableStatement create when !NotPredictable.IsRebuildCopy(create.SchemaObjectName):
                     created.Add(DeployScripts.TableOf(create.SchemaObjectName));
                     break;
                 case AlterTableAddTableElementStatement add:
@@ -54,7 +54,9 @@ public static class Preconditions
         {
             switch (statement.Node)
             {
-                case CreateTableStatement create when IsRebuildCopy(create.SchemaObjectName):
+                case CreateTableStatement create when NotPredictable.IsTemp(create.SchemaObjectName) || NotPredictable.IsHousekeeping(DeployScripts.TableOf(create.SchemaObjectName)) && !NotPredictable.IsRebuildCopy(create.SchemaObjectName):
+                    break;
+                case CreateTableStatement create when NotPredictable.IsRebuildCopy(create.SchemaObjectName):
                     var (rebuiltSchema, rebuilt) = Original(create.SchemaObjectName);
                     found.AddRange(Constraints(rebuiltSchema, rebuilt, create.Definition, statement.Line, _ => false));
                     found.AddRange(create.Definition.ColumnDefinitions
@@ -129,7 +131,6 @@ public static class Preconditions
 
     public static (string Schema, string Table) Parts(SchemaObjectName name) => (name.SchemaIdentifier?.Value ?? "dbo", name.BaseIdentifier.Value);
 
-    public static bool IsRebuildCopy(SchemaObjectName name) => name.BaseIdentifier.Value.StartsWith(NotPredictable.RebuildPrefix, StringComparison.OrdinalIgnoreCase);
 
     public static (string Schema, string Table) Original(SchemaObjectName name) => (name.SchemaIdentifier?.Value ?? "dbo", name.BaseIdentifier.Value[NotPredictable.RebuildPrefix.Length..]);
 

@@ -24,7 +24,8 @@ public sealed class ContractTests
             Assert.Equal(File.ReadAllText(v3), own);
         }
 
-        Assert.Equal(Contract.Frozen(Repo.Src).Select(f => (f.Code, f.Name)), Contract.Exits.Select(e => (e.Code, e.Name)));
+        var frozen = own.Split('\n').Where(l => l.Length > 0 && !l.StartsWith('#')).Select(l => l.Split(' ', 2)).Select(p => (int.Parse(p[0], System.Globalization.CultureInfo.InvariantCulture), p[1].Trim()));
+        Assert.Equal(frozen, Contract.Exits.Select(e => (e.Code, e.Name)));
     }
 
     [Fact]

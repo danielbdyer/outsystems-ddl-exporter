@@ -16,9 +16,22 @@ public static class Baselines
 {
     public static string DatabaseOf(string connectionString, string subject)
     {
-        var database = new SqlConnectionStringBuilder(connectionString).InitialCatalog;
+        var database = Connection(connectionString, subject).InitialCatalog;
+
         return database.Length > 0 ? database
             : throw Stop.Of("configuration-refused", "environment.no-database", subject, "The connection for " + subject + " names no database.", "Add Initial Catalog=<database> to the connection the environments file references.");
+    }
+
+    public static SqlConnectionStringBuilder Connection(string text, string subject)
+    {
+        try
+        {
+            return new SqlConnectionStringBuilder(text);
+        }
+        catch (ArgumentException)
+        {
+            throw Stop.Of("configuration-refused", "environment.connection", subject, "The connection for " + subject + " is not a connection string.", "Correct the value the connection reference names, outside any file the repository holds.");
+        }
     }
 
     public static Baseline Read(NamedEnvironment environment, Run run)

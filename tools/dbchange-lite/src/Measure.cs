@@ -13,9 +13,9 @@ public abstract record Measured
 {
     public sealed record Answered(long Value) : Measured;
 
-    public sealed record Refused(int Number) : Measured;
+    public sealed record Refused(int Number, string Message) : Measured;
 
-    public sealed record TimedOut(int Seconds) : Measured;
+    public sealed record TimedOut(int Seconds, bool Locked) : Measured;
 
     public sealed record Failed(int Number, string Message) : Measured;
 }
@@ -27,11 +27,13 @@ public sealed class Session : IDisposable
 
     private readonly SqlConnection connection;
     private readonly QueryLog log;
+    private readonly CancellationToken cancel;
 
-    private Session(SqlConnection connection, QueryLog log)
+    private Session(SqlConnection connection, QueryLog log, CancellationToken cancel)
     {
         this.connection = connection;
         this.log = log;
+        this.cancel = cancel;
         Server = connection.DataSource;
         Database = connection.Database;
     }
@@ -42,7 +44,8 @@ public sealed class Session : IDisposable
 
     public static Session Open(string connectionString, QueryLog log, CancellationToken cancel, string subject)
     {
-        var builder = new SqlConnectionStringBuilder(connectionString) { ApplicationName = "dbchange-lite" };
+        var builder = Baselines.Connection(connectionString, subject);
+        builder.ApplicationName = "dbchange-lite";
         var connection = new SqlConnection(builder.ConnectionString);
         try
         {
@@ -60,13 +63,14 @@ public sealed class Session : IDisposable
             throw Stop.Of("configuration-refused", "environment.connection", subject, "The connection for " + subject + " is not usable: " + e.Message, "Correct the connection the environments file references.");
         }
 
-        var session = new Session(connection, log);
+        var session = new Session(connection, log, cancel);
         session.Execute("SET LOCK_TIMEOUT " + LockMilliseconds.ToString(CultureInfo.InvariantCulture));
         return session;
     }
 
     public Measured Scalar(string query)
     {
+        cancel.ThrowIfCancellationRequested();
         OneSelect(query);
         var clock = Stopwatch.StartNew();
         try
@@ -82,8 +86,9 @@ public sealed class Session : IDisposable
             log.Add(Server, Database, query, clock.ElapsedMilliseconds, "Msg " + e.Number.ToString(CultureInfo.InvariantCulture));
             return e.Number switch
             {
-                229 or 230 or 297 => new Measured.Refused(e.Number),
-                -2 or 1222 => new Measured.TimedOut(CommandSeconds),
+                229 or 230 or 297 => new Measured.Refused(e.Number, e.Message.ReplaceLineEndings(" ")),
+                1222 => new Measured.TimedOut(LockMilliseconds / 1000, true),
+                -2 => new Measured.TimedOut(CommandSeconds, false),
                 _ => new Measured.Failed(e.Number, e.Message.ReplaceLineEndings(" ")),
             };
         }
@@ -91,6 +96,7 @@ public sealed class Session : IDisposable
 
     public IReadOnlyList<IReadOnlyList<string>> Rows(string query)
     {
+        cancel.ThrowIfCancellationRequested();
         OneSelect(query);
         var clock = Stopwatch.StartNew();
         var rows = new List<IReadOnlyList<string>>();
@@ -114,18 +120,29 @@ public sealed class Session : IDisposable
         return rows;
     }
 
-    public void Execute(string batch)
+    public void Execute(string batch, string? logged = null)
     {
+        cancel.ThrowIfCancellationRequested();
         var clock = Stopwatch.StartNew();
-        using var command = new SqlCommand(batch, connection) { CommandTimeout = 600 };
-        command.ExecuteNonQuery();
-        log.Add(Server, Database, batch, clock.ElapsedMilliseconds, "executed");
+        try
+        {
+            using var command = new SqlCommand(batch, connection) { CommandTimeout = 600 };
+            command.ExecuteNonQuery();
+            log.Add(Server, Database, logged ?? batch, clock.ElapsedMilliseconds, "executed");
+        }
+        catch (SqlException e)
+        {
+            log.Add(Server, Database, logged ?? batch, clock.ElapsedMilliseconds, "Msg " + e.Number.ToString(CultureInfo.InvariantCulture));
+            throw;
+        }
     }
 
     public string Collation() => Rows("SELECT collation_name FROM sys.databases WHERE name = DB_NAME()").FirstOrDefault()?[0] ?? "";
 
     public string SchemaFingerprint() => Fingerprint.OfString(string.Join('\n',
-        Rows("SELECT object_id, type, CONVERT(varchar(33), modify_date, 126) FROM sys.objects WHERE is_ms_shipped = 0 ORDER BY object_id").Select(r => string.Join('\t', r))));
+        Rows("SELECT object_id, type, CONVERT(varchar(33), modify_date, 126) FROM sys.objects WHERE is_ms_shipped = 0 ORDER BY object_id")
+            .Concat(Rows("SELECT class, major_id, minor_id, name, CONVERT(nvarchar(max), value) FROM sys.extended_properties ORDER BY class, major_id, minor_id, name"))
+            .Select(r => string.Join('\t', r))));
 
     public (string Version, string Edition, int CompatibilityLevel) ServerInfo()
     {
@@ -149,17 +166,17 @@ public sealed class Session : IDisposable
     public void Dispose() => connection.Dispose();
 }
 
-public static class Measure
+public static class RowPresence
 {
-    public static (bool? Fires, string ReadBy, Measured Result) RowPresence(Session session, string schema, string table, string exactQuery)
+    public static (bool? Fires, string ReadBy, Measured Result) Read(Func<string, Measured> scalar, string schema, string table, string exactQuery)
     {
-        var exact = session.Scalar(exactQuery);
+        var exact = scalar(exactQuery);
         if (exact is not Measured.Refused)
         {
             return (exact is Measured.Answered a ? a.Value > 0 : null, "exists", exact);
         }
 
-        var partitions = session.Scalar(PartitionsQuery(schema, table));
+        var partitions = scalar(PartitionsQuery(schema, table));
         return partitions switch
         {
             Measured.Answered { Value: var rows } => (rows > 0, "sys.partitions", partitions),

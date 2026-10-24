@@ -53,8 +53,7 @@ public static class Program
         }
         catch (Stop stop)
         {
-            output.Write(new Answer("dbchange-lite.arguments/1", stop.Outcome.Word, stop.Outcome.Exit, stop.Finding.Message, null, [stop.Finding], Contract.Version,
-                Dacfx.Running, "UNPINNED", null, null, null, null, false, null, null, null).Text());
+            output.Write(DbChangeLite.Answer.Before("dbchange-lite.arguments/1", stop).Text());
             return stop.Outcome.Exit;
         }
 
@@ -67,8 +66,7 @@ public static class Program
         {
             var stop = e as Stop ?? Stop.Of("configuration-refused", "run.folder", workingDirectory, "The run folder under .dbchange/runs cannot be written: " + e.Message,
                 "Make .dbchange/runs under the repository root a writable folder, then run the verb again.");
-            output.Write(new Answer("dbchange-lite." + invocation.Verb.Name + "/1", stop.Outcome.Word, stop.Outcome.Exit, stop.Finding.Message, null, [stop.Finding],
-                Contract.Version, Dacfx.Running, "UNPINNED", null, null, null, null, false, null, null, null).Text());
+            output.Write(DbChangeLite.Answer.Before("dbchange-lite." + invocation.Verb.Name + "/1", stop).Text());
             return stop.Outcome.Exit;
         }
 
@@ -101,8 +99,9 @@ public static class Program
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
+            File.WriteAllText(Path.Combine(run.Folder, "error.txt"), e.ToString());
             return DbChangeLite.Answer.Of(invocation.Verb.Name, Contract.Of("configuration-refused"), "dbchange-lite failed: " + e.GetType().Name + ": " + e.Message,
-                [Finding.Error("internal.unexpected", invocation.Verb.Name, e.GetType().Name + ": " + e.Message, "Report this answer and its run folder with the command that produced it.")], run);
+                [Finding.Error("internal.unexpected", invocation.Verb.Name, e.GetType().Name + ": " + e.Message, "Report this answer and its run folder, which holds error.txt, with the command that produced it.")], run);
         }
     }
 }

@@ -1,14 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 
 namespace DbChangeLite;
 
 public static partial class Predict
 {
-    private static IEnumerable<OpenItem> Open(NamedEnvironment environment, Reading reading, Measurement measured, Func<string, string> command, Source to, Source.Ref? onto)
+    internal static IEnumerable<OpenItem> Open(NamedEnvironment environment, Reading reading, Measurement measured, Func<string, string> command, Source to, Source.Ref? onto, string? intent, string tool)
     {
         var prove = "dbchange-lite prove --env " + environment.Name + " --to " + to + (onto is null ? " --onto none" : " --onto " + onto) + " --rows <the rows file written from this answer>";
         foreach (var (precondition, result) in measured.Unanswered)
@@ -16,8 +15,9 @@ public static partial class Predict
             yield return result switch
             {
                 Measured.Failed when precondition.ReadsNew => new OpenItem(environment.Name, 4, precondition.Spelled + " reads a column the plan adds, so no read-only query settles it", Next.Run(prove, "the developer's agent")),
-                Measured.Refused => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read: SQL Server refuses this login the SELECT", Next.Ask("a DBA", "Grant SELECT on " + precondition.Quoted + " to the reader of " + environment.Name + ", or run predict as a login that holds it.")),
-                Measured.TimedOut t => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read: the query ran past " + t.Seconds.ToString(CultureInfo.InvariantCulture) + " seconds", Next.Run(command(environment.Name), "the developer's agent, when " + environment.Name + " is quieter")),
+                Measured.Refused r => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read: SQL Server refuses this login the SELECT", Next.Ask("a DBA", "SQL Server says: " + r.Message + " Grant that SELECT to the reader of " + environment.Name + ", or run predict as a login that holds it.")),
+                Measured.TimedOut { Locked: true } t => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read: the query waited " + t.Seconds.ToString(CultureInfo.InvariantCulture) + " seconds for a lock another session holds (Msg 1222)", Next.Run(command(environment.Name), "the developer's agent, when no session holds a lock on " + precondition.Quoted)),
+                Measured.TimedOut t => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read: the query ran past " + t.Seconds.ToString(CultureInfo.InvariantCulture) + " seconds", Next.Ask("a DBA", "Run this read-only query on " + environment.Name + " without a timeout and say whether it answers 1: " + precondition.Query)),
                 Measured.Failed f => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read: " + (f.Number == 0 ? f.Message : "Msg " + f.Number.ToString(CultureInfo.InvariantCulture) + ", " + f.Message), Next.Ask("a DBA", "Why does the query for " + precondition.Spelled + " fail on " + environment.Name + "?")),
                 _ => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read", Next.Run(command(environment.Name), "the developer's agent")),
             };
@@ -47,16 +47,26 @@ public static partial class Predict
             }
         }
 
-        foreach (var change in reading.Contract.DistinctBy(c => (c.Table, c.What)))
+        foreach (var change in reading.ConsumerChanges.DistinctBy(c => (c.Table, c.What)))
         {
             yield return new OpenItem(environment.Name, 0, change.Table + ": " + change.What + ", which its OutSystems consumers see", Next.Ask("the lead", "Which release deploys " + change.Table + "'s change, and when is its external entity refreshed in Integration Studio and each consumer republished?"));
         }
 
         foreach (var operation in reading.Unexplained)
         {
-            yield return operation.Cause is null
-                ? new OpenItem(environment.Name, 0, "the plan " + operation.Kind.ToLowerInvariant() + "s " + operation.Type + " " + operation.Name + ", which the change does not make", Next.Ask("a lead", "Is " + operation.Name + " drift on " + environment.Name + ", or part of this change?"))
-                : new OpenItem(environment.Name, 0, "the plan " + operation.Kind.ToLowerInvariant() + "s " + operation.Type + " " + operation.Name + "; cause " + operation.Cause, Next.Ask("the developer", "Follow causes.json for " + operation.Cause + "."));
+            var plans = "the plan " + operation.Kind.ToLowerInvariant() + "s " + operation.Type + " " + operation.Name;
+            yield return operation.Cause switch
+            {
+                null => new OpenItem(environment.Name, 0, plans + ", which the change does not make", Next.Ask("a lead", "Is " + operation.Name + " drift on " + environment.Name + ", or part of this change?")),
+                "outside-intent" => new OpenItem(environment.Name, 0, plans + ", which " + intent + " does not produce", Next.Ask("the developer", "Is " + operation.Name + " part of " + intent + ", or a second operation the change makes?")),
+                var cause => new OpenItem(environment.Name, 0, plans + "; cause " + cause, Next.Ask("the developer", Causes.Known(tool).FirstOrDefault(c => c.Name == cause)?.Action ?? "Read the cause " + cause + " in causes.json.")),
+            };
+        }
+
+        if (reading.MissingIntent is { } missing)
+        {
+            yield return new OpenItem(environment.Name, 0, "the plan for " + environment.Name + " makes none of the operations " + missing + " produces",
+                Next.Ask("the developer", "Is " + missing + " already on " + environment.Name + ", or does the profile's DropObjectsNotInSource=False keep a drop out of the plan?"));
         }
     }
 
@@ -78,14 +88,20 @@ public static partial class Predict
             yield return Finding.Warning("predict.not-predictable", unsettled.Table ?? environment.Name, "No read-only query settles " + unsettled.Why + (unsettled.Table is null ? "" : " on " + unsettled.Table) + " at line " + unsettled.Statement.Line.ToString(CultureInfo.InvariantCulture) + ".", "Run dbchange-lite prove as the open item says.");
         }
 
-        foreach (var change in reading.Contract.DistinctBy(c => (c.Table, c.What)))
+        foreach (var change in reading.ConsumerChanges.DistinctBy(c => (c.Table, c.What)))
         {
             yield return Finding.Warning("contract.change", change.Table, change.What + " on " + change.Table + ", which each environment's external entity must be refreshed for.", "Ask the lead as the open item says.");
         }
 
         foreach (var operation in reading.Unexplained)
         {
-            yield return Finding.Warning("plan.unexplained", operation.Name, "The plan for " + environment.Name + " " + operation.Kind.ToLowerInvariant() + "s " + operation.Type + " " + operation.Name + ", which the change does not make" + (operation.Cause is null ? "." : "; cause " + operation.Cause + "."), "Ask a lead as the open item says.");
+            yield return Finding.Warning("plan.unexplained", operation.Name, "The plan for " + environment.Name + " " + operation.Kind.ToLowerInvariant() + "s " + operation.Type + " " + operation.Name
+                + (operation.Cause == "outside-intent" ? ", which " + intent + " does not produce." : ", which the change does not make" + (operation.Cause is null ? "." : "; cause " + operation.Cause + ".")), "Ask the person the open item names.");
+        }
+
+        if (reading.MissingIntent is { } missing)
+        {
+            yield return Finding.Warning("plan.intent-absent", environment.Name, "The plan for " + environment.Name + " makes none of the operations " + missing + " produces.", "Ask the developer as the open item says.");
         }
 
         foreach (var (table, column, line) in reading.SmartDefaults)
@@ -102,16 +118,12 @@ public static partial class Predict
 
     private static EnvironmentAnswer Worst(NamedEnvironment environment, Built change, Built at, PublishProfile profile, Run run, List<Finding> findings)
     {
-        var changePackage = DacFx.Load(change.PackagePath);
-        var plan = DacFx.Script(changePackage, DacFx.Load(at.PackagePath), environment.Name, profile.Options);
-        File.WriteAllText(Path.Combine(run.Folder, environment.Name + ".script.sql"), plan.Script);
-        var script = DeployScripts.Read(plan.Script, DacFx.Text(changePackage.PreDeploymentScript), DacFx.Text(changePackage.PostDeploymentScript), Baselines.SqlCmd(environment, profile, run));
-        var checks = BlockOnPossibleDataLoss.Checks(script);
-        var preconditions = Preconditions.Of(script, checks, Model.Load(at.PackagePath)).Where(p => !p.OnNewObject || p.ReadsNew).ToList();
+        var reading = Read(environment, profile, environment.Name, at.PackagePath, Model.Load(at.PackagePath), change, null, null, run, new HashSet<string>());
+        var preconditions = reading.Preconditions.Where(p => !p.OnNewObject || p.ReadsNew).ToList();
         var clauses = preconditions.Select(p => p.Kind == "TableEmpty" ? p.Quoted + " has rows" : p.Spelled + " is violated").ToList();
         var outcome = clauses.Count == 0 ? "applies" : "blocks if " + string.Join(", or ", clauses);
         findings.Add(Finding.Warning("environment.assumed", environment.Name, environment.Name + " is never read, so the worst case is assumed: " + outcome + ".", "Run the beforePromoting queries on " + environment.Name + " under an identity with its rights just before promoting."));
-        return new EnvironmentAnswer(environment.Name, null, "worst", outcome, null, at.Describe, null, null, null, null, null, null, preconditions.Where(p => !p.ReadsNew).Select(p => p.Query).ToList());
+        return EnvironmentAnswer.Worst(environment.Name, outcome, at.Describe, preconditions.Where(p => !p.ReadsNew).Select(p => p.Query).ToList());
     }
 
     public static string Confidence(IReadOnlyList<EnvironmentAnswer> rows) => string.Join("; ", rows.Select(r => r.Assumed is not null ? r.Env + " assumed"

@@ -65,7 +65,7 @@ public sealed class RulesTests : IDisposable
         Assert.Empty(shape.Dropped);
         var whys = NotPredictable.Of(script, shape, environment, []).Select(u => u.Why).ToArray();
         Assert.Equal(["rebuild", "identity"], whys);
-        Assert.Empty(NotPredictable.Contract(script, shape, environment));
+        Assert.Empty(NotPredictable.ConsumerChanges(script, shape, environment));
     }
 
     [Fact]
@@ -120,7 +120,7 @@ public sealed class RulesTests : IDisposable
             + "EXECUTE [sp_executesql] @statement;\nGO\n"
             + "PRINT N'done';\nGO\nALTER DATABASE [$(DatabaseName)] SET QUERY_STORE = OFF;\nGO\n");
         Assert.Empty(NotPredictable.Of(admitted, NotPredictable.Shape(admitted), environment, []));
-        Assert.Equal([("[dbo].[Customer]", "[dbo].[Customer].[Region] is renamed")], NotPredictable.Contract(admitted, NotPredictable.Shape(admitted), environment).Select(c => (c.Table, c.What)).ToArray());
+        Assert.Equal([("[dbo].[Customer]", "[dbo].[Customer].[Region] is renamed")], NotPredictable.ConsumerChanges(admitted, NotPredictable.Shape(admitted), environment).Select(c => (c.Table, c.What)).ToArray());
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class RulesTests : IDisposable
     {
         var script = Scripts.Read("ALTER TABLE [dbo].[Customer] DROP COLUMN [Region];\nGO\nALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;\nGO\n"
             + "ALTER TABLE [dbo].[Account] ALTER COLUMN [Id] BIGINT NOT NULL;\nGO\nALTER TABLE [dbo].[Status] ALTER COLUMN [Code] NVARCHAR (20) NULL;\nGO\nDROP TABLE [dbo].[Status];\nGO\n");
-        var changes = NotPredictable.Contract(script, NotPredictable.Shape(script), environment).Select(c => c.Table + ": " + c.What).ToArray();
+        var changes = NotPredictable.ConsumerChanges(script, NotPredictable.Shape(script), environment).Select(c => c.Table + ": " + c.What).ToArray();
         Assert.Equal(["[dbo].[Customer]: the column [Region] is dropped", "[dbo].[Customer]: the column [Email] becomes mandatory", "[dbo].[Account]: the column [Id] changes type",
             "[dbo].[Status]: the column [Code] becomes optional", "[dbo].[Status]: the table is dropped"], changes);
     }
@@ -174,7 +174,7 @@ public sealed class RulesTests : IDisposable
     public void A_row_whose_check_went_unanswered_is_unknown_at_level_2_and_an_answered_empty_table_applies_at_level_3()
     {
         var empty = Precondition.Of("TableEmpty", "dbo", "Customer", [], null, false, 1);
-        var unanswered = new Measurement([new CheckAnswer("[dbo].[Customer]", null, "exists", empty.Query)], [], [(empty, new Measured.TimedOut(30))]);
+        var unanswered = new Measurement([new CheckAnswer("[dbo].[Customer]", null, "exists", empty.Query)], [], [(empty, new Measured.TimedOut(30, false))]);
         Assert.Equal((2, "unknown", (string?)null), (unanswered.Level, unanswered.Outcome, unanswered.BlockedBy));
         var answered = new Measurement([new CheckAnswer("[dbo].[Customer]", false, "exists", empty.Query)], [], []);
         Assert.Equal((3, "applies"), (answered.Level, answered.Outcome));
@@ -186,7 +186,7 @@ public sealed class RulesTests : IDisposable
     {
         var empty = Precondition.Of("TableEmpty", "dbo", "Customer", [], null, false, 1);
         var reads = Precondition.Of("Check", "dbo", "Customer", ["Score"], "SELECT 1 AS present FROM [dbo].[Customer] WHERE NOT ([Score] > 0)", true, 2) with { ReadsNew = true };
-        var environmentAnswer = new Measurement([new CheckAnswer("[dbo].[Customer]", null, "exists", empty.Query)], [new PreconditionAnswer("Check", "[dbo].[Customer]", ["Score"], null, null, reads.Query)], [(empty, new Measured.Refused(229))]);
+        var environmentAnswer = new Measurement([new CheckAnswer("[dbo].[Customer]", null, "exists", empty.Query)], [new PreconditionAnswer("Check", "[dbo].[Customer]", ["Score"], null, null, reads.Query)], [(empty, new Measured.Refused(229, "The SELECT permission was denied on the object 'Customer'."))]);
         var copyAnswer = new Measurement([new CheckAnswer("[dbo].[Customer]", true, "exists", empty.Query)], [new PreconditionAnswer("Check", "[dbo].[Customer]", ["Score"], null, null, reads.Query)], []);
         Assert.Equal(["[dbo].[Customer] was not read on dev"], Prove.Differences(environmentAnswer, copyAnswer, [empty, reads], "dev"));
     }
@@ -197,7 +197,7 @@ public sealed class RulesTests : IDisposable
     {
         var model = Model.Load(Dacpacs.Of(scratch.Under("checks.dacpac"), "CREATE TABLE [dbo].[Order] ([Id] INT NOT NULL PRIMARY KEY, [StatusText] NVARCHAR(20) NULL, [Total] INT NULL,"
             + " CONSTRAINT [CK_Order_StatusText] CHECK ([StatusText] IN (N'Pending', N'Paid')), CONSTRAINT [CK_Order_Total] CHECK ([Total] >= 0));"));
-        Assert.Contains(model.Checks, c => c.Name == "[dbo].[CK_Order_StatusText]" && c.Expression.Contains("IN", StringComparison.Ordinal));
+        Assert.Contains(model.CheckConstraints, c => c.Name == "[dbo].[CK_Order_StatusText]" && c.Expression.Contains("IN", StringComparison.Ordinal));
         var operations = new List<PlanOperation> { new("Create", "SqlCheckConstraint", "[dbo].[CK_Order_StatusText]"), new("Create", "SqlCheckConstraint", "[dbo].[CK_Order_Total]") };
         Assert.Equal("check-written-with-in", Causes.Of(operations[0], operations, model, ""));
         Assert.Null(Causes.Of(operations[1], operations, model, ""));
@@ -236,6 +236,77 @@ public sealed class RulesTests : IDisposable
         Assert.Equal("case-only-rename", Causes.Of(operations[0], operations, environment, ""));
         Assert.Null(Causes.Of(new PlanOperation("Create", "SqlIndex", "[dbo].[Customer].[IX]"), operations, environment, ""));
         Assert.Equal(["check-written-with-in", "clustered-key-rebuild", "query-store-option", "case-only-rename"], Causes.Known(Repo.Src).Select(c => c.Name).ToArray());
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Statements_that_move_no_rows_and_that_the_closed_list_once_missed_are_settled()
+    {
+        var script = Scripts.Read("ALTER INDEX [IX_Region] ON [dbo].[Customer] REBUILD WITH (DATA_COMPRESSION = PAGE);\nGO\n"
+            + "CREATE PARTITION FUNCTION [PF_Event](INT) AS RANGE RIGHT FOR VALUES (1000, 2000);\nGO\nCREATE PARTITION SCHEME [PS_Event] AS PARTITION [PF_Event] ALL TO ([PRIMARY]);\nGO\n"
+            + "ALTER TABLE [dbo].[Customer] NOCHECK CONSTRAINT [FK_Customer_Account];\nGO\nALTER TABLE [dbo].[Customer] CHECK CONSTRAINT ALL;\nGO\n"
+            + "ALTER AUTHORIZATION ON SCHEMA::[dbo] TO [dbo];\nGO\n");
+        Assert.Empty(NotPredictable.Of(script, NotPredictable.Shape(script), environment, []));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_move_to_another_schema_is_a_change_its_consumers_see_and_alters_both_names()
+    {
+        var script = Scripts.Read("ALTER SCHEMA [sales] TRANSFER [dbo].[Customer];\nGO\n");
+        var shape = NotPredictable.Shape(script);
+        Assert.Empty(NotPredictable.Of(script, shape, environment, []));
+        Assert.True(shape.Touches("[dbo].[Customer]") && shape.Touches("[sales].[Customer]"));
+        Assert.Equal(["[dbo].[Customer]: the table moves to schema [sales]"], NotPredictable.ConsumerChanges(script, shape, environment).Select(c => c.Table + ": " + c.What).ToArray());
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_table_the_plan_creates_stays_new_when_DacFx_adds_its_foreign_key_apart_so_its_seed_is_settled()
+    {
+        var seed = "MERGE [dbo].[Priority] AS target USING (VALUES (1, 1)) AS source ([Id], [StatusId]) ON target.[Id] = source.[Id] WHEN NOT MATCHED BY TARGET THEN INSERT ([Id], [StatusId]) VALUES (source.[Id], source.[StatusId]);";
+        var script = Scripts.Read("CREATE TABLE [dbo].[Priority] ([Id] INT NOT NULL CONSTRAINT [PK_Priority] PRIMARY KEY, [StatusId] INT NULL);\nGO\n"
+            + "ALTER TABLE [dbo].[Priority] WITH NOCHECK ADD CONSTRAINT [FK_Priority_Status] FOREIGN KEY ([StatusId]) REFERENCES [dbo].[Status] ([Id]);\nGO\n" + seed + "\nGO\n", post: seed);
+        Assert.Empty(NotPredictable.Of(script, NotPredictable.Shape(script), environment, []));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_tables_DacFx_creates_for_itself_hold_no_precondition()
+    {
+        var script = Scripts.Read("CREATE TABLE [#__checkStatus] ([id] INT IDENTITY (1, 1) PRIMARY KEY CLUSTERED, [Schema] NVARCHAR (256));\nGO\n"
+            + "CREATE TABLE [dbo].[__RefactorLog] ([OperationKey] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY);\nGO\n");
+        Assert.Empty(Preconditions.Of(script, [], environment));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_name_splits_into_its_parts_through_brackets_dots_and_doubled_brackets()
+    {
+        Assert.Equal(["my.schema", "T]x", "C"], Names.Parts("[my.schema].[T]]x].[C]"));
+        Assert.Equal(["dbo", "Customer"], Names.Parts("dbo.Customer"));
+        var script = Scripts.Read("EXECUTE sp_rename @objname = N'[my.schema].[T].[C]', @newname = N'D', @objtype = N'COLUMN';\nGO\n");
+        Assert.Equal(["[my.schema].[T]"], NotPredictable.ConsumerChanges(script, NotPredictable.Shape(script), environment).Select(c => c.Table).ToArray());
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_narrowing_explains_the_default_DacFx_drops_and_recreates_and_an_intent_knows_whether_the_plan_produces_it()
+    {
+        var narrowing = new List<PlanOperation> { new("Alter", "SqlTable", "[dbo].[OrderLine]"), new("Drop", "SqlDefaultConstraint", "[dbo].[DF_OrderLine_Amount]"), new("Create", "SqlDefaultConstraint", "[dbo].[DF_OrderLine_Amount]") };
+        Assert.Empty(NotPredictable.Unexplained(narrowing, "narrow", Repo.Src));
+        Assert.False(NotPredictable.Produces([], "delete-entity", Repo.Src));
+        Assert.True(NotPredictable.Produces([new PlanOperation("Drop", "SqlTable", "[dbo].[Note]")], "delete-entity", Repo.Src));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_package_DacFx_cannot_read_is_package_unreadable_and_a_readable_one_gives_its_collation()
+    {
+        var broken = scratch.Write("broken.dacpac", "not a zip");
+        Assert.Equal("package.unreadable", Assert.Throws<Stop>(() => Model.Load(broken)).Finding.Code);
+        Assert.Equal("package.unreadable", Assert.Throws<Stop>(() => ModelDiff.Lines(broken, broken)).Finding.Code);
+        Assert.NotEmpty(environment.Collation);
     }
 
     public void Dispose() => scratch.Dispose();

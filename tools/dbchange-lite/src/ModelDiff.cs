@@ -9,22 +9,24 @@ using Microsoft.SqlServer.Dac.Model;
 
 namespace DbChangeLite;
 
-public sealed record RefactorOperation(string Key, string Name, string ElementType, string ElementName, string NewName);
+public sealed record RefactorOperation(string Key, string Name, string ElementType, string ElementName, string NewName, string NewSchema);
 
 public static class ModelDiff
 {
     public static IReadOnlyList<string> Lines(string fromPackage, string toPackage)
     {
-        using var from = TSqlModel.LoadFromDacpac(fromPackage, new ModelLoadOptions { LoadAsScriptBackedModel = true });
-        using var to = TSqlModel.LoadFromDacpac(toPackage, new ModelLoadOptions { LoadAsScriptBackedModel = true });
+        using var from = DacFx.Guard(() => TSqlModel.LoadFromDacpac(fromPackage, new ModelLoadOptions { LoadAsScriptBackedModel = true }), "package.unreadable", fromPackage);
+        using var to = DacFx.Guard(() => TSqlModel.LoadFromDacpac(toPackage, new ModelLoadOptions { LoadAsScriptBackedModel = true }), "package.unreadable", toPackage);
         var before = Elements(from);
         var after = Elements(to);
         var operations = Refactorlog(toPackage).ExceptBy(Refactorlog(fromPackage).Select(o => o.Key), o => o.Key).ToList();
-        var renames = operations.Where(o => o.Name == "Rename Refactor").Select(o => (Type: TypeOf(o.ElementType), Old: o.ElementName, New: Renamed(o))).ToList();
+        var renames = operations.Where(o => o.Name is "Rename Refactor" or "Move Schema")
+            .Select(o => (Type: TypeOf(o.ElementType), Old: o.ElementName, New: o.Name == "Move Schema" ? Names.Quote(o.NewSchema, Names.Parts(o.ElementName)[^1]) : Renamed(o))).ToList();
         var renamedKeys = renames.SelectMany(r => new[] { (r.Type, r.Old), (r.Type, r.New) }).ToHashSet();
+        bool Moved((string Type, string Name) key) => renamedKeys.Contains(key) || renames.Any(r => key.Name.StartsWith(r.Old + ".", StringComparison.Ordinal) || key.Name.StartsWith(r.New + ".", StringComparison.Ordinal));
         var lines = new List<string>();
-        lines.AddRange(after.Keys.Except(before.Keys).Where(k => !renamedKeys.Contains(k)).Order().Select(k => "created " + k.Type + " " + k.Name));
-        lines.AddRange(before.Keys.Except(after.Keys).Where(k => !renamedKeys.Contains(k)).Order().Select(k => "dropped " + k.Type + " " + k.Name));
+        lines.AddRange(after.Keys.Except(before.Keys).Where(k => !Moved(k)).Order().Select(k => "created " + k.Type + " " + k.Name));
+        lines.AddRange(before.Keys.Except(after.Keys).Where(k => !Moved(k)).Order().Select(k => "dropped " + k.Type + " " + k.Name));
         lines.AddRange(renames.OrderBy(r => r.Old, StringComparer.Ordinal).Select(r => "renamed " + r.Type + " " + r.Old + " to " + r.Type + " " + r.New));
         lines.AddRange(operations.OrderBy(o => o.Key, StringComparer.Ordinal).Select(o => "created RefactorLogOperation [" + o.Key + "]"));
         var renamed = renames.ToDictionary(r => r.Old, r => r.New, StringComparer.Ordinal);
@@ -137,14 +139,14 @@ public static class ModelDiff
         return root is null ? [] : root.Elements().Where(e => e.Name.LocalName == "Operation").Select(o =>
         {
             string Property(string name) => o.Elements().FirstOrDefault(p => p.Name.LocalName == "Property" && (string?)p.Attribute("Name") == name)?.Attribute("Value")?.Value ?? "";
-            return new RefactorOperation((string?)o.Attribute("Key") ?? "", (string?)o.Attribute("Name") ?? "", Property("ElementType"), Property("ElementName"), Property("NewName"));
+            return new RefactorOperation((string?)o.Attribute("Key") ?? "", (string?)o.Attribute("Name") ?? "", Property("ElementType"), Property("ElementName"), Property("NewName"), Property("NewSchema"));
         }).ToList();
     }
 
     private static string Renamed(RefactorOperation operation)
     {
-        var parts = operation.ElementName.Split("].[");
-        return parts.Length <= 1 ? operation.NewName : string.Join("].[", parts[..^1]) + "]." + operation.NewName;
+        var parts = Names.Parts(operation.ElementName);
+        return parts.Count <= 1 ? operation.NewName : Names.Quote(parts.Take(parts.Count - 1)) + "." + operation.NewName;
     }
 
     private static string TypeOf(string elementType) => elementType switch

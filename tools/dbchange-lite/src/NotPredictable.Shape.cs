@@ -30,6 +30,10 @@ public static partial class NotPredictable
                     }
 
                     break;
+                case AlterSchemaStatement move:
+                    altered.Add(DeployScripts.TableOf(move.ObjectName));
+                    altered.Add(Names.Quote(move.Name.Value, move.ObjectName.BaseIdentifier.Value));
+                    break;
                 case DropTableStatement drop:
                     dropped.UnionWith(drop.Objects.Where(o => !IsRebuildCopy(o) && !IsTemp(o)).Select(DeployScripts.TableOf));
                     break;
@@ -47,10 +51,11 @@ public static partial class NotPredictable
         }
 
         dropped.ExceptWith(rebuilt);
-        return new PlanShape(altered, dropped, rebuilt, created, constraints);
+        altered.ExceptWith(created);
+        return new PlanShape(altered, dropped, rebuilt, constraints);
     }
 
-    public static IReadOnlyList<ContractChange> Contract(DeployScript script, PlanShape shape, Model environment)
+    public static IReadOnlyList<ContractChange> ConsumerChanges(DeployScript script, PlanShape shape, Model environment)
     {
         var changes = new List<ContractChange>();
         foreach (var statement in script.Statements)
@@ -69,6 +74,9 @@ public static partial class NotPredictable
                     changes.Add(new ContractChange(DeployScripts.TableOf(alter.SchemaObjectName), "the column " + Names.Quote(alter.ColumnIdentifier.Value)
                         + (alter.AlterTableAlterColumnOption == AlterTableAlterColumnOption.NotNull && nullable == true ? " becomes mandatory"
                             : alter.AlterTableAlterColumnOption == AlterTableAlterColumnOption.Null && nullable == false ? " becomes optional" : " changes type"), statement.Line));
+                    break;
+                case AlterSchemaStatement move:
+                    changes.Add(new ContractChange(DeployScripts.TableOf(move.ObjectName), "the table moves to schema " + Names.Quote(move.Name.Value), statement.Line));
                     break;
                 case ExecuteStatement execute when RenamedBy(execute) is { } renamed && !IsRebuildCopyName(RenamedObject(execute)):
                     changes.Add(new ContractChange(renamed, RenamedObject(execute) + " is renamed", statement.Line));
@@ -99,8 +107,11 @@ public static partial class NotPredictable
         }
 
         var allowed = new HashSet<string>(pairs, StringComparer.Ordinal);
-        return operations.Where(o => !allowed.Contains(o.Pair) && !o.Name.Contains(RebuildPrefix, StringComparison.OrdinalIgnoreCase) && !o.Name.Contains("__RefactorLog", StringComparison.OrdinalIgnoreCase)).ToList();
+        return operations.Where(o => !allowed.Contains(o.Pair) && !IsHousekeeping(o.Name)).ToList();
     }
+
+    public static bool Produces(IReadOnlyList<PlanOperation> operations, string intent, string tool) =>
+        JsonSerializer.Deserialize<Dictionary<string, string[]>>(File.ReadAllText(Path.Combine(tool, "operations.json")))?.GetValueOrDefault(intent) is { } pairs && operations.Any(o => pairs.Contains(o.Pair, StringComparer.Ordinal));
 
     private static string? RenamedBy(ExecuteStatement execute)
     {
@@ -110,8 +121,8 @@ public static partial class NotPredictable
             return null;
         }
 
-        var parts = renamed.Split("].[");
-        return parts.Length >= 2 ? Names.Quote(parts[0].TrimStart('['), parts[1].TrimEnd(']')) : null;
+        var parts = Names.Parts(renamed);
+        return parts.Count >= 2 ? Names.Quote(parts[0], parts[1]) : null;
     }
 
     private static string? RenamedObject(ExecuteStatement execute)
@@ -122,17 +133,13 @@ public static partial class NotPredictable
             return null;
         }
 
-        var parts = first.Value.Split('.').Select(p => p.Trim('[', ']')).ToList();
+        var parts = Names.Parts(first.Value);
         return parts.Count switch
         {
             1 => Names.Quote("dbo", parts[0]),
             _ => Names.Quote(parts),
         };
     }
-
-    private static bool IsRebuildCopy(SchemaObjectName name) => name.BaseIdentifier.Value.StartsWith(RebuildPrefix, StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsTemp(SchemaObjectName name) => name.BaseIdentifier.Value.StartsWith('#');
 
     private static bool IsRebuildCopyName(string? quoted) => quoted is not null && quoted.Contains("[" + RebuildPrefix, StringComparison.OrdinalIgnoreCase);
 

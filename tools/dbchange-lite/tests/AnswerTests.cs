@@ -26,15 +26,58 @@ public sealed class AnswerTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Predict_answers_an_environment_it_cannot_reach_and_one_this_machine_has_no_connection_for_as_open_items_at_exit_8()
+    public void Predict_answers_unreachable_at_exit_4_when_no_environment_answered_and_lists_each_as_an_open_item_at_level_0()
     {
         var (exit, answer) = Cli.Run(scratch.Path, "predict", "--env", "dev,qa", "--to", "dacpac:change.dacpac", "--onto", "none");
-        Assert.True(exit == 8, answer.GetProperty("message").GetString());
+        Assert.True(exit == 4, answer.GetProperty("message").GetString());
+        Assert.Equal("No environment answered; each is an open item.", answer.GetProperty("message").GetString());
         Assert.Equal("dev not read; qa not read.", answer.GetProperty("confidence").GetString());
+        Assert.All(answer.GetProperty("environments").EnumerateArray(), e => Assert.Equal((0, "unknown"), (e.GetProperty("level").GetInt32(), e.GetProperty("outcome").GetString())));
         Assert.DoesNotContain(answer.GetProperty("findings").EnumerateArray(), f => f.GetProperty("code").GetString() == "internal.unexpected");
         var commands = answer.GetProperty("open").EnumerateArray().Select(o => o.GetProperty("next").GetProperty("command").GetString()!).ToList();
         Assert.Equal(["dbchange-lite predict --env dev --to dacpac:change.dacpac --onto none", "dbchange-lite predict --env qa --to dacpac:change.dacpac --onto none"], commands);
         Assert.All(commands, c => Assert.Equal("predict", Contract.Parse(c.Split(' ').Skip(1).ToArray()).Verb.Name));
+    }
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("intent.unknown", "--env", "dev", "--intent", "bogus-operation")]
+    [InlineData("at.required", "--env", "dev,prod")]
+    public void Predict_refuses_an_unknown_intent_and_a_missing_at_before_it_connects_to_any_environment(string code, params string[] flags)
+    {
+        var (exit, answer) = Cli.Run(scratch.Path, ["predict", .. flags, "--to", "dacpac:change.dacpac", "--onto", "none"]);
+        Assert.Equal((1, code), (exit, answer.GetProperty("findings")[0].GetProperty("code").GetString()));
+        Assert.False(answer.TryGetProperty("environments", out _));
+        var log = Path.Combine(scratch.Path, answer.GetProperty("log").GetString()!);
+        Assert.True(!File.Exists(log) || File.ReadAllText(log).Length == 0, "the run sent a query: " + (File.Exists(log) ? File.ReadAllText(log) : ""));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_relative_package_path_resolves_from_the_folder_the_verb_runs_in_and_not_from_the_repository_root()
+    {
+        Dacpacs.Of(scratch.Under("profiles/wider.dacpac"), "CREATE TABLE [dbo].[Customer] ([Id] INT NOT NULL PRIMARY KEY, [Email] NVARCHAR(320) NULL);");
+        var (exit, answer) = Cli.Run(scratch.Under("profiles"), "diff", "--from", "dacpac:../change.dacpac", "--to", "dacpac:wider.dacpac");
+        Assert.True(exit == 0, answer.GetProperty("message").GetString());
+        Assert.Contains(answer.GetProperty("findings").EnumerateArray(), f => f.GetProperty("message").GetString()!.Contains("[dbo].[Customer]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Doctor_reports_a_DBCHANGE_SQL_that_is_no_connection_string_as_its_finding_and_never_as_an_unexpected_error()
+    {
+        var before = Environment.GetEnvironmentVariable("DBCHANGE_SQL");
+        try
+        {
+            Environment.SetEnvironmentVariable("DBCHANGE_SQL", "not a connection string");
+            var (_, answer) = Cli.Run(scratch.Path, "doctor");
+            Assert.DoesNotContain(answer.GetProperty("findings").EnumerateArray(), f => f.GetProperty("code").GetString() == "internal.unexpected");
+            Assert.Contains(answer.GetProperty("findings").EnumerateArray(), f => f.GetProperty("subject").GetString() == "local server" && f.GetProperty("severity").GetString() != "note");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("DBCHANGE_SQL", before);
+        }
     }
 
     [Fact]

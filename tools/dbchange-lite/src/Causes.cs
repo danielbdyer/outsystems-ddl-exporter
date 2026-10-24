@@ -16,7 +16,7 @@ public static class Causes
 
     public static string? Of(PlanOperation operation, IReadOnlyList<PlanOperation> all, Model change, string script)
     {
-        if (operation.Type == "SqlCheckConstraint" && change.Checks.Any(c => c.Name.Equals(operation.Name, StringComparison.OrdinalIgnoreCase) && WrittenWithIn(c.Expression)))
+        if (operation.Type == "SqlCheckConstraint" && change.CheckConstraints.Any(c => c.Name.Equals(operation.Name, StringComparison.OrdinalIgnoreCase) && WrittenWithIn(c.Expression)))
         {
             return "check-written-with-in";
         }

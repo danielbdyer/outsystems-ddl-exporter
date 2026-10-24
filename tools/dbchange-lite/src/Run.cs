@@ -27,10 +27,10 @@ public sealed class Run
     public Run(string workingDirectory, string verb, DateTimeOffset at, CancellationToken cancel)
     {
         Root = RootOf(workingDirectory);
-        Verb = verb;
+        WorkingDirectory = Path.GetFullPath(workingDirectory);
         At = at;
         Cancel = cancel;
-        Folder = Path.Combine(Root, ".dbchange", "runs", at.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) + "-" + verb);
+        Folder = Path.Combine(Root, ".dbchange", "runs", at.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) + "-" + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + "-" + verb);
         Directory.CreateDirectory(Folder);
         Log = new QueryLog(Path.Combine(Folder, "queries.log"), Relative(Path.Combine(Folder, "queries.log")));
         Tool = Environment.GetEnvironmentVariable("DBCHANGE_LITE_TOOL") is { Length: > 0 } tool ? Path.GetFullPath(tool) : AppContext.BaseDirectory;
@@ -39,7 +39,7 @@ public sealed class Run
 
     public string Root { get; }
 
-    public string Verb { get; }
+    public string WorkingDirectory { get; }
 
     public string Folder { get; }
 

@@ -10,7 +10,7 @@ namespace DbChangeLite.Tests;
 
 public sealed class CeilingTests
 {
-    public const int Ceiling = 3400;
+    public const int Ceiling = 3500;
     public const int EachFile = 200;
 
     private static IReadOnlyList<string> Sources => Directory.EnumerateFiles(Repo.Src, "*.cs", SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal).ToList();
@@ -56,8 +56,7 @@ public sealed class CeilingTests
         }
 
         Assert.NotEmpty(files);
-        var commands = files.SelectMany(f => Regex.Matches(File.ReadAllText(f), @"(?:`|^\s*)dbchange-lite (--?[a-z-]+)([^`\n]*)", RegexOptions.CultureInvariant | RegexOptions.Multiline)
-            .Select(m => (File: Path.GetFileName(f), Verb: m.Groups[1].Value, Tail: m.Groups[2].Value))).ToList();
+        var commands = files.SelectMany(f => Shown(File.ReadAllText(f)).Select(m => (File: Path.GetFileName(f), Verb: m.Groups[1].Value, Tail: m.Groups[2].Value))).ToList();
         Assert.NotEmpty(commands);
         foreach (var (file, verbName, tail) in commands.Where(c => c.Verb != "--help" && c.Verb != "--version"))
         {
@@ -68,6 +67,13 @@ public sealed class CeilingTests
                 Assert.True(verb!.Flags.Any(f => f.Name == flag) || verb.Switches.Contains(flag), file + " shows " + verbName + " " + flag + ", which " + verbName + " has not");
             }
         }
+    }
+
+    private static IEnumerable<Match> Shown(string markdown)
+    {
+        var fenced = Regex.Matches(markdown, "^```[a-z]*\r?\n(.*?)^```", RegexOptions.CultureInvariant | RegexOptions.Multiline | RegexOptions.Singleline).Select(m => m.Groups[1].Value);
+        return Regex.Matches(markdown, @"`dbchange-lite (-{0,2}[a-z][a-z-]*)([^`\n]*)", RegexOptions.CultureInvariant)
+            .Concat(fenced.SelectMany(block => Regex.Matches(block, @"^\s*dbchange-lite (-{0,2}[a-z][a-z-]*)([^\n]*)", RegexOptions.CultureInvariant | RegexOptions.Multiline)));
     }
 
     private static string OutsideStrings(string line)

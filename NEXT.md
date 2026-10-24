@@ -1,5 +1,5 @@
 # Next — rewritten by the session that finishes something; never appended
-Updated 2026-10-24 by #705: dbchange-lite's review fixes (`DBCHANGE_LITE.md` §13.6); before them, the tool built under `tools/dbchange-lite/` (§14) and wave 7.
+Updated 2026-10-24 by #705: dbchange-lite's review fixes, must-fix and should-fix (`DBCHANGE_LITE.md` §13.6); before them, the tool built under `tools/dbchange-lite/` (§14) and wave 7.
 
 ## The operator's actions
 - The laptop check against Dev (M1 exit 1, spikes S1 and S3) waits until the operator brings the branch to a laptop: in the v3 clone,
@@ -15,7 +15,7 @@ Updated 2026-10-24 by #705: dbchange-lite's review fixes (`DBCHANGE_LITE.md` §1
 - Run the sql-windows job on the branch: DacFx 162.5.57 plans LocalDB 17.0 as Sql160, and no run of the 162 half there is measured.
 
 ## Next
-- dbchange-lite: triage the review's should-fix findings (§13.6 fixed its must-fix ones); L8's edits to the skills as a vendoring patch for the SSDT repository; L9, the MCP adapter, after the trial (`DBCHANGE_LITE.md` §14).
+- dbchange-lite: L8's edits to the skills as a vendoring patch for the SSDT repository; L9, the MCP adapter, after the trial (`DBCHANGE_LITE.md` §14); the review's nits, untriaged.
 - WP 2.5's predict chains `Vocabulary.Read` and `Coordinates.Of` (a `Declared` takes a person's state; an unclassified statement goes
   to proof), reads the checks with `BlockOnPossibleDataLoss.Read` and their sites into `Preconditions.Of`, writes the existing data
   `up` reads with its trust list, and predicts as `Io.Tests: SampleChangePredictionTests` does for the corpus, whose INSERT scripts

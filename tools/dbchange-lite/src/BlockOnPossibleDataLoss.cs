@@ -7,10 +7,6 @@ namespace DbChangeLite;
 public sealed record Check(string Schema, string Name, int Line)
 {
     public string Table => Names.Quote(Schema, Name);
-
-    public string Query => "SELECT CASE WHEN EXISTS (SELECT TOP 1 1 FROM " + Table + ") THEN 1 ELSE 0 END";
-
-    public string CountQuery => "SELECT COUNT_BIG(*) FROM " + Table;
 }
 
 public static class BlockOnPossibleDataLoss

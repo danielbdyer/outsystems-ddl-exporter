@@ -18,14 +18,17 @@ public sealed class Model
         Synonym.TypeClass, DmlTrigger.TypeClass, Schema.TypeClass,
     ];
 
-    private Model(IReadOnlyDictionary<string, TableShape> tables, IReadOnlyList<(string Type, string Name)> objects, IReadOnlyList<(string Table, string Name, string Expression)> checks,
-        IReadOnlySet<string> defaulted)
+    private Model(IReadOnlyDictionary<string, TableShape> tables, IReadOnlyList<(string Type, string Name)> objects, IReadOnlyList<(string Table, string Name, string Expression)> checkConstraints,
+        IReadOnlySet<string> defaulted, string collation)
     {
         Tables = tables;
         Objects = objects;
-        Checks = checks;
+        CheckConstraints = checkConstraints;
         Defaulted = defaulted;
+        Collation = collation;
     }
+
+    public string Collation { get; }
 
     public IReadOnlySet<string> Defaulted { get; }
 
@@ -33,11 +36,11 @@ public sealed class Model
 
     public IReadOnlyList<(string Type, string Name)> Objects { get; }
 
-    public IReadOnlyList<(string Table, string Name, string Expression)> Checks { get; }
+    public IReadOnlyList<(string Table, string Name, string Expression)> CheckConstraints { get; }
 
     public static Model Load(string dacpac)
     {
-        using var model = TSqlModel.LoadFromDacpac(dacpac, new ModelLoadOptions { LoadAsScriptBackedModel = true });
+        using var model = DacFx.Guard(() => TSqlModel.LoadFromDacpac(dacpac, new ModelLoadOptions { LoadAsScriptBackedModel = true }), "package.unreadable", dacpac);
         var tables = new Dictionary<string, TableShape>(StringComparer.OrdinalIgnoreCase);
         foreach (var table in model.GetObjects(DacQueryScopes.UserDefined, Microsoft.SqlServer.Dac.Model.Table.TypeClass))
         {
@@ -49,13 +52,14 @@ public sealed class Model
 
         var objects = Listed.SelectMany(type => model.GetObjects(DacQueryScopes.UserDefined, type).Select(o => (type.Name, Names.Quote(o.Name.Parts))))
             .OrderBy(o => o.Item1, StringComparer.Ordinal).ThenBy(o => o.Item2, StringComparer.Ordinal).ToList();
+        var collation = model.GetObjects(DacQueryScopes.All, DatabaseOptions.TypeClass).Select(o => o.GetProperty(DatabaseOptions.Collation) as string).FirstOrDefault(c => c is { Length: > 0 });
         var checks = model.GetObjects(DacQueryScopes.UserDefined, CheckConstraint.TypeClass)
             .Select(c => (Names.Quote(c.GetReferenced(CheckConstraint.Host).First().Name.Parts), Names.Quote(c.Name.Parts), c.GetProperty(CheckConstraint.Expression) as string ?? ""))
             .ToList();
         var defaulted = model.GetObjects(DacQueryScopes.UserDefined, DefaultConstraint.TypeClass)
             .SelectMany(d => d.GetReferenced(DefaultConstraint.TargetColumn).Select(c => Names.Quote(c.Name.Parts)))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return new Model(tables, objects, checks, defaulted);
+        return new Model(tables, objects, checks, defaulted, collation ?? "");
     }
 
     public TableShape? Shape(string schema, string name) => Tables.GetValueOrDefault(Names.Quote(schema, name));
@@ -73,4 +77,7 @@ public static class Names
     public static string Quote(IEnumerable<string> parts) => string.Join('.', parts.Select(Quote));
 
     public static string Literal(string text) => "N'" + text.Replace("'", "''", StringComparison.Ordinal) + "'";
+
+    public static IReadOnlyList<string> Parts(string name) => new Microsoft.SqlServer.TransactSql.ScriptDom.TSql160Parser(true).ParseSchemaObjectName(new System.IO.StringReader(name), out var errors) is { } parsed && errors.Count == 0
+        ? parsed.Identifiers.Select(i => i.Value).ToList() : name.Split('.').Select(p => p.Trim('[', ']')).ToList();
 }

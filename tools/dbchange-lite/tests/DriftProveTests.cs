@@ -69,7 +69,7 @@ public sealed class DriftProveTests(CorpusCopy copy) : IClassFixture<CorpusCopy>
 
     [Fact]
     [Trait("Category", "fixture")]
-    public void Predict_answers_the_environment_as_not_read_while_a_schema_change_holds_a_lock_on_its_catalog()
+    public void Predict_answers_unreachable_with_the_environment_as_an_open_item_while_a_schema_change_holds_a_lock_on_its_catalog()
     {
         var project = GoldenProject.Copy(copy.Scratch, "predict-locked").Edit("add-a-nullable-column");
         using var holder = new SqlConnection(copy.Connection);
@@ -83,7 +83,7 @@ public sealed class DriftProveTests(CorpusCopy copy) : IClassFixture<CorpusCopy>
             }
 
             var (exit, answer) = Cli.Run(copy.Root, "predict", "--env", "corpus", "--to", "project:" + project.Folder, "--onto", "none");
-            Assert.True(exit == 8, answer.GetProperty("message").GetString());
+            Assert.True(exit == 4, answer.GetProperty("message").GetString());
             Assert.Equal("corpus not read.", answer.GetProperty("confidence").GetString());
             Assert.DoesNotContain(answer.GetProperty("findings").EnumerateArray(), f => f.GetProperty("code").GetString() == "internal.unexpected");
             Assert.StartsWith("dbchange-lite predict --env corpus --to project:", answer.GetProperty("open")[0].GetProperty("next").GetProperty("command").GetString(), StringComparison.Ordinal);
@@ -96,17 +96,46 @@ public sealed class DriftProveTests(CorpusCopy copy) : IClassFixture<CorpusCopy>
 
     [Fact]
     [Trait("Category", "fixture")]
-    public void Prove_is_blocked_by_BlockOnPossibleDataLoss_on_a_populated_copy_for_make_mandatory()
+    public void Prove_is_blocked_by_BlockOnPossibleDataLoss_on_a_populated_copy_for_make_mandatory_naming_the_table_and_keeping_the_CDC_owners_question()
     {
         var project = GoldenProject.Copy(copy.Scratch, "prove-make-mandatory").Edit("make-mandatory");
         var rows = Path.Combine(Repo.Golden, "copies", "populated.sql");
         copy.Emptied();
         copy.Run(File.ReadAllText(rows));
-        var (exit, answer) = Cli.Run(copy.Root, "prove", "--env", "corpus", "--to", "project:" + project.Folder, "--onto", "none", "--rows", rows);
-        Assert.True(exit == 3, answer.GetProperty("message").GetString());
-        Assert.Equal("block-on-possible-data-loss", answer.GetProperty("blockedBy").GetString());
-        Assert.Equal(4, answer.GetProperty("environments")[0].GetProperty("level").GetInt32());
-        Assert.StartsWith("Proven on corpus", answer.GetProperty("confidence").GetString(), StringComparison.Ordinal);
+        copy.CdcLedger(File.ReadAllText(GoldenProject.Case("make-mandatory-on-a-cdc-tracked-table", "cdc-tracked.md")));
+        try
+        {
+            var (exit, answer) = Cli.Run(copy.Root, "prove", "--env", "corpus", "--to", "project:" + project.Folder, "--onto", "none", "--rows", rows);
+            Assert.True(exit == 3, answer.GetProperty("message").GetString());
+            Assert.Equal("block-on-possible-data-loss", answer.GetProperty("blockedBy").GetString());
+            Assert.Equal("The deploy was stopped on a copy of corpus: BlockOnPossibleDataLoss, because [dbo].[Customer] has rows.", answer.GetProperty("message").GetString());
+            Assert.Equal(4, answer.GetProperty("environments")[0].GetProperty("level").GetInt32());
+            Assert.StartsWith("Proven on corpus", answer.GetProperty("confidence").GetString(), StringComparison.Ordinal);
+            Assert.Contains(answer.GetProperty("open").EnumerateArray(), o => o.GetProperty("next").TryGetProperty("person", out var person) && person.GetString() == "the owner of the CDC consumer");
+        }
+        finally
+        {
+            copy.CdcLedger(null);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "fixture")]
+    public void An_extended_property_added_by_hand_changes_the_schema_fingerprint_so_a_cached_extract_is_not_reused()
+    {
+        using var session = Session.Open(copy.Connection, Runs.At(copy.Root, "fixture").Log, System.Threading.CancellationToken.None, copy.Database);
+        var before = session.SchemaFingerprint();
+        session.Execute("EXEC sys.sp_addextendedproperty @name = N'MS_Description', @value = N'added by the test', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'Customer'");
+        try
+        {
+            Assert.NotEqual(before, session.SchemaFingerprint());
+        }
+        finally
+        {
+            session.Execute("EXEC sys.sp_dropextendedproperty @name = N'MS_Description', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'Customer'");
+        }
+
+        Assert.Equal(before, session.SchemaFingerprint());
     }
 
     [Fact]

@@ -18,7 +18,7 @@ internal static class Repo
 
     public static string Golden => Path.Combine(Root, "tests", "Golden");
 
-    public static string Tool => Environment.GetEnvironmentVariable("DBCHANGE_LITE_TOOL") is { Length: > 0 } tool ? tool : Path.Combine(Root, "dist", "dbchange");
+    public static string Tool => Environment.GetEnvironmentVariable("DBCHANGE_LITE_TOOL") is { Length: > 0 } tool ? tool : Path.Combine(Lite, "dist", "dbchange-lite");
 
     public static string Src => Path.Combine(Lite, "src");
 

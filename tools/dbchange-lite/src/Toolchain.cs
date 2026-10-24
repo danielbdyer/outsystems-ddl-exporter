@@ -7,14 +7,14 @@ using Microsoft.SqlServer.Dac;
 
 namespace DbChangeLite;
 
-public static class Dacfx
+public static class DacFxRelease
 {
     public static readonly string Running = Release(FileVersionInfo.GetVersionInfo(typeof(DacServices).Assembly.Location).FileVersion ?? "0.0.0.0");
 
     public static string Release(string version) => string.Join('.', version.Split('.').Take(3));
 }
 
-public sealed record Toolchain(string Pin, string? ReleaseBefore, IReadOnlyList<(string Hash, string ConfirmedBy)> Profiles, bool LedgerExists)
+public sealed record Toolchain(string Pin, string? ReleaseBefore, IReadOnlyList<(string Hash, string ConfirmedBy)> Profiles)
 {
     public const string Path = "dbchange/ledgers/toolchain.md";
 
@@ -22,13 +22,13 @@ public sealed record Toolchain(string Pin, string? ReleaseBefore, IReadOnlyList<
 
     public void HoldWindow()
     {
-        if (Pin == "UNPINNED" || Pin == Dacfx.Running || ReleaseBefore == Dacfx.Running)
+        if (Pin == "UNPINNED" || Pin == DacFxRelease.Running || ReleaseBefore == DacFxRelease.Running)
         {
             return;
         }
 
         throw Stop.Of("configuration-refused", "toolchain.outside-window", Path,
-            "dbchange-lite runs DacFx " + Dacfx.Running + ", and " + Path + " pins the deployment step's DacFx at " + Pin
+            "dbchange-lite runs DacFx " + DacFxRelease.Running + ", and " + Path + " pins the deployment step's DacFx at " + Pin
             + (ReleaseBefore is null ? "" : " with " + ReleaseBefore + " before it") + ".",
             "Run the dbchange-lite build whose DacFx is the pin or the release before it, or add the ledger row that moves the pin in a pull request that runs the corpus.");
     }
@@ -41,7 +41,7 @@ public static class ToolchainLedger
         var path = System.IO.Path.Combine(root, Toolchain.Path);
         if (!File.Exists(path))
         {
-            return new Toolchain("UNPINNED", null, [], false);
+            return new Toolchain("UNPINNED", null, []);
         }
 
         var tables = Tables(File.ReadAllLines(path));
@@ -51,7 +51,7 @@ public static class ToolchainLedger
         var pin = last is { Count: >= 3 } ? last[2].Trim() : "UNPINNED";
         var before = last is { Count: >= 4 } && last[3].Trim() is { Length: > 0 } b && b != "—" && b != "-" ? b : null;
         var confirmed = profiles?.Rows.Where(r => r.Count >= 4).Select(r => (r[2].Trim(), r[3].Trim())).ToList() ?? [];
-        return new Toolchain(pin.Length == 0 ? "UNPINNED" : pin, before, confirmed, true);
+        return new Toolchain(pin.Length == 0 ? "UNPINNED" : pin, before, confirmed);
     }
 
     private sealed record MarkdownTable(IReadOnlyList<string> Header, List<IReadOnlyList<string>> Rows);

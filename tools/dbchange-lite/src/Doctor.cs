@@ -55,7 +55,7 @@ public static class Doctor
         try
         {
             ledger.HoldWindow();
-            return Ok("DacFx", Dacfx.Running + (ledger.Pin == "UNPINNED" ? ", the ledger UNPINNED (spike S7 names the deployment step's release)" : ", at the ledger's pin " + ledger.Pin));
+            return Ok("DacFx", DacFxRelease.Running + (ledger.Pin == "UNPINNED" ? ", the ledger UNPINNED: " + Toolchain.Path + " names no DacFx release yet" : ", at the ledger's pin " + ledger.Pin));
         }
         catch (Stop stop)
         {
@@ -102,7 +102,7 @@ public static class Doctor
         try
         {
             profile = PublishProfiles.Load(run.Root, environment.Profile);
-            items.Add(Ok("profile of " + environment.Name, environment.Profile + " " + profile.Hash + (ledger.Confirms(profile.Hash) ? ", confirmed" : ", not confirmed in " + Toolchain.Path)));
+            items.Add(Ok("profile of " + environment.Name, environment.Profile + " " + profile.Hash + (ledger.Confirms(profile.Hash) ? ", confirmed" : "; no confirmation row in " + Toolchain.Path)));
         }
         catch (Stop stop)
         {

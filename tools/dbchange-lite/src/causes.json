@@ -7,7 +7,7 @@
   {
     "name": "clustered-key-rebuild",
     "why": "A clustered primary key moved to other columns makes DacFx rebuild the table, and the rebuild's tmp_ms_xx_ statements name objects the change did not.",
-    "action": "Nothing: the statements are the change's own, since they name the table the change alters."
+    "action": "Count the tmp_ms_xx_ statements as the change's own; they name the table the change alters."
   },
   {
     "name": "query-store-option",
@@ -17,6 +17,6 @@
   {
     "name": "case-only-rename",
     "why": "Under a case-insensitive collation a rename that differs only by case plans as nothing, or as a drop and a create.",
-    "action": "A person confirms whether the object was renamed or is drift."
+    "action": "Ask a lead whether the object was renamed or is drift; a rename needs its refactorlog entry."
   }
 ]

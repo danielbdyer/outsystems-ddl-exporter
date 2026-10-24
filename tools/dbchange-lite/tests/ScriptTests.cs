@@ -42,7 +42,7 @@ public sealed class ScriptTests
     {
         var checks = BlockOnPossibleDataLoss.Checks(Scripts.Read(Lookalikes));
         Assert.Equal(["[dbo].[Product]", "[dbo].[Customer]"], checks.Select(c => c.Table).ToArray());
-        Assert.Equal("SELECT CASE WHEN EXISTS (SELECT TOP 1 1 FROM [dbo].[Product]) THEN 1 ELSE 0 END", checks[0].Query);
+        Assert.Equal("SELECT CASE WHEN EXISTS (SELECT TOP 1 1 FROM [dbo].[Product]) THEN 1 ELSE 0 END", Precondition.Of("TableEmpty", checks[0].Schema, checks[0].Name, [], null, false, checks[0].Line).Query);
     }
 
     [Fact]
@@ -67,10 +67,10 @@ public sealed class ScriptTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Nested_statements_are_read_inside_if_begin_end_try_and_while_with_their_depth()
+    public void Nested_statements_are_read_inside_if_begin_end_try_and_while()
     {
         var script = Scripts.Read("IF 1 = 1 BEGIN BEGIN TRY BEGIN UPDATE dbo.T SET a = 1; END END TRY BEGIN CATCH PRINT 'x'; END CATCH END\nGO\nWHILE 1 = 0 DELETE dbo.T;\nGO\n");
-        Assert.Contains(script.Statements, s => s.Kind == "UpdateStatement" && s.Depth == 4);
-        Assert.Contains(script.Statements, s => s.Kind == "DeleteStatement" && s.Depth == 1);
+        Assert.Equal(["IfStatement", "BeginEndBlockStatement", "TryCatchStatement", "BeginEndBlockStatement", "UpdateStatement", "PrintStatement", "WhileStatement", "DeleteStatement"],
+            script.Statements.Select(s => s.Kind).ToArray());
     }
 }

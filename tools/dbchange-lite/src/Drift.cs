@@ -24,8 +24,7 @@ public static class Drift
         var at = Ssdt.Package(Source.Parse(invocation.Values["--at"], "--at"), null, run);
         using var baseline = Baselines.Read(environment, run);
         var plan = DacFx.Script(DacFx.Load(at.PackagePath), DacFx.Load(baseline.ExtractPath), baseline.Database, profile.Options);
-        File.WriteAllText(Path.Combine(run.Folder, environment.Name + ".report.xml"), plan.Report);
-        File.WriteAllText(Path.Combine(run.Folder, environment.Name + ".script.sql"), plan.Script);
+        plan.Write(run, environment.Name);
         var atModel = Model.Load(at.PackagePath);
         var findings = new List<Finding>();
         var operations = plan.Operations.Select(o => new PlanOperationAnswer(o.Kind, o.Type, o.Name, Causes.Of(o, plan.Operations, atModel, plan.Script))).ToList();

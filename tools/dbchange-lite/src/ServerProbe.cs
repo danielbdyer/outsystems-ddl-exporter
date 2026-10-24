@@ -5,7 +5,7 @@ using Microsoft.Data.SqlClient;
 
 namespace DbChangeLite;
 
-public sealed class ServerProbeRefused() : InvalidOperationException("dbchange-lite refuses DacFx's exec xp_msver before SqlClient sends it (R14).");
+public sealed class ServerProbeRefused() : InvalidOperationException("dbchange-lite refuses DacFx's exec xp_msver before SqlClient sends it.");
 
 public sealed class ServerProbe : IObserver<DiagnosticListener>, IObserver<KeyValuePair<string, object?>>
 {

@@ -37,7 +37,7 @@ public sealed record Next(string? Command, string? By, string? Person, string? Q
 
 public sealed record OpenItem(string Env, int? Level, string Why, Next Next);
 
-public sealed record CheckAnswer(string Table, bool? Fires, string ReadBy, string Query);
+public sealed record CheckAnswer(string Table, bool? Fires, string ReadBy, string Query, long? Count = null);
 
 public sealed record PreconditionAnswer(string Kind, string Table, IReadOnlyList<string> Columns, bool? Violated, long? Count, string Query);
 
@@ -52,6 +52,10 @@ public sealed record EnvironmentAnswer(string Env, int? Level, string? Assumed, 
     string? NotRead, IReadOnlyList<CheckAnswer>? Checks, IReadOnlyList<PreconditionAnswer>? Preconditions, PlanAnswer? Plan,
     IReadOnlyList<NotPredictableAnswer>? NotPredictable, IReadOnlyList<string>? BeforePromoting)
 {
+    public static EnvironmentAnswer Unread(string env, string why) => new(env, 0, null, "unknown", null, null, null, why, null, null, null, null, null);
+
+    public static EnvironmentAnswer Worst(string env, string outcome, string at, IReadOnlyList<string> beforePromoting) => new(env, null, "worst", outcome, null, at, null, null, null, null, null, null, beforePromoting);
+
     public EnvironmentAnswer Summary() => this with { Plan = Plan is null ? null : Plan with { Operations = [], Rebuilds = [], Drops = [] } };
 }
 
@@ -69,10 +73,13 @@ public sealed record Answer(string Schema, string Outcome, int Exit, string Mess
     };
 
     public static Answer Of(string verb, Outcome outcome, string message, IReadOnlyList<Finding> findings, Run run) =>
-        new("dbchange-lite." + verb + "/1", outcome.Word, outcome.Exit, message, null, findings, Contract.Version, DbChangeLite.Dacfx.Running, run.Pin, null, null, null,
+        new("dbchange-lite." + verb + "/1", outcome.Word, outcome.Exit, message, null, findings, Contract.Version, DbChangeLite.DacFxRelease.Running, run.Pin, null, null, null,
             null, false, null, run.Log.Relative, null);
 
     public static Answer Stopped(string verb, Stop stop, Run run) => Of(verb, stop.Outcome, stop.Finding.Message, [stop.Finding], run);
+
+    public static Answer Before(string schema, Stop stop) => new(schema, stop.Outcome.Word, stop.Outcome.Exit, stop.Finding.Message, null, [stop.Finding], Contract.Version,
+        DacFxRelease.Running, "UNPINNED", null, null, null, null, false, null, null, null);
 
     public string Text() => JsonSerializer.Serialize(this, Json) + "\n";
 

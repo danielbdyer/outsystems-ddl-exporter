@@ -35,7 +35,7 @@ public static class Contract
             "Run dbchange-lite doctor, then start the local server or correct the environment's connection."),
         new(5, "differs", "Divergence found: the target differs from the repository; the findings name each differing object.",
             "Correct the target or the repository at the objects the findings name."),
-        new(6, "configuration-refused", "The environment or configuration is refused: the .NET SDK missing, an unknown key, a literal credential, a DacFx release"
+        new(6, "configuration-refused", "The environment or configuration is refused: the .NET SDK missing, a literal credential, a DacFx release"
             + " outside the pinned window, a failure DacFx reports with no SQL Server error inside (dacfx.failed), or a defect in dbchange-lite itself (internal.unexpected).",
             "Run dbchange-lite doctor, or correct the file the finding names."),
         new(7, "build-failed", "The build failed; the findings carry the build's errors.", "Fix each error at the file and line the finding names, then build again."),
@@ -127,11 +127,6 @@ public static class Contract
         return missing.Count == 0 ? new Invocation(verb, values, switches) : throw Bad(verb.Name + " needs " + string.Join(" and ", missing) + ".");
     }
 
-    public static IReadOnlyList<(int Code, string Name)> Frozen(string folder) => File.ReadAllLines(Path.Combine(folder, "exits.frozen"))
-        .Where(l => l.Length > 0 && !l.StartsWith('#'))
-        .Select(l => l.Split(' ', 2))
-        .Select(p => (int.Parse(p[0], CultureInfo.InvariantCulture), p[1]))
-        .ToList();
 
     public static string Help()
     {

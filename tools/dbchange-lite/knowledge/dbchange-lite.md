@@ -7,7 +7,7 @@ with what it read. You never state a confidence level the tool did not reach.
 
 | Level | Name | Reached when |
 | --- | --- | --- |
-| 0 | Intent | The developer confirmed the operation, and `predict --intent` lists no unexplained operation |
+| 0 | Intent | The developer confirmed the operation, and `predict --intent` lists no unexplained operation. `--intent` compares the plan's deploy-report kinds (`Alter SqlTable`, `Drop SqlTable`, `TableRebuild SqlTable`), so it catches a rename planned as a drop and a create, or a rebuild, and passes a wrong operation that plans the same `Alter SqlTable` |
 | 1 | In sync | `drift` answers `in-sync` for the environment at the release it was deployed from |
 | 2 | Planned | `predict` read the deploy plan for the environment |
 | 3 | Measured | Every check and precondition of the plan was answered read-only on the environment |
@@ -19,7 +19,7 @@ request carries the `beforePromoting` queries a person runs under Prod rights.
 
 ## The steps
 
-1. `dbchange-lite doctor`. Exit 0 or stop and do what each finding's remedy says.
+1. `dbchange-lite doctor`. Stop on an error about this machine or about Dev and do its remedy; an error about an environment you do not read goes to the lead who reads it.
 2. Name the operation from the catalog in the developer's words (`confirm-intent`), and have the developer confirm it.
 3. `dbchange-lite drift --env dev --at ref:<the tag Dev was deployed from>`. Exit 5 means Dev differs; each finding names the object and its known cause.
 4. `dbchange-lite predict --env dev,qa,uat,prod --intent <operation> --at dacpac:<the release Prod runs>`. Read `confidence`, `environments` and `open`.
@@ -32,7 +32,8 @@ request carries the `beforePromoting` queries a person runs under Prod rights.
 - 0 `done`: nothing blocks and nothing is open.
 - 3 `blocked`: the change blocks on an environment; `blockedBy` says whether BlockOnPossibleDataLoss or a constraint violation stops it. Read the operation's skill for the shape that ships: two releases for a tightening on a populated table, a reconcile step for violating rows.
 - 8 `needs-input`: the `open` list has your next step.
-- 4, 6, 7, 9: the machine, the configuration, the build or the server refused; each finding carries a remedy. Do the remedy; never work around it.
+- 4 `unreachable` from `predict`: no environment answered; each is an open item for whoever reads it.
+- 4, 6, 7, 9 from any other verb: the machine, the configuration, the build or the server refused; each finding carries a remedy. Do the remedy; never work around it.
 
 ## What you never do
 

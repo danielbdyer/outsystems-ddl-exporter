@@ -155,53 +155,61 @@ public sealed class CorpusTests(CorpusCopy copy) : IClassFixture<CorpusCopy>
     public void Each_sample_change_predicts_on_the_empty_the_populated_and_the_violating_copy_what_its_predict_txt_states(string name)
     {
         var expected = Expected.Of(name);
+        Assert.True(expected.Select(e => e.Copy).Order(StringComparer.Ordinal).SequenceEqual(["empty", "populated", "violating"]), name + ": predict.txt states " + string.Join(", ", expected.Select(e => e.Copy)) + ", and it states empty, populated and violating once each");
         var project = GoldenProject.Copy(copy.Scratch, name).Edit(name);
         var violating = GoldenProject.Case(name, "violating.sql");
         var ledger = GoldenProject.Case(name, "cdc-tracked.md");
         var profile = GoldenProject.Case(name, "profile.publish.xml");
         var afterDeploy = GoldenProject.Case(name, "after-deploy.txt");
         var findings = GoldenProject.Case(name, "findings.txt");
-        copy.CdcLedger(File.Exists(ledger) ? File.ReadAllText(ledger) : null);
-        if (File.Exists(profile))
+        var answers = new Dictionary<string, (int Exit, JsonElement Answer)>();
+        try
         {
-            File.Copy(profile, Path.Combine(copy.Root, "profiles", name + ".publish.xml"), true);
-            copy.Environments("profiles/" + name + ".publish.xml");
-        }
+            copy.CdcLedger(File.Exists(ledger) ? File.ReadAllText(ledger) : null);
+            if (File.Exists(profile))
+            {
+                File.Copy(profile, Path.Combine(copy.Root, "profiles", name + ".publish.xml"), true);
+                copy.Environments("profiles/" + name + ".publish.xml");
+            }
 
-        copy.Emptied();
-        var answers = new Dictionary<string, (int Exit, JsonElement Answer)> { ["empty"] = copy.Predict(project.Folder) };
-        copy.Run(File.ReadAllText(Path.Combine(Repo.Golden, "copies", "populated.sql")));
-        answers["populated"] = copy.Predict(project.Folder);
-        if (File.Exists(violating))
-        {
-            copy.Run(File.ReadAllText(violating));
-        }
-
-        answers["violating"] = copy.Predict(project.Folder);
-        if (File.Exists(afterDeploy))
-        {
             copy.Emptied();
-            copy.Deploy(copy.Build(project.Folder));
-            try
+            answers["empty"] = copy.Predict(project.Folder);
+            copy.Run(File.ReadAllText(Path.Combine(Repo.Golden, "copies", "populated.sql")));
+            answers["populated"] = copy.Predict(project.Folder);
+            if (File.Exists(violating))
             {
-                var (exit, answer) = copy.Predict(project.Folder);
-                var want = File.ReadAllText(afterDeploy).Trim();
-                Assert.True(exit is 0 or 3 or 8, name + " after deploy exited " + exit + ": " + answer.GetProperty("message").GetString());
-                Assert.True(want == "after-deploy: " + CorpusCopy.Outcome(answer) + "; operations " + CorpusCopy.Operations(answer),
-                    name + ": after-deploy.txt says " + want + "; dbchange-lite says after-deploy: " + CorpusCopy.Outcome(answer) + "; operations " + CorpusCopy.Operations(answer));
+                copy.Run(File.ReadAllText(violating));
             }
-            finally
+
+            answers["violating"] = copy.Predict(project.Folder);
+            if (File.Exists(afterDeploy))
             {
-                copy.Deploy(copy.BasePackage);
+                copy.Emptied();
+                copy.Deploy(copy.Build(project.Folder));
+                try
+                {
+                    var (exit, answer) = copy.Predict(project.Folder);
+                    var want = File.ReadAllText(afterDeploy).Trim();
+                    Assert.True(exit == ExitOf(CorpusCopy.Outcome(answer), answer), name + " after deploy exited " + exit + ": " + answer.GetProperty("message").GetString());
+                    Assert.True(want == "after-deploy: " + CorpusCopy.Outcome(answer) + "; operations " + CorpusCopy.Operations(answer),
+                        name + ": after-deploy.txt says " + want + "; dbchange-lite says after-deploy: " + CorpusCopy.Outcome(answer) + "; operations " + CorpusCopy.Operations(answer));
+                }
+                finally
+                {
+                    copy.Deploy(copy.BasePackage);
+                }
             }
         }
+        finally
+        {
+            copy.CdcLedger(null);
+            copy.Environments("profiles/pipeline.publish.xml");
+        }
 
-        copy.CdcLedger(null);
-        copy.Environments("profiles/pipeline.publish.xml");
         foreach (var want in expected)
         {
             var (exit, answer) = answers[want.Copy];
-            Assert.True(exit is 0 or 3 or 8, name + " on " + want.Copy + " exited " + exit + ": " + answer.GetProperty("message").GetString());
+            Assert.True(exit == ExitOf(want.Outcome, answer), name + " on " + want.Copy + " exited " + exit + ": " + answer.GetProperty("message").GetString());
             Assert.True(want.Outcome == CorpusCopy.Outcome(answer), name + " on " + want.Copy + ": predict.txt says " + want.Outcome + ", dbchange-lite says " + CorpusCopy.Outcome(answer) + " with " + string.Join(", ", CorpusCopy.Blockers(answer)));
             var comparable = want.Blockers.Where(b => !b.StartsWith("Fits on ", StringComparison.Ordinal) && !b.StartsWith("KeyLength on ", StringComparison.Ordinal)).Order(StringComparer.Ordinal).ToList();
             Assert.True(comparable.SequenceEqual(CorpusCopy.Blockers(answer), StringComparer.Ordinal), name + " on " + want.Copy + ": predict.txt blocks by " + string.Join(", ", comparable) + "; dbchange-lite blocks by " + string.Join(", ", CorpusCopy.Blockers(answer)));
@@ -216,4 +224,6 @@ public sealed class CorpusTests(CorpusCopy copy) : IClassFixture<CorpusCopy>
             }
         }
     }
+
+    private static int ExitOf(string outcome, JsonElement answer) => outcome == "blocks" ? 3 : answer.GetProperty("open").GetArrayLength() > 0 ? 8 : 0;
 }

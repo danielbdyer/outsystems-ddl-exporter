@@ -7,7 +7,7 @@ using Microsoft.SqlServer.TransactSql.ScriptDom;
 
 namespace DbChangeLite;
 
-public sealed record Statement(TSqlStatement Node, string Part, int Line, int Depth, string Kind, string Text, TSqlBatch Batch);
+public sealed record Statement(TSqlStatement Node, string Part, int Line, string Kind, string Text, TSqlBatch Batch);
 
 public sealed record DeployScript(IReadOnlyList<Statement> Statements, IReadOnlyList<string> Unresolved);
 
@@ -25,11 +25,11 @@ public static class DeployScripts
         var statements = new List<Statement>();
         foreach (var (line, batch) in Batches(script, sqlcmd, unresolved))
         {
-            foreach (var (node, depth) in Flatten(batch.Statements, 0))
+            foreach (var node in Flatten(batch.Statements))
             {
                 var text = Render(node);
                 var part = pre.Contains(text) ? "pre" : post.Contains(text) ? "post" : "own";
-                statements.Add(new Statement(node, part, line + node.StartLine - 1, depth, node.GetType().Name, text, batch));
+                statements.Add(new Statement(node, part, line + node.StartLine - 1, node.GetType().Name, text, batch));
             }
         }
 
@@ -102,11 +102,11 @@ public static class DeployScripts
         return (TSqlScript)fragment;
     }
 
-    public static IEnumerable<(TSqlStatement Node, int Depth)> Flatten(IEnumerable<TSqlStatement> statements, int depth)
+    public static IEnumerable<TSqlStatement> Flatten(IEnumerable<TSqlStatement> statements)
     {
         foreach (var statement in statements)
         {
-            yield return (statement, depth);
+            yield return statement;
             var inner = statement switch
             {
                 IfStatement i => new[] { i.ThenStatement, i.ElseStatement }.Where(s => s is not null).Select(s => s!),
@@ -115,7 +115,7 @@ public static class DeployScripts
                 WhileStatement w => [w.Statement],
                 _ => [],
             };
-            foreach (var child in Flatten(inner, depth + 1))
+            foreach (var child in Flatten(inner))
             {
                 yield return child;
             }
@@ -139,7 +139,7 @@ public static class DeployScripts
 
         foreach (var (_, batch) in Batches(script, sqlcmd, unresolved))
         {
-            foreach (var (node, _) in Flatten(batch.Statements, 0))
+            foreach (var node in Flatten(batch.Statements))
             {
                 set.Add(Render(node));
             }

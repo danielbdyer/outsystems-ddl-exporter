@@ -11,38 +11,13 @@ public sealed record Unsettled(string Why, Statement Statement, string? Table);
 
 public sealed record ContractChange(string Table, string What, int Line);
 
-public sealed record PlanShape(IReadOnlySet<string> Altered, IReadOnlySet<string> Dropped, IReadOnlySet<string> Rebuilt, IReadOnlySet<string> Created, IReadOnlySet<string> AddedConstraints)
+public sealed record PlanShape(IReadOnlySet<string> Altered, IReadOnlySet<string> Dropped, IReadOnlySet<string> Rebuilt, IReadOnlySet<string> AddedConstraints)
 {
     public bool Touches(string table) => Altered.Contains(table) || Dropped.Contains(table) || Rebuilt.Contains(table);
 }
 
 public static partial class NotPredictable
 {
-    public const string RebuildPrefix = "tmp_ms_xx_";
-
-    private static readonly HashSet<string> MovesNoRows = new(StringComparer.Ordinal)
-    {
-        "CreateTableStatement", "CreateIndexStatement", "AlterTableAddTableElementStatement", "AlterTableDropTableElementStatement", "AlterTableAlterColumnStatement",
-        "AlterTableSetStatement", "AlterTableRebuildStatement", "AlterTableTriggerModificationStatement", "AlterTableChangeTrackingModificationStatement", "AlterTableAlterIndexStatement",
-        "DropTableStatement", "DropIndexStatement", "CreateViewStatement", "AlterViewStatement", "DropViewStatement", "CreateOrAlterViewStatement", "CreateProcedureStatement",
-        "AlterProcedureStatement", "DropProcedureStatement", "CreateOrAlterProcedureStatement", "CreateFunctionStatement", "AlterFunctionStatement", "DropFunctionStatement",
-        "CreateOrAlterFunctionStatement", "CreateTriggerStatement", "AlterTriggerStatement", "DropTriggerStatement", "CreateOrAlterTriggerStatement", "EnableDisableTriggerStatement",
-        "CreateSchemaStatement", "DropSchemaStatement", "CreateSequenceStatement", "AlterSequenceStatement", "DropSequenceStatement", "CreateSynonymStatement", "DropSynonymStatement",
-        "CreateTypeUddtStatement", "CreateTypeTableStatement", "DropTypeStatement", "CreateRoleStatement", "AlterRoleStatement", "DropRoleStatement", "CreateUserStatement",
-        "AlterUserStatement", "DropUserStatement", "GrantStatement", "RevokeStatement", "DenyStatement", "CreateDefaultStatement", "DropDefaultStatement", "CreateStatisticsStatement",
-        "DropStatisticsStatement", "CreateXmlSchemaCollectionStatement", "AlterXmlSchemaCollectionStatement", "DropXmlSchemaCollectionStatement", "AlterDatabaseSetStatement",
-        "PrintStatement", "PredicateSetStatement", "SetCommandStatement", "SetTransactionIsolationLevelStatement", "SetVariableStatement", "DeclareVariableStatement",
-        "SetIdentityInsertStatement", "SetRowCountStatement", "SetTextSizeStatement", "SetStatisticsStatement", "SetErrorLevelStatement", "SetOffsetsStatement",
-        "DeclareCursorStatement", "OpenCursorStatement", "FetchCursorStatement", "CloseCursorStatement", "DeallocateCursorStatement", "WhileStatement", "IfStatement",
-        "BeginEndBlockStatement", "TryCatchStatement", "BeginTransactionStatement", "CommitTransactionStatement", "RollbackTransactionStatement", "SaveTransactionStatement",
-        "UseStatement", "RaiseErrorStatement", "ThrowStatement", "ReturnStatement", "GoToStatement", "LabelStatement", "BreakStatement", "ContinueStatement",
-    };
-
-    private static readonly HashSet<string> Procedures = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "sp_rename", "sp_refreshsqlmodule", "sp_refreshview", "sp_addextendedproperty", "sp_updateextendedproperty", "sp_dropextendedproperty",
-    };
-
     public static IReadOnlyList<Unsettled> Of(DeployScript script, PlanShape shape, Model environment, IReadOnlyCollection<string> cdcTracked)
     {
         var unsettled = new List<Unsettled>();
@@ -79,7 +54,7 @@ public static partial class NotPredictable
                     }
 
                     break;
-                case SelectStatement:
+                case AlterTableConstraintModificationStatement or SelectStatement:
                     break;
                 default:
                     if (!MovesNoRows.Contains(statement.Kind))
@@ -139,7 +114,7 @@ public static partial class NotPredictable
         _ => [],
     };
 
-    private static string? Temp(TableReference? target) => target is NamedTableReference { SchemaObject.BaseIdentifier.Value: var name } && name.StartsWith('#') ? "[" + name + "]" : null;
+    private static string? Temp(TableReference? target) => target is NamedTableReference { SchemaObject.BaseIdentifier.Value: var name } && name.StartsWith('#') ? Names.Quote(name) : null;
 
     private static string? RebuiltBy(InsertStatement insert)
     {
@@ -154,7 +129,7 @@ public static partial class NotPredictable
     private static bool? NewIdentity(DeployScript script, string table)
     {
         var copy = script.Statements.Select(s => s.Node).OfType<CreateTableStatement>()
-            .FirstOrDefault(c => IsRebuildCopy(c.SchemaObjectName) && DeployScripts.TableOf(c.SchemaObjectName).Equals(Names.Quote(c.SchemaObjectName.SchemaIdentifier?.Value ?? "dbo", RebuildPrefix + table.Split("].[")[1].TrimEnd(']')), StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(c => IsRebuildCopy(c.SchemaObjectName) && DeployScripts.TableOf(c.SchemaObjectName).Equals(Names.Quote(c.SchemaObjectName.SchemaIdentifier?.Value ?? "dbo", RebuildPrefix + Names.Parts(table)[^1]), StringComparison.OrdinalIgnoreCase));
         return copy is null ? null : copy.Definition.ColumnDefinitions.Any(c => c.IdentityOptions is not null);
     }
 
@@ -178,7 +153,7 @@ public static partial class NotPredictable
         var text = procedure.Parameters[0].ParameterValue switch
         {
             StringLiteral literal => literal.Value,
-            VariableReference variable => string.Concat(batch.Statements.SelectMany(s => DeployScripts.Flatten([s], 0)).Select(f => f.Node).OfType<SetVariableStatement>()
+            VariableReference variable => string.Concat(DeployScripts.Flatten(batch.Statements).OfType<SetVariableStatement>()
                 .Where(s => s.Variable.Name.Equals(variable.Name, StringComparison.OrdinalIgnoreCase)).SelectMany(s => Literals(s.Expression))),
             _ => "",
         };

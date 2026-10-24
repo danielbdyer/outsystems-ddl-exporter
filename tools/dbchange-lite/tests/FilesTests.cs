@@ -104,18 +104,17 @@ public sealed class FilesTests
     {
         using var scratch = new Scratch();
         Assert.Equal("UNPINNED", ToolchainLedger.Read(scratch.Path).Pin);
-        Assert.False(ToolchainLedger.Read(scratch.Path).LedgerExists);
         scratch.Write("dbchange/ledgers/toolchain.md", "# The toolchain\n\n| Date | dbchange | Pinned DacFx | Release before |\n|---|---|---|---|\n| 2026-09-24 | 3.0.0 | UNPINNED | — |\n| 2026-10-30 | 3.0.1 | "
-            + Dacfx.Running + " | 162.5.57 |\n\n| Date | Profile | SHA-256 | Confirmed by |\n|---|---|---|---|\n| 2026-10-30 | dbchange/profiles/pipeline.publish.xml | sha256:abc | the deployment step's owner |\n");
+            + DacFxRelease.Running + " | 162.5.57 |\n\n| Date | Profile | SHA-256 | Confirmed by |\n|---|---|---|---|\n| 2026-10-30 | dbchange/profiles/pipeline.publish.xml | sha256:abc | the deployment step's owner |\n");
         var ledger = ToolchainLedger.Read(scratch.Path);
-        Assert.Equal(Dacfx.Running, ledger.Pin);
+        Assert.Equal(DacFxRelease.Running, ledger.Pin);
         Assert.Equal("162.5.57", ledger.ReleaseBefore);
         Assert.True(ledger.Confirms("abc"));
         Assert.False(ledger.Confirms("sha256:def"));
         ledger.HoldWindow();
         var stop = Assert.Throws<Stop>(() => (ledger with { Pin = "150.0.0", ReleaseBefore = null }).HoldWindow());
         Assert.Equal("toolchain.outside-window", stop.Finding.Code);
-        (ledger with { Pin = "150.0.0", ReleaseBefore = Dacfx.Running }).HoldWindow();
+        (ledger with { Pin = "150.0.0", ReleaseBefore = DacFxRelease.Running }).HoldWindow();
     }
 
     [Fact]
@@ -151,5 +150,71 @@ public sealed class FilesTests
         Assert.Equal(plain, Fingerprint.OfText("﻿a\r\nb\r\n"u8.ToArray()));
         Assert.Equal(plain, Fingerprint.OfString("a\r\nb\r\n"));
         Assert.True(Fingerprint.Same(plain, plain[7..].ToUpperInvariant()));
+    }
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("\"dev\": \"env:X\"", "environments.value")]
+    [InlineData("\"dev\": { \"host\": \"h\", \"connection\": \"env:X\", \"profile\": \"p\", \"neverRead\": \"yes\" }", "environments.neverRead")]
+    [InlineData("\"dev\": { \"host\": \"h\", \"connection\": \"env:X\", \"profile\": \"p\", \"deployOrder\": \"first\" }", "environments.deployOrder")]
+    [InlineData("\"dev\": { \"host\": \"h\", \"connection\": \"env:X\", \"profile\": \"p\", \"deployOrder\": 1.5 }", "environments.deployOrder")]
+    public void An_environment_entry_of_the_wrong_kind_is_configuration_refused_naming_its_key(string entry, string code)
+    {
+        using var scratch = new Scratch();
+        scratch.Write("dbchange/environments.json", "{ \"environments\": { " + entry + " } }");
+        var stop = Assert.Throws<Stop>(() => EnvironmentsFile.Read(scratch.Path));
+        Assert.Equal((6, code), (stop.Outcome.Exit, stop.Finding.Code));
+        Assert.Equal("dev", stop.Finding.Subject);
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Two_runs_of_one_verb_in_the_same_second_from_two_processes_write_to_two_folders()
+    {
+        using var scratch = new Scratch();
+        var run = Runs.At(scratch.Path, "predict");
+        Assert.EndsWith("-" + Environment.ProcessId + "-predict", run.Folder, StringComparison.Ordinal);
+        Assert.Equal(scratch.Path, run.WorkingDirectory);
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_proof_options_keep_the_profiles_other_options_and_its_SQLCMD_values_and_force_BlockOnPossibleDataLoss()
+    {
+        var options = new Microsoft.SqlServer.Dac.DacDeployOptions { BlockOnPossibleDataLoss = false, GenerateSmartDefaults = true, DropObjectsNotInSource = true, CommandTimeout = 77 };
+        options.SqlCommandVariableValues["EnvironmentTag"] = "qa";
+        var proof = PublishProfiles.ForProof(options);
+        Assert.True(proof.BlockOnPossibleDataLoss);
+        Assert.Equal((true, true, 77), (proof.GenerateSmartDefaults, proof.DropObjectsNotInSource, proof.CommandTimeout));
+        Assert.Equal("qa", proof.SqlCommandVariableValues["EnvironmentTag"]);
+        Assert.False(options.BlockOnPossibleDataLoss);
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_cached_package_is_built_once_and_leaves_no_partial_file_beside_it()
+    {
+        using var scratch = new Scratch();
+        var run = Runs.At(scratch.Path, "predict");
+        var source = Dacpacs.Of(scratch.Under("built.dacpac"), "CREATE TABLE [dbo].[T] ([Id] INT NOT NULL);");
+        var builds = 0;
+        var first = Cache.Package(run, "sha256:abc/def", () => { builds++; return source; });
+        var second = Cache.Package(run, "sha256:abc/def", () => { builds++; return source; });
+        Assert.Equal((1, first), (builds, second));
+        Assert.Equal("abc_def.dacpac", Path.GetFileName(first));
+        Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(first)!, "*.partial"));
+    }
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("exec xp_msver", System.Data.CommandType.Text, true)]
+    [InlineData("  EXEC master.dbo.xp_msver N'ProductVersion'", System.Data.CommandType.Text, true)]
+    [InlineData("xp_msver", System.Data.CommandType.StoredProcedure, true)]
+    [InlineData("SELECT N'xp_msver'", System.Data.CommandType.Text, false)]
+    [InlineData("SELECT SERVERPROPERTY('ProductVersion')", System.Data.CommandType.Text, false)]
+    public void The_server_probe_refuses_an_EXEC_of_xp_msver_and_lets_a_SELECT_that_names_it_pass(string text, System.Data.CommandType type, bool refused)
+    {
+        using var command = new Microsoft.Data.SqlClient.SqlCommand(text) { CommandType = type };
+        Assert.Equal(refused, ServerProbe.Refuses(command));
     }
 }

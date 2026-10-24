@@ -15,9 +15,14 @@ public sealed record PlanOperation(string Kind, string Type, string Name)
     public string Pair => Kind + " " + Type;
 }
 
-public sealed record PlanAlert(string Kind, string Value);
-
-public sealed record Plan(IReadOnlyList<PlanOperation> Operations, IReadOnlyList<PlanAlert> Alerts, string Script, string Report);
+public sealed record Plan(IReadOnlyList<PlanOperation> Operations, string Script, string Report)
+{
+    public void Write(Run run, string name)
+    {
+        File.WriteAllText(Path.Combine(run.Folder, name + ".report.xml"), Report);
+        File.WriteAllText(Path.Combine(run.Folder, name + ".script.sql"), Script);
+    }
+}
 
 public sealed record Verdict(string Outcome, string? BlockedBy, IReadOnlyList<string> Messages);
 
@@ -47,7 +52,7 @@ public static class DacFx
             ExtractApplicationScopedObjectsOnly = true, IgnorePermissions = true, IgnoreUserLoginMappings = true, IgnoreExtendedProperties = false,
             Storage = DacSchemaModelStorageType.Memory, VerifyExtraction = false,
         };
-        new DacServices(connectionString).Extract(stream, database, "dbchange-lite", new Version(1, 0), null, null, options, cancel);
+        new DacServices(Named(connectionString)).Extract(stream, database, "dbchange-lite", new Version(1, 0), null, null, options, cancel);
         return stream.ToArray();
     }, "extract.failed", database);
 
@@ -58,21 +63,19 @@ public static class DacFx
         var operations = root.Elements(Report + "Operations").Elements(Report + "Operation")
             .SelectMany(o => o.Elements(Report + "Item").Select(i => new PlanOperation((string?)o.Attribute("Name") ?? "", (string?)i.Attribute("Type") ?? "", (string?)i.Attribute("Value") ?? "")))
             .ToList();
-        var alerts = root.Elements(Report + "Alerts").Elements(Report + "Alert")
-            .SelectMany(a => a.Elements(Report + "Issue").Select(i => new PlanAlert((string?)a.Attribute("Name") ?? "", (string?)i.Attribute("Value") ?? "")))
-            .ToList();
-        return new Plan(operations, alerts, result.DatabaseScript ?? "", result.DeploymentReport);
+        return new Plan(operations, result.DatabaseScript ?? "", result.DeploymentReport);
     }, "plan.failed", database);
 
     public static Verdict Deploy(string connectionString, DacPackage package, string database, DacDeployOptions options, CancellationToken cancel)
     {
         try
         {
-            new DacServices(connectionString).Deploy(package, database, true, options, cancel);
+            new DacServices(Named(connectionString)).Deploy(package, database, true, options, cancel);
             return new Verdict("done", null, []);
         }
         catch (Exception e) when (e is DacServicesException or SqlException)
         {
+            cancel.ThrowIfCancellationRequested();
             var messages = Messages(e);
             var numbers = Numbers(e, messages).ToList();
             if (numbers.Any(n => n.Number == 50000 && n.State == 127))
@@ -85,7 +88,7 @@ public static class DacFx
                 return new Verdict("blocked", "constraint-violation", messages);
             }
 
-            throw Stop.Of("configuration-refused", "dacfx.failed", database, "DacFx failed the deploy: " + string.Join(" | ", messages.Take(5)), "Read the messages, correct the change or the copy, and run prove again.");
+            throw Stop.Of("configuration-refused", "dacfx.failed", database, "DacFx failed the deploy: " + string.Join(" | ", messages.Take(5)), "Correct the change or the rows at the object the first message names, then run prove again.");
         }
     }
 
@@ -133,7 +136,7 @@ public static class DacFx
         }
     }
 
-    private static T Guard<T>(Func<T> act, string code, string subject)
+    internal static T Guard<T>(Func<T> act, string code, string subject)
     {
         try
         {
@@ -141,8 +144,8 @@ public static class DacFx
         }
         catch (ServerProbeRefused)
         {
-            throw Stop.Of("configuration-refused", "dacfx.failed", subject, "DacFx stopped catching the refusal of its xp_msver call, so the read cannot proceed under R14.",
-                "Keep dbchange-lite's DacFx at the release the pin names until ServerProbe.cs is revisited.");
+            throw Stop.Of("configuration-refused", "dacfx.failed", subject, "DacFx " + DacFxRelease.Running + " sent exec xp_msver past the refusal dbchange-lite installs, so the read stops: dbchange-lite sends no EXEC to an environment.",
+                "Run the dbchange-lite build whose DacFx is the release dbchange/ledgers/toolchain.md pins, and report this answer to the maintainer of dbchange-lite.");
         }
         catch (Exception e) when (e is DacServicesException or Microsoft.SqlServer.Dac.Model.DacModelException or SqlException or IOException or InvalidOperationException)
         {
@@ -153,9 +156,11 @@ public static class DacFx
                     "Check the connection the environments file references, the login's access and the network, then run the verb again.");
             }
 
-            throw Stop.Of("configuration-refused", code, subject, "DacFx failed: " + string.Join(" | ", Messages(e).Take(5)), "Read the messages and correct the input they name.");
+            throw Stop.Of("configuration-refused", code, subject, "DacFx failed: " + string.Join(" | ", Messages(e).Take(5)), "Correct the input the first message names, then run the verb again.");
         }
     }
+
+    private static string Named(string connectionString) => new SqlConnectionStringBuilder(connectionString) { ApplicationName = "dbchange-lite" }.ConnectionString;
 
     private static IEnumerable<Exception> Chain(Exception e)
     {

@@ -53,7 +53,7 @@ public static class LocalServer
 
     public static void Refuse(string connectionString, Environments environments)
     {
-        var source = new SqlConnectionStringBuilder(connectionString).DataSource;
+        var source = Baselines.Connection(connectionString, "local server").DataSource;
         if (!Hosts.IsLocal(source))
         {
             throw Stop.Of("refused-by-name", "server.not-local", source, "prove writes only to a server on this machine, and " + Hosts.Of(source) + " is not one.", "Set DBCHANGE_SQL to a SQL Server on this machine, or use LocalDB.");
@@ -61,7 +61,7 @@ public static class LocalServer
 
         foreach (var environment in environments.All.Where(e => Hosts.Same(source, e.Host)))
         {
-            throw Stop.Of("refused-by-name", "server.named-environment", source, Hosts.Of(source) + " is the host of the environment " + environment.Name + ", and prove never writes to a named environment (R15).", "Set DBCHANGE_SQL to a SQL Server that is no environment's host.");
+            throw Stop.Of("refused-by-name", "server.named-environment", source, Hosts.Of(source) + " is the host of the environment " + environment.Name + ", and prove never writes to a named environment.", "Set DBCHANGE_SQL to a SQL Server that is no environment's host.");
         }
     }
 
