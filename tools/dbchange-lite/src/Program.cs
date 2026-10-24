@@ -63,8 +63,10 @@ public static class Program
         {
             run = new Run(workingDirectory, invocation.Verb.Name, at, cancel);
         }
-        catch (Stop stop)
+        catch (Exception e) when (e is Stop or IOException or UnauthorizedAccessException)
         {
+            var stop = e as Stop ?? Stop.Of("configuration-refused", "run.folder", workingDirectory, "The run folder under .dbchange/runs cannot be written: " + e.Message,
+                "Make .dbchange/runs under the repository root a writable folder, then run the verb again.");
             output.Write(new Answer("dbchange-lite." + invocation.Verb.Name + "/1", stop.Outcome.Word, stop.Outcome.Exit, stop.Finding.Message, null, [stop.Finding],
                 Contract.Version, Dacfx.Running, "UNPINNED", null, null, null, null, false, null, null, null).Text());
             return stop.Outcome.Exit;

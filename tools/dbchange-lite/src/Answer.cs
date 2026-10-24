@@ -88,7 +88,6 @@ public sealed record Answer(string Schema, string Outcome, int Exit, string Mess
 
         return elapsed with
         {
-            Findings = elapsed.Findings.Take(20).ToList(),
             Environments = elapsed.Environments?.Select(e => e.Summary()).ToList(),
             Truncated = true,
             Full = run.Relative(Path.Combine(run.Folder, "answer.json")),

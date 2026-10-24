@@ -14,7 +14,7 @@ public sealed record Measurement(IReadOnlyList<CheckAnswer> Checks, IReadOnlyLis
 
     public int Level => Unanswered.Count == 0 ? 3 : 2;
 
-    public string Outcome => Fires || Violated ? "blocks" : "applies";
+    public string Outcome => Fires || Violated ? "blocks" : Unanswered.Count > 0 ? "unknown" : "applies";
 
     public string? BlockedBy => Fires ? "block-on-possible-data-loss" : Violated ? "constraint-violation" : null;
 }
@@ -28,6 +28,11 @@ public static partial class Predict
     {
         var environments = EnvironmentsFile.Read(run.Root);
         var asked = environments.InDeployOrder(invocation.Values["--env"].Split(',').Select(n => n.Trim()).Where(n => n.Length > 0));
+        if (asked.Count == 0)
+        {
+            throw Stop.Of("bad-arguments", "env.empty", "--env", "--env names no environment.", "Give --env one or more names from " + EnvironmentsFile.Name + ", separated by commas.");
+        }
+
         var ledger = ToolchainLedger.Read(run.Root);
         ledger.HoldWindow();
         var to = Source.Parse(invocation.Values.GetValueOrDefault("--to") ?? "ref:HEAD", "--to");
@@ -44,7 +49,7 @@ public static partial class Predict
         var open = new List<OpenItem>();
         var findings = new List<Finding>();
         PublishProfile? first = null;
-        var command = "dbchange-lite predict --env {0} --to " + to + (onto is null ? " --onto none" : " --onto " + onto) + (intent is null ? "" : " --intent " + intent);
+        string Command(string name) => "dbchange-lite predict --env " + name + " --to " + to + (onto is null ? " --onto none" : " --onto " + onto) + (intent is null ? "" : " --intent " + intent);
         foreach (var environment in asked)
         {
             if (environment.NeverRead)
@@ -65,21 +70,21 @@ public static partial class Predict
             {
                 baseline = Baselines.Read(environment, run);
             }
-            catch (Stop stop) when (stop.Outcome.Word == "unreachable")
+            catch (Stop stop) when (stop.Outcome.Word == "unreachable" || stop.Finding.Code.StartsWith("environments.reference", StringComparison.Ordinal))
             {
                 rows.Add(new EnvironmentAnswer(environment.Name, 1, null, "unknown", null, null, null, stop.Finding.Message, null, null, null, null, null));
-                open.Add(new OpenItem(environment.Name, 1, "not read: " + stop.Finding.Message, Next.Run(string.Format(CultureInfo.InvariantCulture, command, environment.Name), "a lead who reads " + environment.Name)));
+                open.Add(new OpenItem(environment.Name, 1, "not read: " + stop.Finding.Message, Next.Run(Command(environment.Name), "a lead who reads " + environment.Name)));
                 findings.Add(Finding.Warning("environment.not-read", environment.Name, stop.Finding.Message, stop.Finding.Remedy));
                 continue;
             }
 
             using (baseline)
             {
-                var reading = Read(environment, baseline, change, ontoBuilt, intent, run, cdc.Concat(baseline.Session.CdcTracked()).ToHashSet(StringComparer.OrdinalIgnoreCase));
+                var reading = Read(environment, baseline, change, ontoBuilt, intent, run, cdc.Concat(baseline.CdcTracked).ToHashSet(StringComparer.OrdinalIgnoreCase));
                 first ??= reading.Profile;
                 var measured = Measure(baseline.Session, reading.Preconditions, counts);
                 rows.Add(Row(environment, baseline, reading, measured));
-                open.AddRange(Open(environment, reading, measured, command, to, onto));
+                open.AddRange(Open(environment, reading, measured, Command, to, onto));
                 findings.AddRange(Findings(environment, reading, measured, intent));
             }
         }
@@ -90,7 +95,8 @@ public static partial class Predict
         var message = blocking is not null
             ? blocking.Env + " blocks: " + (blocking.BlockedBy == "block-on-possible-data-loss" ? "BlockOnPossibleDataLoss stops the publish because a table the change alters has rows." : "SQL Server refuses the change on existing rows.")
             : outcome == "needs-input" ? "Nothing read blocks; " + open.Count.ToString(CultureInfo.InvariantCulture) + " item" + (open.Count == 1 ? " is" : "s are") + " open."
-            : outcome == "unreachable" ? "No environment answered." : "Every environment read applies, and nothing is open.";
+            : outcome == "unreachable" ? "No environment answered."
+            : read.Count == 0 ? "No environment was read; " + string.Join("; ", rows.Select(r => r.Env + " " + r.Outcome)) + "." : "Every environment read applies, and nothing is open.";
         if (first is not null && !ledger.Confirms(first.Hash))
         {
             findings.Add(Finding.Note("profile.not-verified", first.Path, "The publish profile's hash " + first.Hash + " has no confirmation row in " + Toolchain.Path + "."));
@@ -118,7 +124,7 @@ public static partial class Predict
         var preconditions = Preconditions.Of(script, checks, baseline.Model);
         var shape = NotPredictable.Shape(script);
         var unsettled = NotPredictable.Of(script, shape, baseline.Model, cdcTracked);
-        var contract = NotPredictable.Contract(script, shape);
+        var contract = NotPredictable.Contract(script, shape, baseline.Model);
         var changeModel = Model.Load(change.PackagePath);
         var own = onto is null ? null : DacFx.Script(changePackage, DacFx.Load(onto.PackagePath), baseline.Database, profile.Options).Operations.Select(o => o.Type + " " + o.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var unexplained = plan.Operations
@@ -151,7 +157,12 @@ public static partial class Predict
 
             if (precondition.OnNewObject)
             {
-                answers.Add(new PreconditionAnswer(precondition.Kind, precondition.Quoted, precondition.Columns, false, counts ? 0 : null, precondition.Query));
+                answers.Add(new PreconditionAnswer(precondition.Kind, precondition.Quoted, precondition.Columns, precondition.ReadsNew ? null : false, counts && !precondition.ReadsNew ? 0 : null, precondition.Query));
+                if (precondition.ReadsNew)
+                {
+                    unanswered.Add((precondition, new Measured.Failed(0, "it reads a column the plan adds")));
+                }
+
                 continue;
             }
 

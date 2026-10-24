@@ -93,12 +93,21 @@ public sealed class Session : IDisposable
     {
         OneSelect(query);
         var clock = Stopwatch.StartNew();
-        using var command = new SqlCommand(query, connection) { CommandTimeout = CommandSeconds };
-        using var reader = command.ExecuteReader();
         var rows = new List<IReadOnlyList<string>>();
-        while (reader.Read())
+        try
         {
-            rows.Add(Enumerable.Range(0, reader.FieldCount).Select(i => reader.IsDBNull(i) ? "" : Convert.ToString(reader.GetValue(i), CultureInfo.InvariantCulture) ?? "").ToList());
+            using var command = new SqlCommand(query, connection) { CommandTimeout = CommandSeconds };
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add(Enumerable.Range(0, reader.FieldCount).Select(i => reader.IsDBNull(i) ? "" : Convert.ToString(reader.GetValue(i), CultureInfo.InvariantCulture) ?? "").ToList());
+            }
+        }
+        catch (SqlException e)
+        {
+            log.Add(Server, Database, query, clock.ElapsedMilliseconds, "Msg " + e.Number.ToString(CultureInfo.InvariantCulture));
+            throw Stop.Of("unreachable", "environment.catalog-read", Server, Server + " did not answer a catalog read of " + Database + ": Msg " + e.Number.ToString(CultureInfo.InvariantCulture) + ", " + e.Message.ReplaceLineEndings(" "),
+                e.Number is 1222 or -2 ? "Run the verb again when no schema change holds a lock on " + Database + "." : "Check this login's VIEW DEFINITION on " + Database + ", then run the verb again.");
         }
 
         log.Add(Server, Database, query, clock.ElapsedMilliseconds, "answered " + rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");

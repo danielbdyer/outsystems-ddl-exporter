@@ -80,7 +80,7 @@ public static class DacFx
                 return new Verdict("blocked", "block-on-possible-data-loss", messages);
             }
 
-            if (numbers.Any(n => n.Number is 547 or 2627 or 2628 or 515 or 1946))
+            if (numbers.Any(n => n.Number is 547 or 1505 or 2627 or 2628 or 515 or 1946))
             {
                 return new Verdict("blocked", "constraint-violation", messages);
             }

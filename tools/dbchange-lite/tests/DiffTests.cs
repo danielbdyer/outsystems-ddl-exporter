@@ -10,6 +10,16 @@ public sealed class DiffTests
 {
     public static TheoryData<string> WithChangeText => new(GoldenProject.SampleChanges.Where(n => File.Exists(GoldenProject.Case(n, "change.txt"))));
 
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Two_unnamed_checks_on_two_tables_print_as_two_created_lines()
+    {
+        using var scratch = new Scratch();
+        var from = Dacpacs.Of(scratch.Under("from.dacpac"), "CREATE TABLE [dbo].[A] ([X] INT NULL); CREATE TABLE [dbo].[B] ([Y] INT NULL);");
+        var to = Dacpacs.Of(scratch.Under("to.dacpac"), "CREATE TABLE [dbo].[A] ([X] INT NULL CHECK ([X] > 0)); CREATE TABLE [dbo].[B] ([Y] INT NULL CHECK ([Y] > 0));");
+        Assert.Equal(2, ModelDiff.Lines(from, to).Count(l => l.StartsWith("created CheckConstraint <unnamed ", StringComparison.Ordinal)));
+    }
+
     [Theory]
     [Trait("Category", "build")]
     [MemberData(nameof(WithChangeText))]

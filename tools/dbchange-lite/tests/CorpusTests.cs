@@ -160,6 +160,7 @@ public sealed class CorpusTests(CorpusCopy copy) : IClassFixture<CorpusCopy>
         var ledger = GoldenProject.Case(name, "cdc-tracked.md");
         var profile = GoldenProject.Case(name, "profile.publish.xml");
         var afterDeploy = GoldenProject.Case(name, "after-deploy.txt");
+        var findings = GoldenProject.Case(name, "findings.txt");
         copy.CdcLedger(File.Exists(ledger) ? File.ReadAllText(ledger) : null);
         if (File.Exists(profile))
         {
@@ -207,6 +208,11 @@ public sealed class CorpusTests(CorpusCopy copy) : IClassFixture<CorpusCopy>
             if (want.ProveIt)
             {
                 Assert.True(CorpusCopy.NotPredictable(answer) > 0, name + " on " + want.Copy + ": predict.txt says prove it, and dbchange-lite lists nothing not predictable");
+            }
+
+            foreach (var code in File.Exists(findings) ? File.ReadAllLines(findings).Where(l => l.Length > 0) : [])
+            {
+                Assert.True(answer.GetProperty("findings").EnumerateArray().Any(f => f.GetProperty("code").GetString() == code), name + " on " + want.Copy + ": findings.txt names " + code + ", and dbchange-lite wrote none");
             }
         }
     }

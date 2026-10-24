@@ -50,7 +50,7 @@ public static partial class NotPredictable
         return new PlanShape(altered, dropped, rebuilt, created, constraints);
     }
 
-    public static IReadOnlyList<ContractChange> Contract(DeployScript script, PlanShape shape)
+    public static IReadOnlyList<ContractChange> Contract(DeployScript script, PlanShape shape, Model environment)
     {
         var changes = new List<ContractChange>();
         foreach (var statement in script.Statements)
@@ -65,8 +65,10 @@ public static partial class NotPredictable
                         .Select(e => new ContractChange(DeployScripts.TableOf(drop.SchemaObjectName), "the column " + Names.Quote(e.Name.Value) + " is dropped", statement.Line)));
                     break;
                 case AlterTableAlterColumnStatement alter when alter.DataType is not null || alter.AlterTableAlterColumnOption == AlterTableAlterColumnOption.NotNull:
+                    var nullable = environment.ColumnNullable(alter.SchemaObjectName.SchemaIdentifier?.Value ?? "dbo", alter.SchemaObjectName.BaseIdentifier.Value, alter.ColumnIdentifier.Value);
                     changes.Add(new ContractChange(DeployScripts.TableOf(alter.SchemaObjectName), "the column " + Names.Quote(alter.ColumnIdentifier.Value)
-                        + (alter.AlterTableAlterColumnOption == AlterTableAlterColumnOption.NotNull ? " becomes mandatory" : " changes type"), statement.Line));
+                        + (alter.AlterTableAlterColumnOption == AlterTableAlterColumnOption.NotNull && nullable == true ? " becomes mandatory"
+                            : alter.AlterTableAlterColumnOption == AlterTableAlterColumnOption.Null && nullable == false ? " becomes optional" : " changes type"), statement.Line));
                     break;
                 case ExecuteStatement execute when RenamedBy(execute) is { } renamed && !IsRebuildCopyName(RenamedObject(execute)):
                     changes.Add(new ContractChange(renamed, RenamedObject(execute) + " is renamed", statement.Line));
@@ -81,7 +83,8 @@ public static partial class NotPredictable
         .Select(s => (Statement: s, Add: s.Node as AlterTableAddTableElementStatement))
         .Where(s => s.Add is not null)
         .SelectMany(s => s.Add!.Definition.ColumnDefinitions
-            .Where(c => c.DefaultConstraint is not null && c.Constraints.OfType<NullableConstraintDefinition>().Any(n => !n.Nullable)
+            .Where(c => (c.DefaultConstraint is not null || s.Add.Definition.TableConstraints.OfType<DefaultConstraintDefinition>().Any(d => d.Column?.Value.Equals(c.ColumnIdentifier.Value, StringComparison.OrdinalIgnoreCase) == true))
+                && c.Constraints.OfType<NullableConstraintDefinition>().Any(n => !n.Nullable)
                 && !change.Defaulted.Contains(DeployScripts.TableOf(s.Add.SchemaObjectName) + "." + Names.Quote(c.ColumnIdentifier.Value)))
             .Select(c => (DeployScripts.TableOf(s.Add.SchemaObjectName), c.ColumnIdentifier.Value, s.Statement.Line)))
         .ToList();

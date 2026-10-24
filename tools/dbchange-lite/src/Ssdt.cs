@@ -30,7 +30,7 @@ public abstract record Source
         };
     }
 
-    public override string ToString() => this switch
+    public sealed override string ToString() => this switch
     {
         Ref r => "ref:" + r.Name,
         Dacpac d => "dacpac:" + d.Path,
@@ -116,7 +116,7 @@ public static partial class Ssdt
         }
 
         var projects = Directory.EnumerateFiles(folder, "*.sqlproj", SearchOption.AllDirectories)
-            .Where(p => !p.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(s => s is "bin" or "obj" or ".dbchange")).Order(StringComparer.Ordinal).ToList();
+            .Where(p => !Path.GetRelativePath(folder, p).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(s => s is "bin" or "obj" or ".dbchange")).Order(StringComparer.Ordinal).ToList();
         return projects switch
         {
             [var one] => one,

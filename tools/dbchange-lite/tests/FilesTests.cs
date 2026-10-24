@@ -120,6 +120,31 @@ public sealed class FilesTests
 
     [Fact]
     [Trait("Category", "fast")]
+    public void A_source_prints_as_it_is_written_and_two_loopback_hosts_are_one_machine()
+    {
+        foreach (var text in new[] { "ref:HEAD", "dacpac:release/1.4.dacpac", "project:src/Estate" })
+        {
+            Assert.Equal(text, Source.Parse(text, "--to").ToString());
+        }
+
+        Assert.True(Hosts.Same("127.0.0.1,11433", "localhost"));
+        Assert.True(Hosts.Same("localhost", "(localdb)\\MSSQLLocalDB"));
+        Assert.False(Hosts.Same("127.0.0.1", "db.corp.invalid"));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_one_project_of_a_worktree_under_dbchange_runs_is_found_and_a_copy_under_bin_is_not()
+    {
+        using var scratch = new Scratch();
+        var worktree = Path.Combine(".dbchange", "runs", "20261024T000000Z-predict", "src-0123456789ab");
+        var project = scratch.Write(Path.Combine(worktree, "project", "Estate.sqlproj"), "<Project />");
+        scratch.Write(Path.Combine(worktree, "project", "bin", "Estate.sqlproj"), "<Project />");
+        Assert.Equal(project, Ssdt.OneProject(scratch.Under(worktree)));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
     public void A_fingerprint_drops_the_byte_order_mark_and_the_line_ending_before_hashing()
     {
         var plain = Fingerprint.OfText("a\nb\n"u8.ToArray());

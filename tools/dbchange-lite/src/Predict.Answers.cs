@@ -8,16 +8,18 @@ namespace DbChangeLite;
 
 public static partial class Predict
 {
-    private static IEnumerable<OpenItem> Open(NamedEnvironment environment, Reading reading, Measurement measured, string command, Source to, Source.Ref? onto)
+    private static IEnumerable<OpenItem> Open(NamedEnvironment environment, Reading reading, Measurement measured, Func<string, string> command, Source to, Source.Ref? onto)
     {
+        var prove = "dbchange-lite prove --env " + environment.Name + " --to " + to + (onto is null ? " --onto none" : " --onto " + onto) + " --rows <the rows file written from this answer>";
         foreach (var (precondition, result) in measured.Unanswered)
         {
             yield return result switch
             {
+                Measured.Failed when precondition.ReadsNew => new OpenItem(environment.Name, 4, precondition.Spelled + " reads a column the plan adds, so no read-only query settles it", Next.Run(prove, "the developer's agent")),
                 Measured.Refused => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read: SQL Server refuses this login the SELECT", Next.Ask("a DBA", "Grant SELECT on " + precondition.Quoted + " to the reader of " + environment.Name + ", or run predict as a login that holds it.")),
-                Measured.TimedOut t => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read: the query ran past " + t.Seconds.ToString(CultureInfo.InvariantCulture) + " seconds", Next.Run(string.Format(CultureInfo.InvariantCulture, command, environment.Name), "the developer's agent, when " + environment.Name + " is quieter")),
+                Measured.TimedOut t => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read: the query ran past " + t.Seconds.ToString(CultureInfo.InvariantCulture) + " seconds", Next.Run(command(environment.Name), "the developer's agent, when " + environment.Name + " is quieter")),
                 Measured.Failed f => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read: " + (f.Number == 0 ? f.Message : "Msg " + f.Number.ToString(CultureInfo.InvariantCulture) + ", " + f.Message), Next.Ask("a DBA", "Why does the query for " + precondition.Spelled + " fail on " + environment.Name + "?")),
-                _ => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read", Next.Run(string.Format(CultureInfo.InvariantCulture, command, environment.Name), "the developer's agent")),
+                _ => new OpenItem(environment.Name, 2, precondition.Spelled + " was not read", Next.Run(command(environment.Name), "the developer's agent")),
             };
         }
 
@@ -38,8 +40,7 @@ public static partial class Predict
                 "cdc" => group.Key.Table + " is tracked by Change Data Capture, and the plan touches it",
                 _ => "a statement outside the list of statements that move no rows, at line " + group.First().Statement.Line.ToString(CultureInfo.InvariantCulture) + ": " + Clip(group.First().Statement.Text),
             };
-            var rows = "the rows file written from this answer";
-            yield return new OpenItem(environment.Name, 4, why, Next.Run("dbchange-lite prove --env " + environment.Name + " --to " + to + (onto is null ? " --onto none" : " --onto " + onto) + " --rows <" + rows + ">", "the developer's agent"));
+            yield return new OpenItem(environment.Name, 4, why, Next.Run(prove, "the developer's agent"));
             if (group.Key.Why == "cdc")
             {
                 yield return new OpenItem(environment.Name, 4, group.Key.Table + " is tracked by Change Data Capture", Next.Ask("the owner of the CDC consumer", "Which capture instance of " + group.Key.Table + " is re-enabled after the deploy, and when?"));
@@ -64,7 +65,7 @@ public static partial class Predict
         var shape = intent is null ? "the operation" : intent;
         foreach (var check in measured.Checks.Where(c => c.Fires == true))
         {
-            yield return Finding.Error("check.fires", check.Table, "On " + environment.Name + " the table has rows, so the BlockOnPossibleDataLoss check DacFx writes for it stops the publish.", "Ship " + shape + " in two releases, as its skill states, or make the table empty before the deploy.");
+            yield return Finding.Error("check.fires", check.Table, "On " + environment.Name + " the table has rows, so the BlockOnPossibleDataLoss check DacFx writes for it stops the publish.", "Ship " + shape + " in two releases, as its skill states.");
         }
 
         foreach (var precondition in measured.Preconditions.Where(p => p.Violated == true))
@@ -106,11 +107,11 @@ public static partial class Predict
         File.WriteAllText(Path.Combine(run.Folder, environment.Name + ".script.sql"), plan.Script);
         var script = DeployScripts.Read(plan.Script, DacFx.Text(changePackage.PreDeploymentScript), DacFx.Text(changePackage.PostDeploymentScript), Baselines.SqlCmd(environment, profile, run));
         var checks = BlockOnPossibleDataLoss.Checks(script);
-        var preconditions = Preconditions.Of(script, checks, Model.Load(at.PackagePath)).Where(p => !p.OnNewObject).ToList();
+        var preconditions = Preconditions.Of(script, checks, Model.Load(at.PackagePath)).Where(p => !p.OnNewObject || p.ReadsNew).ToList();
         var clauses = preconditions.Select(p => p.Kind == "TableEmpty" ? p.Quoted + " has rows" : p.Spelled + " is violated").ToList();
         var outcome = clauses.Count == 0 ? "applies" : "blocks if " + string.Join(", or ", clauses);
         findings.Add(Finding.Warning("environment.assumed", environment.Name, environment.Name + " is never read, so the worst case is assumed: " + outcome + ".", "Run the beforePromoting queries on " + environment.Name + " under an identity with its rights just before promoting."));
-        return new EnvironmentAnswer(environment.Name, null, "worst", outcome, null, at.Describe, null, null, null, null, null, null, preconditions.Select(p => p.Query).ToList());
+        return new EnvironmentAnswer(environment.Name, null, "worst", outcome, null, at.Describe, null, null, null, null, null, null, preconditions.Where(p => !p.ReadsNew).Select(p => p.Query).ToList());
     }
 
     public static string Confidence(IReadOnlyList<EnvironmentAnswer> rows) => string.Join("; ", rows.Select(r => r.Assumed is not null ? r.Env + " assumed"

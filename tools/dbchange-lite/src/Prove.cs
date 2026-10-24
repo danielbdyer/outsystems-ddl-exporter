@@ -16,7 +16,8 @@ public static class Prove
     {
         var environments = EnvironmentsFile.Read(run.Root);
         var environment = environments.Named(invocation.Values["--env"]);
-        ToolchainLedger.Read(run.Root).HoldWindow();
+        var ledger = ToolchainLedger.Read(run.Root);
+        ledger.HoldWindow();
         var local = LocalServer.ConnectionString();
         LocalServer.Refuse(local, environments);
         var rowsPath = Path.GetFullPath(Path.Combine(run.Root, invocation.Values["--rows"]));
@@ -43,14 +44,14 @@ public static class Prove
             baselinePackage = at.PackagePath;
             collation = "";
             expected = null;
-            reading = Predict.Read(environment, new Baseline(environment, Session.Open(local, run.Log, run.Cancel, "local server"), environment.Name, "", at.PackagePath, Model.Load(at.PackagePath), at.Fingerprint), change, null, null, run, cdc);
+            reading = Predict.Read(environment, new Baseline(environment, Session.Open(local, run.Log, run.Cancel, "local server"), environment.Name, "", at.PackagePath, Model.Load(at.PackagePath), at.Fingerprint, []), change, null, null, run, cdc);
         }
         else
         {
             using var baseline = Baselines.Read(environment, run);
             baselinePackage = baseline.ExtractPath;
             collation = baseline.Collation;
-            reading = Predict.Read(environment, baseline, change, null, null, run, cdc.Concat(baseline.Session.CdcTracked()).ToHashSet(StringComparer.OrdinalIgnoreCase));
+            reading = Predict.Read(environment, baseline, change, null, null, run, cdc.Concat(baseline.CdcTracked).ToHashSet(StringComparer.OrdinalIgnoreCase));
             expected = Predict.Measure(baseline.Session, reading.Preconditions, false);
         }
 
@@ -69,16 +70,27 @@ public static class Prove
 
             using (var copySession = Session.Open(new SqlConnectionStringBuilder(local) { InitialCatalog = copy }.ConnectionString, run.Log, run.Cancel, copy))
             {
+                var number = 0;
                 foreach (var batch in LocalServer.Batches(File.ReadAllText(rowsPath)))
                 {
-                    copySession.Execute(batch);
+                    try
+                    {
+                        number++;
+                        copySession.Execute(batch);
+                    }
+                    catch (SqlException e)
+                    {
+                        throw Stop.Of("needs-input", "rows.failed", invocation.Values["--rows"], "Batch " + number.ToString(CultureInfo.InvariantCulture) + " of " + invocation.Values["--rows"] + " failed on the copy: Msg " + e.Number.ToString(CultureInfo.InvariantCulture) + ", " + e.Message.ReplaceLineEndings(" "),
+                            "Correct the batch and run prove again; a key the release's post-deploy script already wrote on the copy cannot be inserted again.");
+                    }
                 }
 
                 var planted = Predict.Measure(copySession, reading.Preconditions, false);
-                var differences = Differences(expected, planted, reading.Preconditions);
+                var differences = Differences(expected, planted, reading.Preconditions, environment.Name);
                 if (differences.Count > 0)
                 {
-                    throw new Stop(Contract.Of("needs-input"), Finding.Error("copy.rows-differ", copy, "The copy's rows answer otherwise than " + environment.Name + "'s: " + string.Join("; ", differences) + ".", "Add or remove rows in " + invocation.Values["--rows"] + " until the copy answers as the environment does, then run prove again."));
+                    throw new Stop(Contract.Of("needs-input"), Finding.Error("copy.rows-differ", copy, "The copy's rows answer otherwise than " + environment.Name + "'s: " + string.Join("; ", differences) + ".",
+                        "Add or remove rows in " + invocation.Values["--rows"] + " until the copy answers as the environment does, then run prove again; an item not read on " + environment.Name + " needs predict as a login that reads it first."));
                 }
 
                 var planned = DacFx.Script(DacFx.Load(change.PackagePath), DacFx.Load(baselinePackage), copy, PublishProfiles.ForProof(profile.Options));
@@ -98,9 +110,9 @@ public static class Prove
                 return Answer.Of("prove", Contract.Of(verdict.Outcome), message, findings, run) with
                 {
                     BlockedBy = verdict.BlockedBy,
-                    Provenance = new Provenance(change.Commit ?? change.Fingerprint, change.OntoCommit, change.Tree, profile.Hash, false, run.Stamp),
-                    Confidence = "Proven on " + environment.Name + ", on " + copy + " (SQL Server " + version + " " + edition + ").",
-                    Environments = [new EnvironmentAnswer(environment.Name, 4, environment.NeverRead ? "worst" : null, verdict.Outcome == "done" ? "applies" : "blocks", verdict.BlockedBy, copy, collation, null, planted.Checks, planted.Preconditions, null, null, null)],
+                    Provenance = new Provenance(change.Commit ?? change.Fingerprint, change.OntoCommit, change.Tree, profile.Hash, ledger.Confirms(profile.Hash), run.Stamp),
+                    Confidence = (environment.NeverRead ? environment.Name + " assumed; its worst case deployed" : "Proven on " + environment.Name) + ", on " + copy + " (SQL Server " + version + " " + edition + ").",
+                    Environments = [new EnvironmentAnswer(environment.Name, environment.NeverRead ? null : 4, environment.NeverRead ? "worst" : null, verdict.Outcome == "done" ? "applies" : "blocks", verdict.BlockedBy, copy, collation, null, planted.Checks, planted.Preconditions, null, null, null)],
                     Open = [],
                 };
             }
@@ -111,13 +123,17 @@ public static class Prove
         }
     }
 
-    private static IReadOnlyList<string> Differences(Measurement? expected, Measurement planted, IReadOnlyList<Precondition> preconditions)
+    internal static IReadOnlyList<string> Differences(Measurement? expected, Measurement planted, IReadOnlyList<Precondition> preconditions, string environment)
     {
         var differences = new List<string>();
         foreach (var check in planted.Checks)
         {
             var want = expected is null ? true : expected.Checks.FirstOrDefault(c => c.Table == check.Table)?.Fires;
-            if (want is { } w && check.Fires != w)
+            if (want is not { } w)
+            {
+                differences.Add(check.Table + " was not read on " + environment);
+            }
+            else if (check.Fires != w)
             {
                 differences.Add(check.Table + (w ? " has rows in the environment and none in the copy" : " is empty in the environment and has rows in the copy"));
             }
@@ -125,9 +141,18 @@ public static class Prove
 
         foreach (var precondition in planted.Preconditions)
         {
-            var want = expected is null ? !preconditions.First(p => p.Quoted == precondition.Table && p.Kind == precondition.Kind).OnNewObject
-                : expected.Preconditions.FirstOrDefault(p => p.Kind == precondition.Kind && p.Table == precondition.Table && p.Columns.SequenceEqual(precondition.Columns))?.Violated;
-            if (want is { } w && precondition.Violated != w)
+            var source = preconditions.First(p => p.Quoted == precondition.Table && p.Kind == precondition.Kind && p.Columns.SequenceEqual(precondition.Columns));
+            if (source.ReadsNew)
+            {
+                continue;
+            }
+
+            var want = expected is null ? !source.OnNewObject : expected.Preconditions.FirstOrDefault(p => p.Kind == precondition.Kind && p.Table == precondition.Table && p.Columns.SequenceEqual(precondition.Columns))?.Violated;
+            if (want is not { } w)
+            {
+                differences.Add(precondition.Kind + " on " + precondition.Table + " was not read on " + environment);
+            }
+            else if (precondition.Violated != w)
             {
                 differences.Add(precondition.Kind + " on " + precondition.Table + (w ? " is violated in the environment and holds in the copy" : " holds in the environment and is violated in the copy"));
             }

@@ -28,16 +28,16 @@ public static class Drift
         File.WriteAllText(Path.Combine(run.Folder, environment.Name + ".script.sql"), plan.Script);
         var atModel = Model.Load(at.PackagePath);
         var findings = new List<Finding>();
-        foreach (var operation in plan.Operations)
+        var operations = plan.Operations.Select(o => new PlanOperationAnswer(o.Kind, o.Type, o.Name, Causes.Of(o, plan.Operations, atModel, plan.Script))).ToList();
+        foreach (var operation in operations)
         {
-            var cause = Causes.Of(operation, plan.Operations, atModel, plan.Script);
-            var known = cause is null ? null : Causes.Known(run.Tool).FirstOrDefault(c => c.Name == cause);
+            var known = operation.Cause is null ? null : Causes.Known(run.Tool).FirstOrDefault(c => c.Name == operation.Cause);
             findings.Add(Finding.Warning("drift.differs", operation.Name, operation.Kind + " " + operation.Type + ": " + environment.Name + " differs from " + at.Describe + " at " + operation.Name
                 + (known is null ? "." : "; cause " + known.Name + ": " + known.Why), known?.Action ?? "Correct the environment or the repository at the object, or record the cause in causes.json."));
         }
 
         var known2 = atModel.Objects.ToHashSet();
-        findings.AddRange(baseline.Model.Objects.Where(o => !known2.Contains(o)).Select(o => Finding.Note("drift.unmanaged", o.Name, o.Type + " " + o.Name + " exists only in " + environment.Name + ", and no plan touches it while DropObjectsNotInSource is off.")));
+        findings.AddRange(baseline.Model.Objects.Where(o => !known2.Contains(o) && !plan.Operations.Any(p => p.Name.Equals(o.Name, StringComparison.OrdinalIgnoreCase))).Select(o => Finding.Note("drift.unmanaged", o.Name, o.Type + " " + o.Name + " exists only in " + environment.Name + ", and no plan touches it while DropObjectsNotInSource is off.")));
         if (!ledger.Confirms(profile.Hash))
         {
             findings.Add(Finding.Note("profile.not-verified", profile.Path, "The publish profile's hash " + profile.Hash + " has no confirmation row in " + Toolchain.Path + "."));
@@ -50,8 +50,8 @@ public static class Drift
         return Answer.Of("drift", outcome, message, findings, run) with
         {
             Provenance = new Provenance(at.Commit ?? at.Fingerprint, null, at.Tree, profile.Hash, ledger.Confirms(profile.Hash), run.Stamp),
-            Environments = [new EnvironmentAnswer(environment.Name, 1, null, differing == 0 ? "in-sync" : "differs", null, at.Describe, baseline.Collation, null, null, null,
-                new PlanAnswer(plan.Operations.Select(o => new PlanOperationAnswer(o.Kind, o.Type, o.Name, Causes.Of(o, plan.Operations, atModel, plan.Script))).ToList(), [], [], []), null, null)],
+            Environments = [new EnvironmentAnswer(environment.Name, operations.All(o => o.Cause is not null) ? 1 : 0, null, differing == 0 ? "in-sync" : "differs", null, at.Describe, baseline.Collation, null, null, null,
+                new PlanAnswer(operations, [], [], []), null, null)],
         };
     }
 }

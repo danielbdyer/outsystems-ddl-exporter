@@ -7,7 +7,7 @@ using Microsoft.Data.SqlClient;
 
 namespace DbChangeLite;
 
-public sealed record Baseline(NamedEnvironment Environment, Session Session, string Database, string Collation, string ExtractPath, Model Model, string SchemaFingerprint) : IDisposable
+public sealed record Baseline(NamedEnvironment Environment, Session Session, string Database, string Collation, string ExtractPath, Model Model, string SchemaFingerprint, IReadOnlyList<string> CdcTracked) : IDisposable
 {
     public void Dispose() => Session.Dispose();
 }
@@ -30,8 +30,9 @@ public static class Baselines
         {
             var collation = session.Collation();
             var fingerprint = session.SchemaFingerprint();
+            var tracked = session.CdcTracked();
             var extract = Cache.Extract(run, environment.Name, fingerprint, () => DacFx.Extract(connection, database, run.Cancel));
-            return new Baseline(environment, session, database, collation, extract, Model.Load(extract), fingerprint);
+            return new Baseline(environment, session, database, collation, extract, Model.Load(extract), fingerprint, tracked);
         }
         catch
         {

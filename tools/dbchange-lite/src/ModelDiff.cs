@@ -42,7 +42,7 @@ public static class ModelDiff
         var elements = new Dictionary<(string Type, string Name), TSqlObject>();
         void Add(TSqlObject element)
         {
-            var name = element.Name is { HasName: true } named ? Names.Quote(named.Parts) : "<unnamed " + Fingerprint.OfString(Script(element))[7..19] + ">";
+            var name = element.Name is { HasName: true } named ? Names.Quote(named.Parts) : "<unnamed " + Fingerprint.OfString(Identity(element))[7..19] + ">";
             elements.TryAdd((element.ObjectType.Name, name), element);
             foreach (var child in element.GetChildren())
             {
@@ -117,6 +117,9 @@ public static class ModelDiff
     }
 
     private static string Script(TSqlObject element) => element.TryGetScript(out var script) ? script : "";
+
+    private static string Identity(TSqlObject element) => string.Join('|', element.ObjectType.Relationships.OrderBy(r => r.Name, StringComparer.Ordinal).SelectMany(r => element.GetReferenced(r).Select(NameOf))
+        .Concat(element.ObjectType.Properties.OrderBy(p => p.Name, StringComparer.Ordinal).Select(p => Value(element, p).Value ?? "")));
 
     private static string NameOf(TSqlObject element) => element.Name is { HasName: true } named ? Names.Quote(named.Parts) : element.ObjectType.Name;
 

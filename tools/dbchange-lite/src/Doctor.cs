@@ -43,9 +43,9 @@ public static class Doctor
             items.AddRange(Environment(environment, project, run, ledger));
         }
 
-        var findings = items.Select(i => i.State == "ok" ? Finding.Note("doctor." + Slug(i.Name), i.Name, i.Detail) : Finding.Error("doctor." + Slug(i.Name), i.Name, i.Detail, i.Remedy!)).ToList();
+        var findings = items.Select(i => i.State is "ok" or "elsewhere" ? Finding.Note("doctor." + Slug(i.Name), i.Name, i.Detail) : Finding.Error("doctor." + Slug(i.Name), i.Name, i.Detail, i.Remedy!)).ToList();
         var outcome = items.Any(i => i.State == "missing") ? "degraded" : items.Any(i => i.State == "unreachable") ? "unreachable" : "ready";
-        var missing = items.Where(i => i.State != "ok").ToList();
+        var missing = items.Where(i => i.State is "missing" or "unreachable").ToList();
         var message = outcome == "ready" ? "Ready: every item is present." : missing.Count.ToString(CultureInfo.InvariantCulture) + " item" + (missing.Count == 1 ? "" : "s") + " missing or unreachable: " + string.Join("; ", missing.Select(i => i.Name)) + ".";
         return Answer.Of("doctor", Contract.Of(outcome), message, findings, run);
     }
@@ -134,7 +134,9 @@ public static class Doctor
         }
         catch (Stop stop)
         {
-            items.Add(stop.Outcome.Word == "unreachable" ? Unreachable("read of " + environment.Name, stop.Finding.Message, stop.Finding.Remedy!) : Missing("read of " + environment.Name, stop.Finding.Message, stop.Finding.Remedy!));
+            items.Add(stop.Finding.Code.StartsWith("environments.reference", StringComparison.Ordinal)
+                ? new Item("read of " + environment.Name, "elsewhere", stop.Finding.Message + " This machine does not read " + environment.Name + "; a person who holds its connection does. " + stop.Finding.Remedy, null)
+                : stop.Outcome.Word == "unreachable" ? Unreachable("read of " + environment.Name, stop.Finding.Message, stop.Finding.Remedy!) : Missing("read of " + environment.Name, stop.Finding.Message, stop.Finding.Remedy!));
         }
 
         return items;

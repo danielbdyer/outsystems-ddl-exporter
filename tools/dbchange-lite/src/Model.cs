@@ -50,7 +50,7 @@ public sealed class Model
         var objects = Listed.SelectMany(type => model.GetObjects(DacQueryScopes.UserDefined, type).Select(o => (type.Name, Names.Quote(o.Name.Parts))))
             .OrderBy(o => o.Item1, StringComparer.Ordinal).ThenBy(o => o.Item2, StringComparer.Ordinal).ToList();
         var checks = model.GetObjects(DacQueryScopes.UserDefined, CheckConstraint.TypeClass)
-            .Select(c => (Names.Quote(c.GetReferenced(CheckConstraint.Host).First().Name.Parts), Names.Quote(c.Name.Parts), Expression(c.TryGetScript(out var script) ? script : "")))
+            .Select(c => (Names.Quote(c.GetReferenced(CheckConstraint.Host).First().Name.Parts), Names.Quote(c.Name.Parts), c.GetProperty(CheckConstraint.Expression) as string ?? ""))
             .ToList();
         var defaulted = model.GetObjects(DacQueryScopes.UserDefined, DefaultConstraint.TypeClass)
             .SelectMany(d => d.GetReferenced(DefaultConstraint.TargetColumn).Select(c => Names.Quote(c.Name.Parts)))
@@ -59,27 +59,6 @@ public sealed class Model
     }
 
     public TableShape? Shape(string schema, string name) => Tables.GetValueOrDefault(Names.Quote(schema, name));
-
-    private static string Expression(string script)
-    {
-        var parser = new Microsoft.SqlServer.TransactSql.ScriptDom.TSql160Parser(true);
-        var fragment = parser.Parse(new System.IO.StringReader(script), out var errors);
-        if (errors.Count > 0)
-        {
-            return "";
-        }
-
-        var visitor = new CheckVisitor();
-        fragment.Accept(visitor);
-        return visitor.Condition is null ? "" : DeployScripts.Render(visitor.Condition);
-    }
-
-    private sealed class CheckVisitor : Microsoft.SqlServer.TransactSql.ScriptDom.TSqlFragmentVisitor
-    {
-        public Microsoft.SqlServer.TransactSql.ScriptDom.BooleanExpression? Condition { get; private set; }
-
-        public override void Visit(Microsoft.SqlServer.TransactSql.ScriptDom.CheckConstraintDefinition node) => Condition ??= node.CheckCondition;
-    }
 
     public bool? ColumnNullable(string schema, string table, string column) =>
         Shape(schema, table) is { } shape && shape.Nullable.TryGetValue(column, out var nullable) ? nullable : null;

@@ -119,14 +119,24 @@ public static partial class NotPredictable
     private static string? Target(TSqlStatement node) => node switch
     {
         InsertStatement i => Temp(i.InsertSpecification.Target) ?? DeployScripts.TargetOf(i.InsertSpecification.Target),
-        UpdateStatement u => Temp(u.UpdateSpecification.Target) ?? DeployScripts.TargetOf(u.UpdateSpecification.Target),
-        DeleteStatement d => Temp(d.DeleteSpecification.Target) ?? DeployScripts.TargetOf(d.DeleteSpecification.Target),
+        UpdateStatement u => Temp(u.UpdateSpecification.Target) ?? Aliased(u.UpdateSpecification.Target, u.UpdateSpecification.FromClause) ?? DeployScripts.TargetOf(u.UpdateSpecification.Target),
+        DeleteStatement d => Temp(d.DeleteSpecification.Target) ?? Aliased(d.DeleteSpecification.Target, d.DeleteSpecification.FromClause) ?? DeployScripts.TargetOf(d.DeleteSpecification.Target),
         MergeStatement m => Temp(m.MergeSpecification.Target) ?? DeployScripts.TargetOf(m.MergeSpecification.Target),
         TruncateTableStatement t => DeployScripts.TableOf(t.TableName),
         SelectStatement { Into: { } into } => DeployScripts.TableOf(into),
         AlterTableStatement a => DeployScripts.TableOf(a.SchemaObjectName),
         DropTableStatement { Objects: [var first, ..] } => DeployScripts.TableOf(first),
         _ => null,
+    };
+
+    private static string? Aliased(TableReference? target, FromClause? from) => target is NamedTableReference { SchemaObject: { SchemaIdentifier: null, BaseIdentifier.Value: var alias } }
+        && from?.TableReferences.SelectMany(NamedIn).FirstOrDefault(n => n.Alias?.Value.Equals(alias, StringComparison.OrdinalIgnoreCase) == true) is { } table ? Temp(table) ?? DeployScripts.TableOf(table.SchemaObject) : null;
+
+    private static IEnumerable<NamedTableReference> NamedIn(TableReference reference) => reference switch
+    {
+        NamedTableReference named => [named],
+        JoinTableReference join => NamedIn(join.FirstTableReference).Concat(NamedIn(join.SecondTableReference)),
+        _ => [],
     };
 
     private static string? Temp(TableReference? target) => target is NamedTableReference { SchemaObject.BaseIdentifier.Value: var name } && name.StartsWith('#') ? "[" + name + "]" : null;
@@ -172,7 +182,7 @@ public static partial class NotPredictable
                 .Where(s => s.Variable.Name.Equals(variable.Name, StringComparison.OrdinalIgnoreCase)).SelectMany(s => Literals(s.Expression))),
             _ => "",
         };
-        return text.Contains("WITH CHECK CHECK CONSTRAINT", StringComparison.OrdinalIgnoreCase);
+        return text.StartsWith("ALTER TABLE [", StringComparison.OrdinalIgnoreCase) && text.Contains(" CHECK CONSTRAINT [", StringComparison.OrdinalIgnoreCase) && !text.Contains(';', StringComparison.Ordinal);
     }
 
     private static IEnumerable<string> Literals(ScalarExpression expression) => expression switch
@@ -180,6 +190,8 @@ public static partial class NotPredictable
         StringLiteral s => [s.Value],
         BinaryExpression b => Literals(b.FirstExpression).Concat(Literals(b.SecondExpression)),
         ParenthesisExpression p => Literals(p.Expression),
+        SimpleCaseExpression c => c.WhenClauses.Select(w => w.ThenExpression).Append(c.ElseExpression).OfType<ScalarExpression>().SelectMany(Literals),
+        SearchedCaseExpression c => c.WhenClauses.Select(w => w.ThenExpression).Append(c.ElseExpression).OfType<ScalarExpression>().SelectMany(Literals),
         _ => [],
     };
 

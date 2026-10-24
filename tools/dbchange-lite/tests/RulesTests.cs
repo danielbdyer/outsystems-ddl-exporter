@@ -65,7 +65,7 @@ public sealed class RulesTests : IDisposable
         Assert.Empty(shape.Dropped);
         var whys = NotPredictable.Of(script, shape, environment, []).Select(u => u.Why).ToArray();
         Assert.Equal(["rebuild", "identity"], whys);
-        Assert.Empty(NotPredictable.Contract(script, shape));
+        Assert.Empty(NotPredictable.Contract(script, shape, environment));
     }
 
     [Fact]
@@ -115,20 +115,103 @@ public sealed class RulesTests : IDisposable
             "EXECUTE sp_rename N'[dbo].[Customer].[Region]', N'Area', N'COLUMN';\nGO\n"
             + "INSERT INTO [dbo].[__RefactorLog] (OperationKey) VALUES ('6d1c1b5e-3f0a-4c2e-9b7d-2a4f8e6c0d13');\nGO\n"
             + "CREATE TABLE [#__checkStatus] (id INT, schema_name NVARCHAR(128));\nINSERT INTO [#__checkStatus] SELECT 1, N'dbo';\nGO\n"
-            + "DECLARE @cmd NVARCHAR(MAX);\nSET @cmd = N'ALTER TABLE ' + N'[dbo].[Customer]' + N' WITH CHECK CHECK CONSTRAINT [CK_x]';\nEXECUTE sp_executesql @cmd;\nGO\n"
+            + "DECLARE @schemaname NVARCHAR(256), @tablename NVARCHAR(256), @checkname NVARCHAR(256), @is_not_trusted INT, @statement NVARCHAR(1024);\n"
+            + "SET @statement = N'ALTER TABLE [' + @schemaname + N'].[' + @tablename + N'] WITH ' + CASE @is_not_trusted WHEN 0 THEN N'CHECK' ELSE N'NOCHECK' END + N' CHECK CONSTRAINT [' + @checkname + N']';\n"
+            + "EXECUTE [sp_executesql] @statement;\nGO\n"
             + "PRINT N'done';\nGO\nALTER DATABASE [$(DatabaseName)] SET QUERY_STORE = OFF;\nGO\n");
         Assert.Empty(NotPredictable.Of(admitted, NotPredictable.Shape(admitted), environment, []));
-        Assert.Equal([("[dbo].[Customer]", "[dbo].[Customer].[Region] is renamed")], NotPredictable.Contract(admitted, NotPredictable.Shape(admitted)).Select(c => (c.Table, c.What)).ToArray());
+        Assert.Equal([("[dbo].[Customer]", "[dbo].[Customer].[Region] is renamed")], NotPredictable.Contract(admitted, NotPredictable.Shape(admitted), environment).Select(c => (c.Table, c.What)).ToArray());
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Contract_changes_name_the_drop_the_type_change_and_the_tightening_a_consumer_sees()
+    public void Contract_changes_name_the_drop_the_retype_the_tightening_and_the_loosening_against_the_environments_column()
     {
         var script = Scripts.Read("ALTER TABLE [dbo].[Customer] DROP COLUMN [Region];\nGO\nALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;\nGO\n"
-            + "ALTER TABLE [dbo].[Account] ALTER COLUMN [Id] BIGINT NOT NULL;\nGO\nDROP TABLE [dbo].[Status];\nGO\n");
-        var changes = NotPredictable.Contract(script, NotPredictable.Shape(script)).Select(c => c.Table + ": " + c.What).ToArray();
-        Assert.Equal(["[dbo].[Customer]: the column [Region] is dropped", "[dbo].[Customer]: the column [Email] becomes mandatory", "[dbo].[Account]: the column [Id] becomes mandatory", "[dbo].[Status]: the table is dropped"], changes);
+            + "ALTER TABLE [dbo].[Account] ALTER COLUMN [Id] BIGINT NOT NULL;\nGO\nALTER TABLE [dbo].[Status] ALTER COLUMN [Code] NVARCHAR (20) NULL;\nGO\nDROP TABLE [dbo].[Status];\nGO\n");
+        var changes = NotPredictable.Contract(script, NotPredictable.Shape(script), environment).Select(c => c.Table + ": " + c.What).ToArray();
+        Assert.Equal(["[dbo].[Customer]: the column [Region] is dropped", "[dbo].[Customer]: the column [Email] becomes mandatory", "[dbo].[Account]: the column [Id] changes type",
+            "[dbo].[Status]: the column [Code] becomes optional", "[dbo].[Status]: the table is dropped"], changes);
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void An_update_or_delete_through_an_alias_in_a_deploy_script_writes_the_table_its_from_clause_names()
+    {
+        foreach (var statement in new[]
+        {
+            "UPDATE c SET c.[Email] = N'' FROM [dbo].[Customer] AS c WHERE c.[Email] IS NULL;",
+            "DELETE c FROM [dbo].[Customer] AS c WHERE c.[Email] IS NULL;",
+            "UPDATE c SET c.[Region] = a.[Id] FROM [dbo].[Account] AS a INNER JOIN [dbo].[Customer] AS c ON c.[AccountId] = a.[Id];",
+        })
+        {
+            var script = Scripts.Read("ALTER TABLE [dbo].[Customer] ADD [X] INT NULL;\nGO\n" + statement + "\nGO\n", post: statement);
+            Assert.Equal([("authored", "[dbo].[Customer]")], NotPredictable.Of(script, NotPredictable.Shape(script), environment, []).Select(u => (u.Why, u.Table)).ToArray());
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_constraint_on_an_existing_table_that_reads_a_column_the_plan_adds_is_left_to_prove_and_one_on_a_new_table_is_clean()
+    {
+        var script = Scripts.Read("ALTER TABLE [dbo].[Customer] ADD [Score] INT CONSTRAINT [DF_Customer_Score] DEFAULT (0) NOT NULL, CONSTRAINT [CK_Customer_Score] CHECK ([Score] > [Id]);\nGO\n"
+            + "ALTER TABLE [dbo].[Customer] ADD [Tier] INT NULL CONSTRAINT [UQ_Customer_Tier] UNIQUE;\nGO\n"
+            + "ALTER TABLE [dbo].[Customer] ADD [ParentId] INT NULL;\nGO\nALTER TABLE [dbo].[Customer] WITH NOCHECK ADD CONSTRAINT [FK_Customer_Parent] FOREIGN KEY ([ParentId]) REFERENCES [dbo].[Account] ([Id]);\nGO\n"
+            + "CREATE TABLE [dbo].[Priority] ([Id] INT NOT NULL CONSTRAINT [PK_Priority] PRIMARY KEY, [Rank] INT NOT NULL CONSTRAINT [CK_Priority_Rank] CHECK ([Rank] > 0));\nGO\n");
+        var found = Preconditions.Of(script, [], environment);
+        Assert.Equal(["Check on [dbo].[Customer] ([Id], [Score])", "Unique on [dbo].[Customer] ([Tier])"], found.Where(p => p.ReadsNew).Select(p => p.Spelled).ToArray());
+        Assert.All(found.Where(p => p.Table == "Priority"), p => Assert.True(p.OnNewObject && !p.ReadsNew));
+        Assert.Contains(found, p => p.Spelled == "ForeignKey on [dbo].[Customer] ([ParentId])" && p.OnNewObject && !p.ReadsNew);
+        var measured = Predict.Measure(null!, found, false);
+        Assert.Equal((2, "unknown"), (measured.Level, measured.Outcome));
+        Assert.Equal(2, measured.Unanswered.Count);
+        Assert.All(measured.Preconditions.Where(p => p.Table == "[dbo].[Customer]" && p.Kind != "ForeignKey"), p => Assert.Null(p.Violated));
+        Assert.Contains(measured.Preconditions, p => p.Kind == "ForeignKey" && p.Violated == false);
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_row_whose_check_went_unanswered_is_unknown_at_level_2_and_an_answered_empty_table_applies_at_level_3()
+    {
+        var empty = Precondition.Of("TableEmpty", "dbo", "Customer", [], null, false, 1);
+        var unanswered = new Measurement([new CheckAnswer("[dbo].[Customer]", null, "exists", empty.Query)], [], [(empty, new Measured.TimedOut(30))]);
+        Assert.Equal((2, "unknown", (string?)null), (unanswered.Level, unanswered.Outcome, unanswered.BlockedBy));
+        var answered = new Measurement([new CheckAnswer("[dbo].[Customer]", false, "exists", empty.Query)], [], []);
+        Assert.Equal((3, "applies"), (answered.Level, answered.Outcome));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_proof_does_not_stand_on_an_item_the_environment_did_not_answer_and_skips_one_that_reads_a_new_column()
+    {
+        var empty = Precondition.Of("TableEmpty", "dbo", "Customer", [], null, false, 1);
+        var reads = Precondition.Of("Check", "dbo", "Customer", ["Score"], "SELECT 1 AS present FROM [dbo].[Customer] WHERE NOT ([Score] > 0)", true, 2) with { ReadsNew = true };
+        var environmentAnswer = new Measurement([new CheckAnswer("[dbo].[Customer]", null, "exists", empty.Query)], [new PreconditionAnswer("Check", "[dbo].[Customer]", ["Score"], null, null, reads.Query)], [(empty, new Measured.Refused(229))]);
+        var copyAnswer = new Measurement([new CheckAnswer("[dbo].[Customer]", true, "exists", empty.Query)], [new PreconditionAnswer("Check", "[dbo].[Customer]", ["Score"], null, null, reads.Query)], []);
+        Assert.Equal(["[dbo].[Customer] was not read on dev"], Prove.Differences(environmentAnswer, copyAnswer, [empty, reads], "dev"));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_check_constraints_expression_is_read_from_the_model_and_one_written_with_IN_is_its_known_cause()
+    {
+        var model = Model.Load(Dacpacs.Of(scratch.Under("checks.dacpac"), "CREATE TABLE [dbo].[Order] ([Id] INT NOT NULL PRIMARY KEY, [StatusText] NVARCHAR(20) NULL, [Total] INT NULL,"
+            + " CONSTRAINT [CK_Order_StatusText] CHECK ([StatusText] IN (N'Pending', N'Paid')), CONSTRAINT [CK_Order_Total] CHECK ([Total] >= 0));"));
+        Assert.Contains(model.Checks, c => c.Name == "[dbo].[CK_Order_StatusText]" && c.Expression.Contains("IN", StringComparison.Ordinal));
+        var operations = new List<PlanOperation> { new("Create", "SqlCheckConstraint", "[dbo].[CK_Order_StatusText]"), new("Create", "SqlCheckConstraint", "[dbo].[CK_Order_Total]") };
+        Assert.Equal("check-written-with-in", Causes.Of(operations[0], operations, model, ""));
+        Assert.Null(Causes.Of(operations[1], operations, model, ""));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_smart_default_DacFx_writes_as_a_table_constraint_for_a_new_mandatory_column_is_named_for_the_lead()
+    {
+        var change = Model.Load(Dacpacs.Of(scratch.Under("change.dacpac"), EnvironmentModel.Replace("[Region] NVARCHAR(40) NULL);", "[Region] NVARCHAR(40) NULL, [MiddleName] NVARCHAR(100) NOT NULL);", StringComparison.Ordinal)));
+        var script = Scripts.Read("ALTER TABLE [dbo].[Customer]\n    ADD [MiddleName] NVARCHAR (100) NOT NULL,\n        CONSTRAINT [SD_Customer_dabecc4e03f748ca961c200fbf04150b] DEFAULT N'' FOR [MiddleName];\nGO\n");
+        Assert.Equal([("[dbo].[Customer]", "MiddleName")], NotPredictable.SmartDefaults(script, change).Select(d => (d.Table, d.Column)).ToArray());
+        var declared = Model.Load(Dacpacs.Of(scratch.Under("declared.dacpac"), EnvironmentModel.Replace("[Region] NVARCHAR(40) NULL);", "[Region] NVARCHAR(40) NULL, [MiddleName] NVARCHAR(100) NOT NULL CONSTRAINT [DF_Customer_MiddleName] DEFAULT (N''));", StringComparison.Ordinal)));
+        Assert.Empty(NotPredictable.SmartDefaults(Scripts.Read("ALTER TABLE [dbo].[Customer]\n    ADD [MiddleName] NVARCHAR (100) CONSTRAINT [DF_Customer_MiddleName] DEFAULT (N'') NOT NULL;\nGO\n"), declared));
     }
 
     [Fact]

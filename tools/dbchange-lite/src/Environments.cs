@@ -149,7 +149,7 @@ public static class Hosts
     public static bool Same(string a, string b)
     {
         var (first, second) = (Of(a), Of(b));
-        if (first.Equals(second, StringComparison.OrdinalIgnoreCase))
+        if (first.Equals(second, StringComparison.OrdinalIgnoreCase) || (IsLocal(first) && IsLocal(second)))
         {
             return true;
         }

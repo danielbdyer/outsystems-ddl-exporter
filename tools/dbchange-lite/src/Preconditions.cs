@@ -5,7 +5,7 @@ using Microsoft.SqlServer.TransactSql.ScriptDom;
 
 namespace DbChangeLite;
 
-public sealed record Precondition(string Kind, string Schema, string Table, IReadOnlyList<string> Columns, string? Inner, bool OnNewObject, int Line)
+public sealed record Precondition(string Kind, string Schema, string Table, IReadOnlyList<string> Columns, string? Inner, bool OnNewObject, int Line, bool ReadsNew = false)
 {
     public static Precondition Of(string kind, string schema, string table, IEnumerable<string> columns, string? inner, bool onNewObject, int line) =>
         new(kind, schema, table, columns.Order(StringComparer.Ordinal).ToList(), inner, onNewObject, line);
@@ -25,6 +25,7 @@ public static class Preconditions
     {
         var created = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var newColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var nullNew = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var statement in script.Statements)
         {
             switch (statement.Node)
@@ -36,6 +37,11 @@ public static class Preconditions
                     foreach (var column in add.Definition.ColumnDefinitions)
                     {
                         newColumns.Add(DeployScripts.TableOf(add.SchemaObjectName) + "." + column.ColumnIdentifier.Value);
+                        if (column.DefaultConstraint is null && !column.Constraints.OfType<NullableConstraintDefinition>().Any(n => !n.Nullable)
+                            && !add.Definition.TableConstraints.OfType<DefaultConstraintDefinition>().Any(d => d.Column?.Value.Equals(column.ColumnIdentifier.Value, StringComparison.OrdinalIgnoreCase) == true))
+                        {
+                            nullNew.Add(DeployScripts.TableOf(add.SchemaObjectName) + "." + column.ColumnIdentifier.Value);
+                        }
                     }
 
                     break;
@@ -82,7 +88,7 @@ public static class Preconditions
             }
         }
 
-        return found.DistinctBy(p => p.Spelled).OrderBy(p => p.Kind == "TableEmpty" ? 0 : 1).ThenBy(p => p.Line).ThenBy(p => p.Spelled, StringComparer.Ordinal).ToList();
+        return found.Select(p => p.OnNewObject && !created.Contains(p.Quoted) && !(p.Kind == "ForeignKey" && p.Columns.Any(c => nullNew.Contains(p.Quoted + "." + c))) ? p with { ReadsNew = true } : p).DistinctBy(p => p.Spelled).OrderBy(p => p.Kind == "TableEmpty" ? 0 : 1).ThenBy(p => p.Line).ThenBy(p => p.Spelled, StringComparer.Ordinal).ToList();
     }
 
     private static IEnumerable<Precondition> Constraints(string schema, string table, TableDefinition definition, int line, Func<IReadOnlyList<string>, bool> isNew)
